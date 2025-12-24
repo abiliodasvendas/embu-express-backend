@@ -34,9 +34,14 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     app.get("/", async (request: any, reply) => {
-        const filtros = request.query;
+        const { searchTerm, perfil_id, cliente_id, ativo } = request.query;
         try {
-            const result = await usuarioService.listUsuarios(filtros);
+            const result = await usuarioService.listUsuarios({
+                search: searchTerm,
+                perfil_id, 
+                cliente_id,
+                ativo
+            });
             return reply.status(200).send(result);
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });

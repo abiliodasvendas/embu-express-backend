@@ -72,7 +72,9 @@ export const clientService = {
             );
         }
 
-        if (filtros?.status) query = query.eq("status", filtros.status);
+        if (filtros?.status && filtros.status !== "todos") {
+            query = query.eq("status", filtros.status);
+        }
 
         const { data, error } = await query;
         if (error) throw error;
