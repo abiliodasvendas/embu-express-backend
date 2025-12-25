@@ -36,9 +36,10 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     app.get("/", async (request: any, reply) => {
         const { searchTerm, perfil_id, cliente_id, ativo } = request.query;
+        
         try {
             const result = await usuarioService.listUsuarios({
-                search: searchTerm,
+                searchTerm,
                 perfil_id, 
                 cliente_id,
                 ativo

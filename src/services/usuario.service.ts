@@ -130,27 +130,28 @@ export const usuarioService = {
     },
 
     async listUsuarios(filtros?: {
-        search?: string;
+        searchTerm?: string;
         perfil_id?: number;
         cliente_id?: number;
-        ativo?: boolean;
+        ativo?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
             .select("*, perfil:perfis(*), cliente:clientes(*), turnos:usuario_turnos(*)")
             .order("nome_completo", { ascending: true });
 
-        if (filtros?.search) {
+        if (filtros?.searchTerm) {
             query = query.or(
-                `nome_completo.ilike.%${filtros.search}%,email.ilike.%${filtros.search}%,cpf.ilike.%${filtros.search}%`
+                `nome_completo.ilike.%${filtros.searchTerm}%,email.ilike.%${filtros.searchTerm}%,cpf.ilike.%${filtros.searchTerm}%`
             );
         }
 
         if (filtros?.perfil_id) query = query.eq("perfil_id", filtros.perfil_id);
         if (filtros?.cliente_id) query = query.eq("cliente_id", filtros.cliente_id);
-        // Fix: Explicitly check for boolean true/false, as "todos" or undefined should not filter
-        if (filtros?.ativo !== undefined && filtros.ativo !== null) {
-             query = query.eq("ativo", filtros.ativo);
+        
+        // Fix: Explicitly check for boolean true/false string
+        if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {
+             query = query.eq("ativo", filtros.ativo === "true");
         }
 
         const { data, error } = await query;

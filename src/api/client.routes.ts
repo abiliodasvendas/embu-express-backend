@@ -55,11 +55,11 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     app.get("/", async (request: any, reply) => {
-        const { searchTerm, status } = request.query;
+        const { searchTerm, ativo } = request.query;
         try {
             const result = await clientService.listClients({
-                search: searchTerm,
-                status
+                searchTerm,
+                ativo
             });
             return reply.status(200).send(result);
         } catch (err: any) {

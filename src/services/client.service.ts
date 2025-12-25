@@ -9,7 +9,9 @@ export const clientService = {
             ...data,
             nome_fantasia: cleanString(data.nome_fantasia),
             razao_social: data.razao_social ? cleanString(data.razao_social) : null,
-            status: data.status || "ativo",
+            ativo: data.ativo !== undefined ? data.ativo : true,
+            cnpj: data.cnpj ? data.cnpj.replace(/\D/g, "") : null,
+            cep: data.cep ? data.cep.replace(/\D/g, "") : null,
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -28,6 +30,8 @@ export const clientService = {
         const clientData: any = { ...data };
         if (data.nome_fantasia) clientData.nome_fantasia = cleanString(data.nome_fantasia);
         if (data.razao_social) clientData.razao_social = cleanString(data.razao_social);
+        if (data.cnpj) clientData.cnpj = data.cnpj.replace(/\D/g, "");
+        if (data.cep) clientData.cep = data.cep.replace(/\D/g, "");
 
         const { data: updated, error } = await supabaseAdmin
             .from("clientes")
@@ -58,22 +62,27 @@ export const clientService = {
     },
 
     async listClients(filtros?: {
-        search?: string;
-        status?: string;
+        searchTerm?: string;
+        ativo?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("clientes")
             .select("*")
             .order("nome_fantasia", { ascending: true });
 
-        if (filtros?.search) {
-            query = query.or(
-                `nome_fantasia.ilike.%${filtros.search}%,razao_social.ilike.%${filtros.search}%,cnpj.ilike.%${filtros.search}%`
-            );
+        if (filtros?.searchTerm) {
+            const cleanSearch = filtros.searchTerm.replace(/\D/g, "");
+            let orClause = `nome_fantasia.ilike.%${filtros.searchTerm}%,razao_social.ilike.%${filtros.searchTerm}%`;
+
+            if (cleanSearch) {
+                orClause += `,cnpj.ilike.%${cleanSearch}%`;
+            }
+
+            query = query.or(orClause);
         }
 
-        if (filtros?.status && filtros.status !== "todos") {
-            query = query.eq("status", filtros.status);
+        if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {
+             query = query.eq("ativo", filtros.ativo === "true");
         }
 
         const { data, error } = await query;
