@@ -180,5 +180,15 @@ export const usuarioService = {
             .eq("id", id);
             
         if (error) throw error;
-    }
+    },
+
+    async toggleAtivo(id: string, novoStatus: boolean): Promise<boolean> {
+        const { error } = await supabaseAdmin
+            .from("usuarios")
+            .update({ ativo: novoStatus })
+            .eq("id", id);
+
+        if (error) throw new Error(`Falha ao ${novoStatus ? "ativar" : "desativar"} o usuário.`);
+        return novoStatus;
+    },
 };

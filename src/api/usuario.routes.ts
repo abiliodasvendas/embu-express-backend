@@ -69,6 +69,17 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
             return reply.status(400).send({ error: err.message });
         }
     });
+
+    app.patch("/:id/toggle-ativo", async (request: any, reply) => {
+        const id = request.params["id"] as string;
+        const { novoStatus } = request.body as { novoStatus: boolean };
+        try {
+            const result = await usuarioService.toggleAtivo(id, novoStatus);
+            return reply.status(200).send({ ativo: result });
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
 };
 
 export default usuarioRoute;

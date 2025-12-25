@@ -90,4 +90,13 @@ export const clientService = {
 
         return data || [];
     },
+    async toggleAtivo(id: number, novoStatus: boolean): Promise<boolean> {
+        const { error } = await supabaseAdmin
+            .from("clientes")
+            .update({ ativo: novoStatus })
+            .eq("id", id);
+
+        if (error) throw new Error(`Falha ao ${novoStatus ? "ativar" : "desativar"} o cliente.`);
+        return novoStatus;
+    },
 };
