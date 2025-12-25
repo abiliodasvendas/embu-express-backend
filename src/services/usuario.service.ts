@@ -3,12 +3,16 @@ import { cleanString } from "../utils/utils.js";
 
 export const usuarioService = {
     async createUsuario(data: any): Promise<any> {
+        console.log("[createUsuario] Iniciando criação...", { email: data.email, perfil: data.perfil_id });
+        
         if (!data.email) throw new Error("Email é obrigatório");
         if (!data.nome_completo) throw new Error("Nome completo é obrigatório");
         if (!data.perfil_id) throw new Error("Perfil é obrigatório");
 
         // 1. Create Auth User
         const tempPassword = "Tempo" + Math.random().toString(36).slice(-8) + "!"; // Strong temp password
+        console.log("[createUsuario] Criando usuário no Auth...");
+        
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: data.email,
             password: tempPassword,
@@ -18,8 +22,17 @@ export const usuarioService = {
             }
         });
 
-        if (authError) throw authError;
-        if (!authUser.user) throw new Error("Erro ao criar usuário no Auth");
+        if (authError) {
+            console.error("[createUsuario] Erro no Auth:", authError);
+            throw authError;
+        }
+        
+        if (!authUser?.user) {
+             console.error("[createUsuario] Usuário não retornado pelo Auth");
+             throw new Error("Erro ao criar usuário no Auth");
+        }
+
+        console.log("[createUsuario] Usuário Auth criado:", authUser.user.id);
 
         const { turnos, ...rest } = data;
 
@@ -31,6 +44,7 @@ export const usuarioService = {
             primeiro_acesso: true, // Force password change
         };
 
+        console.log("[createUsuario] Inserindo no banco...");
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
             .insert([usuarioData])
@@ -38,13 +52,17 @@ export const usuarioService = {
             .single();
 
         if (error) {
+            console.error("[createUsuario] Erro no Banco:", error);
             // Rollback Auth if DB fails
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
             throw error;
         }
+        
+        console.log("[createUsuario] Sucesso DB. ID:", inserted.id);
 
         // Sync turnos if provided
         if (turnos && Array.isArray(turnos)) {
+            console.log("[createUsuario] Inserindo turnos:", turnos.length);
             const turnosData = turnos.map(t => ({
                 usuario_id: inserted.id,
                 hora_inicio: t.hora_inicio,
@@ -53,7 +71,10 @@ export const usuarioService = {
             const { error: turnosError } = await supabaseAdmin
                 .from("usuario_turnos")
                 .insert(turnosData);
-            if (turnosError) throw turnosError;
+            if (turnosError) {
+                 console.error("[createUsuario] Erro ao inserir turnos:", turnosError);
+                 throw turnosError;
+            }
         }
 
         return this.getUsuario(inserted.id);
@@ -116,7 +137,7 @@ export const usuarioService = {
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), cliente:clientes(*)")
+            .select("*, perfil:perfis(*), cliente:clientes(*), turnos:usuario_turnos(*)")
             .order("nome_completo", { ascending: true });
 
         if (filtros?.search) {
@@ -147,6 +168,9 @@ export const usuarioService = {
              // If user not found in auth (already deleted or inconsistent), try deleting from DB directly to clean up
              console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
         }
+
+        // Explicitly delete turnos first to ensure no FK constraint issues
+        await supabaseAdmin.from("usuario_turnos").delete().eq("usuario_id", id);
 
         // Always try to delete from public DB to ensure consistency (idempotent if cascade worked)
         const { error } = await supabaseAdmin

@@ -33,6 +33,17 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
+    app.patch("/:id/toggle-status", async (request: any, reply) => {
+        const id = parseInt(request.params["id"]);
+        const { status } = request.body as { status: string };
+        try {
+            const result = await clientService.updateClient(id, { status });
+            return reply.status(200).send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
     app.get("/:id", async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         try {

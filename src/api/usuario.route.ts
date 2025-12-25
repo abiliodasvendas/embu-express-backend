@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { supabaseAdmin } from "../config/supabase.js";
 import { usuarioService } from "../services/usuario.service.js";
 
 const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -50,6 +51,16 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     app.delete("/:id", async (request: any, reply) => {
         const id = request.params["id"] as string;
+        
+        // Security check: Prevent self-deletion
+        const token = request.headers.authorization?.replace('Bearer ', '');
+        if (token) {
+            const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+            if (user && user.id === id) {
+                 return reply.status(400).send({ error: "Você não pode excluir seu próprio usuário." });
+            }
+        }
+
         try {
             await usuarioService.deleteUsuario(id);
             return reply.status(200).send({ success: true });
