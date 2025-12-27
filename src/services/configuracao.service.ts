@@ -15,9 +15,11 @@ export const configuracaoService = {
             .from("configuracoes_sistema")
             .select("*")
             .eq("chave", chave)
-            .single();
+            // .single() is dangerous if duplicates exist
+            .limit(1); // Force single result at DB level
+            
         if (error) throw error;
-        return data;
+        return data?.[0]; // Return first item or undefined
     },
 
     async updateConfiguracao(chave: string, valor: string): Promise<any> {

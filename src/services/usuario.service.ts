@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { cleanString } from "../utils/utils.js";
+import { validateShifts } from "../utils/validators.js";
 
 export const usuarioService = {
     async createUsuario(data: any): Promise<any> {
@@ -8,6 +9,11 @@ export const usuarioService = {
         if (!data.email) throw new Error("Email é obrigatório");
         if (!data.nome_completo) throw new Error("Nome completo é obrigatório");
         if (!data.perfil_id) throw new Error("Perfil é obrigatório");
+
+        // Validate Shifts before anything else
+        if (data.turnos && Array.isArray(data.turnos)) {
+            validateShifts(data.turnos);
+        }
 
         // 1. Create Auth User
         const tempPassword = "Tempo" + Math.random().toString(36).slice(-8) + "!"; // Strong temp password
@@ -84,6 +90,11 @@ export const usuarioService = {
         if (!id) throw new Error("ID do usuário é obrigatório");
 
         const { turnos, ...rest } = data;
+
+        // Validate Shifts if being updated
+        if (turnos && Array.isArray(turnos)) {
+            validateShifts(turnos);
+        }
 
         const usuarioData: any = { ...rest };
         if (data.nome_completo) usuarioData.nome_completo = cleanString(data.nome_completo);
