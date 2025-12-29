@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { configuracaoService } from "./configuracao.service.js";
 
 // Helper para calcular status
@@ -145,7 +146,7 @@ async function calculateStatus(
          } else if (diffMinutes > toleranciaSaida) {
              status_saida = "AMARELO";
          } else if (diffMinutes < -10) { 
-             status_saida = "AMARELO"; // Saida antecipada
+             status_saida = "ANTECIPADA"; // Saida antecipada (Novo status para diferenciar de Hora Extra)
          } else {
              status_saida = "VERDE";
          }
@@ -168,54 +169,47 @@ async function calculateStatus(
 
 export const pontoService = {
     async registrarPonto(data: any): Promise<any> {
-        // Validação de Sobreposição
-        const { data: overlaps, error: overlapError } = await supabaseAdmin
-            .from("registros_ponto")
-            .select("id, entrada_hora, saida_hora")
-            .eq("usuario_id", data.usuario_id)
-            .neq("saida_hora", null) // Ignora abertos (pois toggle fecharia)
-            .or(`and(entrada_hora.lte.${data.saida_hora || '2099-12-31'},saida_hora.gte.${data.entrada_hora})`);
+        // 1. Validações Básicas (Ordem e Duração)
+        const orderCheck = TimeRecordRules.validateTimeOrder(data.entrada_hora, data.saida_hora);
+        if (!orderCheck.valid) throw new Error(orderCheck.message);
 
-        // PostgREST "intersects" logic is tricky via string builder, doing manual check often safer if volume low
-        // Mas vamos tentar uma query segura de overlaps:
-        // (StartA <= EndB) and (EndA >= StartB)
-        // No Supabase: .lte('entrada_hora', end) .gte('saida_hora', start)
-        // Porem, precisamos avaliar registro a registro se nao confiarmos no OR complexo
-        
-        // Simplificacao: Buscar registros do DIA (data_referencia) e validar JS
-        // Eh mais garantido e rapido para poucos registros
-        const { data: registrosDia } = await supabaseAdmin
+        const durationCheck = TimeRecordRules.validateMinDuration(data.entrada_hora, data.saida_hora);
+        if (!durationCheck.valid) throw new Error(durationCheck.message);
+
+        // 2. Validação de Sobreposição
+        // Busca simplificada: Registros do mesmo dia (ou +- 1 dia para cobrir viradas)
+        // Por segurança, busca registros onde data_referencia bate OU intervalo de tempo cruza.
+        // Mas a query por data_referencia é muito mais performática e cobre 99% dos casos manuais.
+        const { data: registrosDia, error: fetchError } = await supabaseAdmin
              .from("registros_ponto")
-             .select("entrada_hora, saida_hora")
+             .select("id, entrada_hora, saida_hora")
              .eq("usuario_id", data.usuario_id)
              .eq("data_referencia", data.data_referencia);
         
+        if (fetchError) throw fetchError;
+
         if (registrosDia && registrosDia.length > 0) {
-            const newStart = new Date(data.entrada_hora).getTime();
-            const newEnd = data.saida_hora ? new Date(data.saida_hora).getTime() : Infinity;
-
-            const hasOverlap = registrosDia.some((reg: any) => {
-                 const existingStart = new Date(reg.entrada_hora).getTime();
-                 const existingEnd = reg.saida_hora ? new Date(reg.saida_hora).getTime() : Infinity;
-                 
-                 // Overlap calc
-                 return newStart < existingEnd && newEnd > existingStart;
-            });
-
-            if (hasOverlap) {
-                throw new Error("Conflito: Já existe um registro neste período.");
+            const newStart = new Date(data.entrada_hora);
+            const newEnd = data.saida_hora ? new Date(data.saida_hora) : null;
+            
+            const overlapCheck = TimeRecordRules.checkOverlap(newStart, newEnd, registrosDia);
+            
+            if (overlapCheck.hasOverlap) {
+                throw new Error("Conflito de horário: Já existe um registro neste período.");
             }
         }
 
-        // Calcular status e detalhes antes de salvar
+        // 3. Calcular status e detalhes antes de salvar
         const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(data.usuario_id, data.entrada_hora, data.saida_hora);
 
         const payload = {
             ...data,
+            entrada_km: data.entrada_km ?? null, // Permite null se o banco aceitar (após migration)
+            saida_km: data.saida_km ?? null,
             status_entrada,
             status_saida: data.saida_hora ? (data.status_saida || status_saida) : null,
-            detalhes_calculo, // Salva o snapshot JSON
-            saldo_minutos // Salva o saldo calculado
+            detalhes_calculo,
+            saldo_minutos
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -361,6 +355,7 @@ export const pontoService = {
             saida_hora: null,
             criado_por: usuarioId
         });
+        return { action: 'OPEN', record: newRecord };
     },
 
     async deletePonto(id: number): Promise<void> {
