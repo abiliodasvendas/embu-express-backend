@@ -64,6 +64,7 @@ export const clientService = {
     async listClients(filtros?: {
         searchTerm?: string;
         ativo?: string;
+        includeId?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("clientes")
@@ -82,7 +83,13 @@ export const clientService = {
         }
 
         if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {
-             query = query.eq("ativo", filtros.ativo === "true");
+            if (filtros.includeId) {
+                query = query.or(`ativo.eq.${filtros.ativo === "true"},id.eq.${filtros.includeId}`);
+            } else {
+                query = query.eq("ativo", filtros.ativo === "true");
+            }
+        } else if (filtros?.includeId) {
+            query = query.eq("id", filtros.includeId);
         }
 
         const { data, error } = await query;

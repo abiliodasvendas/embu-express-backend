@@ -55,7 +55,7 @@ async function calculateStatus(
 
     if (turnoError) console.error("Erro ao buscar turnos:", turnoError);
 
-    let melhorTurno = null;
+    let melhorTurno: any = null;
     let menorDiffInicio = Infinity;
 
     // Helper inside
@@ -176,6 +176,9 @@ export const pontoService = {
         const durationCheck = TimeRecordRules.validateMinDuration(data.entrada_hora, data.saida_hora);
         if (!durationCheck.valid) throw new Error(durationCheck.message);
 
+        const maxDurationCheck = TimeRecordRules.validateMaxDuration(data.entrada_hora, data.saida_hora);
+        if (!maxDurationCheck.valid) throw new Error(maxDurationCheck.message);
+
         // 2. Validação de Sobreposição
         // Busca simplificada: Registros do mesmo dia (ou +- 1 dia para cobrir viradas)
         // Por segurança, busca registros onde data_referencia bate OU intervalo de tempo cruza.
@@ -231,6 +234,15 @@ export const pontoService = {
              const existing = await this.getPonto(id);
              const entrada = data.entrada_hora || existing.entrada_hora;
              const saida = data.saida_hora !== undefined ? data.saida_hora : existing.saida_hora; // Handle explicit null
+
+             // Validate Rules before calculation
+             if (saida) {
+                 const orderCheck = TimeRecordRules.validateTimeOrder(entrada, saida);
+                 if (!orderCheck.valid) throw new Error(orderCheck.message);
+                 
+                 const maxConfirm = TimeRecordRules.validateMaxDuration(entrada, saida);
+                 if (!maxConfirm.valid) throw new Error(maxConfirm.message);
+             }
 
              const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(existing.usuario_id, entrada, saida);
              

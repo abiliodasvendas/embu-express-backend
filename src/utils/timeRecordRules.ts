@@ -45,6 +45,25 @@ export class TimeRecordRules {
     }
 
     /**
+     * Valida duração máxima do registro (ex: 16h).
+     * Evita turnos absurdos por erro de digitação.
+     */
+    static validateMaxDuration(entrada: string, saida: string | null, maxHours = 16): { valid: boolean, message?: string } {
+        if (!saida) return { valid: true };
+
+        const start = new Date(entrada);
+        const end = new Date(saida);
+        const diffMs = end.getTime() - start.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+
+        if (diffHours > maxHours) {
+            return { valid: false, message: `O registro excede o limite máximo de ${maxHours} horas.` };
+        }
+
+        return { valid: true };
+    }
+
+    /**
      * Verifica sobreposição de horários.
      * @param newStart 
      * @param newEnd 
