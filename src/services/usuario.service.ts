@@ -54,7 +54,7 @@ export const usuarioService = {
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
             .insert([usuarioData])
-            .select("*, perfil:perfis(*), cliente:clientes(*)")
+            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*)")
             .single();
 
         if (error) {
@@ -103,7 +103,7 @@ export const usuarioService = {
             .from("usuarios")
             .update(usuarioData)
             .eq("id", id)
-            .select("*, perfil:perfis(*), cliente:clientes(*)")
+            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*)")
             .single();
         if (error) throw error;
 
@@ -133,7 +133,7 @@ export const usuarioService = {
     async getUsuario(id: string): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), cliente:clientes(*), turnos:usuario_turnos(*)")
+            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*), turnos:usuario_turnos(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
@@ -144,11 +144,12 @@ export const usuarioService = {
         searchTerm?: string;
         perfil_id?: number;
         cliente_id?: number;
+        empresa_id?: number;
         ativo?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), cliente:clientes(*), turnos:usuario_turnos(*)")
+            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*), turnos:usuario_turnos(*)")
             .order("nome_completo", { ascending: true });
 
         if (filtros?.searchTerm) {
@@ -159,6 +160,7 @@ export const usuarioService = {
 
         if (filtros?.perfil_id) query = query.eq("perfil_id", filtros.perfil_id);
         if (filtros?.cliente_id) query = query.eq("cliente_id", filtros.cliente_id);
+        if (filtros?.empresa_id) query = query.eq("empresa_id", filtros.empresa_id);
         
         // Fix: Explicitly check for boolean true/false string
         if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {

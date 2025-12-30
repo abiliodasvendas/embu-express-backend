@@ -198,7 +198,7 @@ export const pontoService = {
             const overlapCheck = TimeRecordRules.checkOverlap(newStart, newEnd, registrosDia);
             
             if (overlapCheck.hasOverlap) {
-                throw new Error("Conflito de horário: Já existe um registro neste período.");
+                throw new Error("Conflito de horário: Já existe um registro neste turno.");
             }
         }
 

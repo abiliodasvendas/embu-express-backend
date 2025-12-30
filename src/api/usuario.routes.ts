@@ -73,6 +73,16 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.patch("/:id/toggle-ativo", async (request: any, reply) => {
         const id = request.params["id"] as string;
         const { novoStatus } = request.body as { novoStatus: boolean };
+
+        // Security check: Prevent self-deactivation
+        const token = request.headers.authorization?.replace('Bearer ', '');
+        if (token) {
+            const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+            if (user && user.id === id) {
+                 return reply.status(400).send({ error: "Você não pode desativar seu próprio usuário." });
+            }
+        }
+
         try {
             const result = await usuarioService.toggleAtivo(id, novoStatus);
             return reply.status(200).send({ ativo: result });

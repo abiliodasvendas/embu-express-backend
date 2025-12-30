@@ -67,7 +67,7 @@ export class TimeRecordRules {
      * Verifica sobreposição de horários.
      * @param newStart 
      * @param newEnd 
-     * @param existingRecords Lista de registros EXISTENTES do usuário no mesmo dia/período
+     * @param existingRecords Lista de registros EXISTENTES do usuário no mesmo dia/turno
      */
     static checkOverlap(newStart: Date, newEnd: Date | null, existingRecords: any[]): { hasOverlap: boolean, conflictRecord?: any } {
         if (!existingRecords || existingRecords.length === 0) return { hasOverlap: false };
