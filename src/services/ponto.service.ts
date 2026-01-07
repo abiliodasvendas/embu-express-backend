@@ -5,14 +5,26 @@ import { configuracaoService } from "./configuracao.service.js";
 // Helper para calcular status
 // Helper para calcular status
 // Helper para extrair HH e MM de string (ISO ou HH:mm)
-// Helper para extrair HH e MM de string (ISO ou HH:mm)
 function parseTime(timeStr: string): [number, number] {
+    if (!timeStr) return [0, 0];
+    
     if (timeStr.includes("T")) {
         // Formato ISO: 2025-12-26T08:00:00-03:00
+        // Problema: Em ambiente UTC (Vercel), new Date().getHours() retorna UTC.
+        // Solução: Forçar extração no fuso horário America/Sao_Paulo.
         const date = new Date(timeStr);
-        return [date.getHours(), date.getMinutes()];
+        const options: Intl.DateTimeFormatOptions = { 
+            timeZone: 'America/Sao_Paulo', 
+            hour: 'numeric', 
+            minute: 'numeric', 
+            hour12: false 
+        };
+        // Intl retorna "13:12" ou "01:12" dependendo do locale, mas pt-BR + hour12: false garante 24h
+        const formatter = new Intl.DateTimeFormat('pt-BR', options);
+        const parts = formatter.format(date).split(':');
+        return [Number(parts[0]), Number(parts[1])];
     } else if (timeStr.includes(":")) {
-        // Formato HH:mm ou HH:mm:ss
+        // Formato HH:mm ou HH:mm:ss (vindo do Banco/Turno, assumimos que já é "Wall Time" correto)
         const [h, m] = timeStr.split(":").map(Number);
         return [h, m];
     }
