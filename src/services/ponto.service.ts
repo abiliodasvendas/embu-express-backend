@@ -23,7 +23,9 @@ function parseTime(timeStr: string): [number, number] {
 async function calculateStatus(
     usuarioId: string, 
     entrada: string | null | undefined, 
-    saida: string | null | undefined
+    saida: string | null | undefined,
+    entrada_km?: number | null,
+    saida_km?: number | null
 ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null }> {
     // Default values
     let status_entrada = "CINZA";
@@ -32,8 +34,14 @@ async function calculateStatus(
 
     const detalhes: any = {
         entrada: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
-        saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 }
+        saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
+        resumo: {} // Novo objeto para dados extras
     };
+    
+    // Calculo básico de KM (sem regras complexas por enquanto)
+    if (entrada_km != null && saida_km != null) {
+        detalhes.resumo.diff_km = saida_km - entrada_km;
+    }
 
     if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
 
@@ -160,6 +168,12 @@ async function calculateStatus(
          
          saldo_minutos = Math.round(durationActual - durationExpected);
 
+         // Format horas trabalhadas
+         const hTrabalhadas = Math.floor(Math.abs(durationActual) / 60);
+         const mTrabalhadas = Math.round(Math.abs(durationActual) % 60);
+         const strTrabalhadas = `${hTrabalhadas.toString().padStart(2, '0')}:${mTrabalhadas.toString().padStart(2, '0')}`;
+         detalhes.resumo.horas_trabalhadas = strTrabalhadas;
+
     } else if (saida) {
         status_saida = "CINZA";
     }
@@ -203,7 +217,13 @@ export const pontoService = {
         }
 
         // 3. Calcular status e detalhes antes de salvar
-        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(data.usuario_id, data.entrada_hora, data.saida_hora);
+        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
+            data.usuario_id, 
+            data.entrada_hora, 
+            data.saida_hora,
+            data.entrada_km,
+            data.saida_km
+        );
 
         const payload = {
             ...data,
@@ -235,6 +255,9 @@ export const pontoService = {
              const entrada = data.entrada_hora || existing.entrada_hora;
              const saida = data.saida_hora !== undefined ? data.saida_hora : existing.saida_hora; // Handle explicit null
 
+             const entradaKm = data.entrada_km !== undefined ? data.entrada_km : existing.entrada_km;
+             const saidaKm = data.saida_km !== undefined ? data.saida_km : existing.saida_km;
+
              // Validate Rules before calculation
              if (saida) {
                  const orderCheck = TimeRecordRules.validateTimeOrder(entrada, saida);
@@ -244,7 +267,13 @@ export const pontoService = {
                  if (!maxConfirm.valid) throw new Error(maxConfirm.message);
              }
 
-             const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(existing.usuario_id, entrada, saida);
+             const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
+                existing.usuario_id, 
+                entrada, 
+                saida,
+                entradaKm,
+                saidaKm
+             );
              
              payload.status_entrada = status_entrada;
              payload.status_saida = status_saida;
