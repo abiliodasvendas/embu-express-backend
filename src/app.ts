@@ -27,7 +27,7 @@ export async function createApp(): Promise<FastifyInstance> {
     // Configuração de CORS
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-      : ["http://localhost:5173", "http://localhost:8080"];
+      : ["http://localhost:5173", "http://localhost:8080", "https://embu-express.vercel.app"];
 
     await app.register(fastifyCors, {
       origin: (origin, callback) => {
