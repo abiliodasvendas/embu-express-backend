@@ -319,6 +319,8 @@ export const pontoService = {
             .select("*, cliente:clientes(*), pausas:registros_pausas(*)")
             .eq("usuario_id", usuarioId)
             .eq("data_referencia", hoje)
+            .order('id', { ascending: false })
+            .limit(1)
             .maybeSingle();
         if (error) throw error;
         return data;

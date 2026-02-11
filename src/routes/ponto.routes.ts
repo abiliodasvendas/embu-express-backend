@@ -101,8 +101,19 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.post("/pausa/inicio", async (request: any, reply) => {
         const data = request.body as any;
         try {
-             // data expecting { ponto_id, inicio_loc, ... }
              const result = await pontoService.iniciarPausa(data);
+             return reply.status(201).send(result);
+        } catch (err: any) {
+             return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // RESTful: Iniciar pausa de um ponto específico
+    app.post("/:id/pausas", async (request: any, reply) => {
+        const ponto_id = parseInt(request.params["id"]);
+        const data = request.body as any;
+        try {
+             const result = await pontoService.iniciarPausa({ ...data, ponto_id });
              return reply.status(201).send(result);
         } catch (err: any) {
              return reply.status(400).send({ error: err.message });
@@ -112,6 +123,18 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.post("/pausa/fim", async (request: any, reply) => {
         const { id, ...data } = request.body as any;
         if (!id) return reply.status(400).send({ error: "ID da pausa obrigatório" });
+        try {
+             const result = await pontoService.finalizarPausa(id, data);
+             return reply.status(200).send(result);
+        } catch (err: any) {
+             return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // RESTful: Finalizar uma pausa específica
+    app.put("/pausas/:id", async (request: any, reply) => {
+        const id = parseInt(request.params["id"]);
+        const data = request.body as any;
         try {
              const result = await pontoService.finalizarPausa(id, data);
              return reply.status(200).send(result);
