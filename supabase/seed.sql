@@ -41,7 +41,7 @@ INSERT INTO "auth"."users" (
     'authenticated',
     'authenticated',
     'admin@embuexpress.com.br',
-    extensions.crypt('123456', extensions.gen_salt('bf')), -- Password: '123456'
+    extensions.crypt('Ogaiht+1', extensions.gen_salt('bf')), -- Password: 'Ogaiht+1'
     now(),
     now(),
     now(),
@@ -60,6 +60,7 @@ INSERT INTO "public"."usuarios" (
     "id",
     "perfil_id",
     "nome_completo",
+    "cpf",
     "email",
     "status",
     "senha_padrao"
@@ -67,6 +68,7 @@ INSERT INTO "public"."usuarios" (
     'e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c',
     1, -- super_admin
     'Admin Master',
+    '39542391838',
     'admin@embuexpress.com.br',
     'ATIVO',
     false

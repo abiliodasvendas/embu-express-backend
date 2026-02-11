@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS "public"."usuarios" (
     "id" "uuid" NOT NULL,
     "perfil_id" integer NOT NULL,
     "nome_completo" character varying(255) NOT NULL,
-    "cpf" character varying(14),
+    "cpf" character varying(14) NOT NULL,
     "email" character varying(255) NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
@@ -324,6 +324,8 @@ ALTER TABLE ONLY "public"."empresas"
 
 ALTER TABLE ONLY "public"."usuarios"
     ADD CONSTRAINT "profiles_cpf_key" UNIQUE ("cpf");
+ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "profiles_cnpj_key" UNIQUE ("cnpj");
 
 
 
