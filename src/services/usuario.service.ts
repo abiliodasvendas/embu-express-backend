@@ -14,7 +14,6 @@ export const usuarioService = {
         // 1. Create Auth User
         const cpfDigits = onlyDigits(data.cpf);
         const tempPassword = cpfDigits.substring(0, 6);
-        console.log(`[createUsuario] Criando usuário no Auth com senha inicial (CPF): ${tempPassword}`);
         
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: emailNormalizado,
@@ -34,8 +33,6 @@ export const usuarioService = {
              throw new Error(messages.usuario.erro.criarAuth);
         }
 
-        console.log("[createUsuario] Usuário Auth criado:", authUser.user.id);
-
         // Extract fields that don't belong to the 'usuarios' table
         const { links, turnos, ...rest } = data;
 
@@ -52,12 +49,9 @@ export const usuarioService = {
             senha_padrao: data.status === STATUS.PENDENTE ? false : true
         };
 
-        // Ensure numeric fields are correctly typed if they exist in rest
         if (usuarioData.perfil_id) usuarioData.perfil_id = parseInt(usuarioData.perfil_id);
-        if (usuarioData.moto_ano) usuarioData.moto_ano = parseInt(usuarioData.moto_ano);
         if (usuarioData.valor_ajuda_custo) usuarioData.valor_ajuda_custo = parseFloat(usuarioData.valor_ajuda_custo);
 
-        console.log("[createUsuario] Inserindo no banco...");
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
             .insert([usuarioData])
@@ -70,11 +64,8 @@ export const usuarioService = {
             throw error;
         }
         
-        console.log("[createUsuario] Sucesso DB. ID:", inserted.id);
-
         // Sync Links (Colaborador x Cliente x Empresa x Turno)
         if (links && Array.isArray(links)) {
-            console.log("[createUsuario] Inserindo vínculos:", links.length);
             await colaboradorClienteService.syncLinks(inserted.id, links);
         }
 
@@ -191,8 +182,8 @@ export const usuarioService = {
              console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
         }
 
-        // Explicitly delete turnos first to ensure no FK constraint issues
-        await supabaseAdmin.from("usuario_turnos").delete().eq("usuario_id", id);
+        // Explicitly delete links first to ensure no FK constraint issues
+        await supabaseAdmin.from("colaborador_clientes").delete().eq("colaborador_id", id);
 
         // Always try to delete from public DB to ensure consistency (idempotent if cascade worked)
         const { error } = await supabaseAdmin
