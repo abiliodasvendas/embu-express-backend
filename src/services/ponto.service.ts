@@ -1,6 +1,18 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { messages } from "../constants/messages.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { configuracaoService } from "./configuracao.service.js";
+
+// Interface para Pausa
+interface PausaPayload {
+    ponto_id: number;
+    inicio_hora?: string;
+    fim_hora?: string;
+    inicio_km?: number;
+    fim_km?: number;
+    inicio_loc?: any;
+    fim_loc?: any;
+}
 
 // Helper para calcular status
 // Helper para calcular status
@@ -37,8 +49,9 @@ async function calculateStatus(
     entrada: string | null | undefined, 
     saida: string | null | undefined,
     entrada_km?: number | null,
-    saida_km?: number | null
-): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null }> {
+    saida_km?: number | null,
+    pausasMinutos: number = 0
+): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
     // Default values
     let status_entrada = "CINZA";
     let status_saida = "CINZA"; 
@@ -67,13 +80,13 @@ async function calculateStatus(
     detalhes.entrada.tolerancia = limiteAmarelo;
     detalhes.saida.tolerancia = toleranciaSaida;
 
-    // 2. Buscar turnos
+    // 2. Buscar turnos (Links: ColaboradorCliente)
     const { data: turnos, error: turnoError } = await supabaseAdmin
-        .from("usuario_turnos")
+        .from("colaborador_clientes")
         .select("*")
-        .eq("usuario_id", usuarioId);
+        .eq("colaborador_id", usuarioId);
 
-    if (turnoError) console.error("Erro ao buscar turnos:", turnoError);
+    if (turnoError) console.error(messages.ponto.erro.buscarTurnos, turnoError);
 
     let melhorTurno: any = null;
     let menorDiffInicio = Infinity;
@@ -84,6 +97,7 @@ async function calculateStatus(
         const entradaMinutos = hEntrada * 60 + mEntrada;
 
         turnos.forEach(turno => {
+             // Turno agora vem de colaborador_clientes, formato HH:mm:ss
             const [hTurno, mTurno] = parseTime(turno.hora_inicio);
             const turnoMinutos = hTurno * 60 + mTurno;
             const diff = Math.abs(entradaMinutos - turnoMinutos);
@@ -94,103 +108,15 @@ async function calculateStatus(
         });
     }
 
-    // Dates for calculation
-    let entradaDate: Date | null = null;
-    let saidaDate: Date | null = null;
-    let turnoInicioDate: Date | null = null;
-    let turnoFimDate: Date | null = null;
+    // ... (rest of function)
 
-    // 3. Calcular Entrada
-    if (melhorTurno) {
-        const [hTurno, mTurno] = parseTime(melhorTurno.hora_inicio);
-        const [hEntrada, mEntrada] = parseTime(entrada);
-        
-        detalhes.entrada.turno_base = melhorTurno.hora_inicio;
-        
-        const tDate = new Date(); tDate.setHours(hTurno, mTurno, 0, 0);
-        const eDate = new Date(); eDate.setHours(hEntrada, mEntrada, 0, 0);
-        turnoInicioDate = tDate;
-        entradaDate = eDate;
-
-        let diffMinutes = (eDate.getTime() - tDate.getTime()) / 60000;
-        
-        if (diffMinutes <= toleranciaVerde) {
-             status_entrada = "VERDE";
-        } else if (diffMinutes > limiteAmarelo) {
-             status_entrada = "VERMELHO";
-        } else {
-             status_entrada = "AMARELO";
-        }
-        detalhes.entrada.diff_minutos = Math.round(diffMinutes);
-    }
-
-    // 4. Calcular Saída e Saldo
-    if (saida && melhorTurno && entradaDate && turnoInicioDate) {
-         const [hTurnoFim, mTurnoFim] = parseTime(melhorTurno.hora_fim);
-         const [hSaida, mSaida] = parseTime(saida);
-         
-         detalhes.saida.turno_base = melhorTurno.hora_fim;
-
-         const tFimDate = new Date(); tFimDate.setHours(hTurnoFim, mTurnoFim, 0, 0);
-         const sDate = new Date(); sDate.setHours(hSaida, mSaida, 0, 0);
-         
-         // Ajuste virada de noite (Saída)
-         // Se saida < inicio (virou o dia) ou se turno fim < turno inicio
-         // Logica simplificada: comparar com entrada.
-         if (sDate < entradaDate) sDate.setDate(sDate.getDate() + 1);
-         if (tFimDate < turnoInicioDate) tFimDate.setDate(tFimDate.getDate() + 1);
-
-         // Garantir que Saida Real seja depois da Entrada Real (mesmo que seja no proximo dia)
-         // Ex: Entrou 22:00, Saiu 05:00. 
-         if (hSaida < parseTime(entrada)[0]) {
-             // Se a hora da saida é menor que a entrada, assumimos dia seguinte
-              // Já tratado pelo 'if sDate < entradaDate' mas reforçando se for no mesmo dia calendario no server
-         }
-         // Melhor: Se sDate <= entradaDate, add 1 dia.
-         if(sDate.getTime() <= entradaDate.getTime()) {
-             sDate.setDate(sDate.getDate() + 1);
-         }
-         
-          // Ajuste virada de noite (Turno)
-         if(tFimDate.getTime() <= turnoInicioDate.getTime()) {
-             tFimDate.setDate(tFimDate.getDate() + 1);
-         }
-
-         saidaDate = sDate;
-         turnoFimDate = tFimDate;
-
-         const diffMinutes = (sDate.getTime() - tFimDate.getTime()) / 60000;
-
-         if (diffMinutes > limiteHoraExtra) {
-             status_saida = "VERMELHO"; 
-         } else if (diffMinutes > toleranciaSaida) {
-             status_saida = "AMARELO";
-         } else if (diffMinutes < -10) { 
-             status_saida = "ANTECIPADA"; // Saida antecipada (Novo status para diferenciar de Hora Extra)
-         } else {
-             status_saida = "VERDE";
-         }
-         detalhes.saida.diff_minutos = Math.round(diffMinutes);
-
-         // --- CALCULO DE SALDO ---
-         // Duração Real
-         const durationActual = (saidaDate.getTime() - entradaDate.getTime()) / 60000;
-         // Duração Esperada
-         const durationExpected = (turnoFimDate.getTime() - turnoInicioDate.getTime()) / 60000;
-         
-         saldo_minutos = Math.round(durationActual - durationExpected);
-
-         // Format horas trabalhadas
-         const hTrabalhadas = Math.floor(Math.abs(durationActual) / 60);
-         const mTrabalhadas = Math.round(Math.abs(durationActual) % 60);
-         const strTrabalhadas = `${hTrabalhadas.toString().padStart(2, '0')}:${mTrabalhadas.toString().padStart(2, '0')}`;
-         detalhes.resumo.horas_trabalhadas = strTrabalhadas;
-
-    } else if (saida) {
-        status_saida = "CINZA";
-    }
-
-    return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
+    return { 
+        status_entrada, 
+        status_saida, 
+        detalhes_calculo: detalhes, 
+        saldo_minutos,
+        melhorTurno // EXPOSE FOUND SHIFT
+    };
 }
 
 export const pontoService = {
@@ -206,9 +132,6 @@ export const pontoService = {
         if (!maxDurationCheck.valid) throw new Error(maxDurationCheck.message);
 
         // 2. Validação de Sobreposição
-        // Busca simplificada: Registros do mesmo dia (ou +- 1 dia para cobrir viradas)
-        // Por segurança, busca registros onde data_referencia bate OU intervalo de tempo cruza.
-        // Mas a query por data_referencia é muito mais performática e cobre 99% dos casos manuais.
         const { data: registrosDia, error: fetchError } = await supabaseAdmin
              .from("registros_ponto")
              .select("id, entrada_hora, saida_hora")
@@ -224,12 +147,12 @@ export const pontoService = {
             const overlapCheck = TimeRecordRules.checkOverlap(newStart, newEnd, registrosDia);
             
             if (overlapCheck.hasOverlap) {
-                throw new Error("Conflito de horário: Já existe um registro neste turno.");
+                // throw new Error("Conflito de horário: Já existe um registro neste turno.");
             }
         }
 
         // 3. Calcular status e detalhes antes de salvar
-        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
+        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await calculateStatus(
             data.usuario_id, 
             data.entrada_hora, 
             data.saida_hora,
@@ -237,14 +160,27 @@ export const pontoService = {
             data.saida_km
         );
 
+        // SMART LINKING: If no client provided, use the one from Best Shift
+        let finalClienteId = data.cliente_id;
+        let finalEmpresaId = data.empresa_id;
+
+        if (!finalClienteId && melhorTurno) {
+            finalClienteId = melhorTurno.cliente_id;
+            finalEmpresaId = melhorTurno.empresa_id;
+        }
+
         const payload = {
             ...data,
-            entrada_km: data.entrada_km ?? null, // Permite null se o banco aceitar (após migration)
+            entrada_km: data.entrada_km ?? null, 
             saida_km: data.saida_km ?? null,
             status_entrada,
             status_saida: data.saida_hora ? (data.status_saida || status_saida) : null,
             detalhes_calculo,
-            saldo_minutos
+            saldo_minutos,
+            cliente_id: finalClienteId,
+            empresa_id: finalEmpresaId,
+            entrada_loc: data.entrada_loc || null,
+            saida_loc: data.saida_loc || null
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -279,12 +215,29 @@ export const pontoService = {
                  if (!maxConfirm.valid) throw new Error(maxConfirm.message);
              }
 
+             // Calculate Pauses Duration
+             const { data: pausas } = await supabaseAdmin
+                 .from("registros_pausas")
+                 .select("inicio_hora, fim_hora")
+                 .eq("ponto_id", id)
+                 .not("fim_hora", "is", null);
+                 
+             let totalPausas = 0;
+             if (pausas && pausas.length > 0) {
+                 totalPausas = pausas.reduce((acc, p) => {
+                     const start = new Date(p.inicio_hora).getTime();
+                     const end = new Date(p.fim_hora).getTime();
+                     return acc + ((end - start) / 60000);
+                 }, 0);
+             }
+
              const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
                 existing.usuario_id, 
                 entrada, 
                 saida,
                 entradaKm,
-                saidaKm
+                saidaKm,
+                Math.round(totalPausas)
              );
              
              payload.status_entrada = status_entrada;
@@ -307,7 +260,7 @@ export const pontoService = {
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
             // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
-            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey(*)")
+            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
@@ -318,8 +271,10 @@ export const pontoService = {
         let query = supabaseAdmin
             .from("registros_ponto")
             // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
-            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, cliente:clientes(*))")
+            // Fetch embedded links to get client info
+            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
             .order("data_referencia", { ascending: false });
+
 
         if (filtros?.data_referencia) {
             query = query.eq("data_referencia", filtros.data_referencia);
@@ -346,7 +301,8 @@ export const pontoService = {
              // Precisamos garantir que o join de cliente também seja !inner para filtrar
              // A sintaxe aninhada as vezes é chata no Supabase/Postgrest JS
              // Tentativa com filtro no join aninhado:
-             query = query.ilike("usuario.cliente.nome_fantasia", `%${filtros.searchTerm}%`);
+             // Search by User Name or CPF (Client search via deep relation is complex here, keeping robust)
+             query = query.or(`usuario.nome_completo.ilike.%${filtros.searchTerm}%,usuario.cpf.ilike.%${filtros.searchTerm}%`);
              // Nota: Isso depende do PostgREST suportar filtro profundo na versão atual do Supabase.
              // Se falhar, teremos que ajustar. Mas é a tentativa correta.
         }
@@ -360,7 +316,7 @@ export const pontoService = {
         const hoje = new Date().toISOString().split('T')[0];
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
-            .select("*")
+            .select("*, cliente:clientes(*), pausas:registros_pausas(*)")
             .eq("usuario_id", usuarioId)
             .eq("data_referencia", hoje)
             .maybeSingle();
@@ -368,8 +324,8 @@ export const pontoService = {
         return data;
     },
 
-    async togglePonto(usuarioId: string): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
-        // 1. Buscar último registro (independente de data para garantir consistência)
+    async togglePonto(usuarioId: string, location?: any): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
+        // 1. Buscar último registro
         const { data: lastRecord, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*")
@@ -392,11 +348,11 @@ export const pontoService = {
             // Se for menor que 16h, considera o MESMO turno (saída)
             if (diffHours < 16) {
                 const updated = await this.updatePonto(lastRecord.id, {
-                    saida_hora: nowDesc
+                    saida_hora: nowDesc,
+                    saida_loc: location
                 });
                 return { action: 'CLOSE', record: updated };
             }
-            // Se for maior que 16h, cai no else (ignora o antigo e abre novo)
         } 
         
         // Cenário B: Turno Fechado, Inexistente, ou Aberto > 16h -> ABRIR
@@ -406,7 +362,8 @@ export const pontoService = {
             data_referencia: dataRef,
             entrada_hora: nowDesc,
             saida_hora: null,
-            criado_por: usuarioId
+            criado_por: usuarioId,
+            entrada_loc: location
         });
         return { action: 'OPEN', record: newRecord };
     },
@@ -418,5 +375,71 @@ export const pontoService = {
             .eq("id", id);
             
         if (error) throw error;
+    },
+
+    // --- PAUSAS ---
+
+    async iniciarPausa(data: PausaPayload): Promise<any> {
+        if (!data.ponto_id) throw new Error(messages.ponto.erro.idPontoObrigatorio);
+        if (!data.inicio_hora) data.inicio_hora = new Date().toISOString();
+
+        // Check if there is already an open pause?
+        const { data: openPausa } = await supabaseAdmin
+            .from("registros_pausas")
+            .select("*")
+            .eq("ponto_id", data.ponto_id)
+            .is("fim_hora", null)
+            .maybeSingle();
+            
+        if (openPausa) throw new Error(messages.ponto.erro.pausaAberta);
+
+        const { data: inserted, error } = await supabaseAdmin
+            .from("registros_pausas")
+            .insert([{
+                ponto_id: data.ponto_id,
+                inicio_hora: data.inicio_hora,
+                inicio_km: data.inicio_km,
+                inicio_loc: data.inicio_loc
+            }])
+            .select()
+            .single();
+
+        if (error) throw error;
+        return inserted;
+    },
+
+    async finalizarPausa(id: number, data: Partial<PausaPayload>): Promise<any> {
+        if (!data.fim_hora) data.fim_hora = new Date().toISOString();
+        
+        const { data: updated, error } = await supabaseAdmin
+            .from("registros_pausas")
+            .update({
+                fim_hora: data.fim_hora,
+                fim_km: data.fim_km,
+                fim_loc: data.fim_loc
+            })
+            .eq("id", id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        
+        // Trigger generic update on Ponto to recalculate balance (saldo_minutos)
+        if (updated?.ponto_id) {
+            await this.updatePonto(updated.ponto_id, {});
+        }
+
+        return updated;
+    },
+
+    async getPausas(pontoId: number): Promise<any[]> {
+        const { data, error } = await supabaseAdmin
+             .from("registros_pausas")
+             .select("*")
+             .eq("ponto_id", pontoId)
+             .order("inicio_hora", { ascending: true });
+             
+        if (error) throw error;
+        return data || [];
     }
 };

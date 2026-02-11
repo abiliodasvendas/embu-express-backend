@@ -1,9 +1,10 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { messages } from "../constants/messages.js";
 import { cleanString } from "../utils/utils.js";
 
 export const clientService = {
     async createClient(data: any): Promise<any> {
-        if (!data.nome_fantasia) throw new Error("Nome fantasia é obrigatório");
+        if (!data.nome_fantasia) throw new Error(messages.cliente.erro.nomeObrigatorio);
 
         const clientData: any = {
             ...data,
@@ -25,7 +26,7 @@ export const clientService = {
     },
 
     async updateClient(id: number, data: Partial<any>): Promise<any> {
-        if (!id) throw new Error("ID do cliente é obrigatório");
+        if (!id) throw new Error(messages.cliente.erro.idObrigatorio);
 
         const clientData: any = { ...data };
         if (data.nome_fantasia) clientData.nome_fantasia = cleanString(data.nome_fantasia);
@@ -45,7 +46,7 @@ export const clientService = {
     },
 
     async deleteClient(id: number): Promise<void> {
-        if (!id) throw new Error("ID do cliente é obrigatório");
+        if (!id) throw new Error(messages.cliente.erro.idObrigatorio);
 
         const { error } = await supabaseAdmin.from("clientes").delete().eq("id", id);
         if (error) throw error;
@@ -103,7 +104,7 @@ export const clientService = {
             .update({ ativo: novoStatus })
             .eq("id", id);
 
-        if (error) throw new Error(`Falha ao ${novoStatus ? "ativar" : "desativar"} o cliente.`);
+        if (error) throw new Error(messages.cliente.erro.falhaAtivarDesativar.replace("{acao}", novoStatus ? "ativar" : "desativar"));
         return novoStatus;
     },
 };

@@ -1,14 +1,16 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { messages } from "../constants/messages.js";
 import { cleanString } from "../utils/utils.js";
 
 export const empresaService = {
     async createEmpresa(data: any): Promise<any> {
-        if (!data.nome_fantasia) throw new Error("Nome fantasia é obrigatório");
+        if (!data.nome_fantasia) throw new Error(messages.empresa.erro.nomeObrigatorio);
 
         const empresaData: any = {
             ...data,
             nome_fantasia: cleanString(data.nome_fantasia),
             razao_social: data.razao_social ? cleanString(data.razao_social) : null,
+            codigo: data.codigo ? data.codigo.trim().toUpperCase() : null,
             ativo: data.ativo !== undefined ? data.ativo : true,
             cnpj: data.cnpj ? data.cnpj.replace(/\D/g, "") : null,
         };
@@ -24,11 +26,12 @@ export const empresaService = {
     },
 
     async updateEmpresa(id: number, data: Partial<any>): Promise<any> {
-        if (!id) throw new Error("ID da empresa é obrigatório");
+        if (!id) throw new Error(messages.empresa.erro.idObrigatorio);
 
         const empresaData: any = { ...data };
         if (data.nome_fantasia) empresaData.nome_fantasia = cleanString(data.nome_fantasia);
         if (data.razao_social) empresaData.razao_social = cleanString(data.razao_social);
+        if (data.codigo) empresaData.codigo = data.codigo.trim().toUpperCase();
         if (data.cnpj) empresaData.cnpj = data.cnpj.replace(/\D/g, "");
 
         const { data: updated, error } = await supabaseAdmin
@@ -43,7 +46,7 @@ export const empresaService = {
     },
 
     async deleteEmpresa(id: number): Promise<void> {
-        if (!id) throw new Error("ID da empresa é obrigatório");
+        if (!id) throw new Error(messages.empresa.erro.idObrigatorio);
 
         const { error } = await supabaseAdmin.from("empresas").delete().eq("id", id);
         if (error) throw error;
@@ -102,7 +105,7 @@ export const empresaService = {
             .update({ ativo: novoStatus })
             .eq("id", id);
 
-        if (error) throw new Error(`Falha ao ${novoStatus ? "ativar" : "desativar"} a empresa.`);
+        if (error) throw new Error(messages.empresa.erro.falhaAtivarDesativar.replace("{acao}", novoStatus ? "ativar" : "desativar"));
         return novoStatus;
     },
 };

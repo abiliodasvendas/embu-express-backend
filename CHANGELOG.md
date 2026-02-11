@@ -58,7 +58,7 @@ Requisição → api/index.ts (handler)
 ### 📋 Estrutura Final
 
 ```
-van360-backend/
+embu-express-backend/
 ├── api/
 │   └── index.ts          # Handler Vercel (serverless)
 ├── src/

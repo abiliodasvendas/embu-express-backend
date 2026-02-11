@@ -1,3 +1,5 @@
+import { messages } from "../constants/messages.js";
+
 export class TimeRecordRules {
     /**
      * Valida se a ordem cronológica dos horários está correta.
@@ -17,7 +19,7 @@ export class TimeRecordRules {
             // Tenta verificar se foi apenas um erro de input de hora virando o dia
             // Mas o ISO já deve vir corrigido do frontend/service.
             // Se chegou aqui com timestamp menor, é erro.
-            return { valid: false, message: "A hora de saída não pode ser anterior à hora de entrada." };
+            return { valid: false, message: messages.ponto.erro.ordemInvalida };
         }
 
         return { valid: true };
@@ -38,7 +40,7 @@ export class TimeRecordRules {
         const diffMinutes = diffMs / (1000 * 60);
 
         if (diffMinutes < minMinutes) {
-            return { valid: false, message: `O registro deve ter duração mínima de ${minMinutes} minuto(s).` };
+            return { valid: false, message: messages.ponto.erro.duracaoMinima.replace("{min}", minMinutes.toString()) };
         }
 
         return { valid: true };
@@ -57,7 +59,7 @@ export class TimeRecordRules {
         const diffHours = diffMs / (1000 * 60 * 60);
 
         if (diffHours > maxHours) {
-            return { valid: false, message: `O registro excede o limite máximo de ${maxHours} horas.` };
+            return { valid: false, message: messages.ponto.erro.duracaoMaxima.replace("{max}", maxHours.toString()) };
         }
 
         return { valid: true };

@@ -1,26 +1,23 @@
+import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
-import { cleanString } from "../utils/utils.js";
-import { validateShifts } from "../utils/validators.js";
+import { messages } from "../constants/messages.js";
+import { cleanString, onlyDigits } from "../utils/utils.js";
+import { colaboradorClienteService } from "./colaborador-cliente.service.js";
 
 export const usuarioService = {
     async createUsuario(data: any): Promise<any> {
-        console.log("[createUsuario] Iniciando criação...", { email: data.email, perfil: data.perfil_id });
-        
-        if (!data.email) throw new Error("Email é obrigatório");
-        if (!data.nome_completo) throw new Error("Nome completo é obrigatório");
-        if (!data.perfil_id) throw new Error("Perfil é obrigatório");
-
-        // Validate Shifts before anything else
-        if (data.turnos && Array.isArray(data.turnos)) {
-            validateShifts(data.turnos);
-        }
+        const emailNormalizado = data.email?.toLowerCase().trim();
+        if (!emailNormalizado) throw new Error(messages.usuario.erro.emailObrigatorio);
+        if (!data.nome_completo) throw new Error(messages.usuario.erro.nomeObrigatorio);
+        if (!data.perfil_id) throw new Error(messages.usuario.erro.perfilObrigatorio);
 
         // 1. Create Auth User
-        const tempPassword = "Tempo" + Math.random().toString(36).slice(-8) + "!"; // Strong temp password
-        console.log("[createUsuario] Criando usuário no Auth...");
+        const cpfDigits = onlyDigits(data.cpf);
+        const tempPassword = cpfDigits.substring(0, 6);
+        console.log(`[createUsuario] Criando usuário no Auth com senha inicial (CPF): ${tempPassword}`);
         
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-            email: data.email,
+            email: emailNormalizado,
             password: tempPassword,
             email_confirm: true,
             user_metadata: {
@@ -34,97 +31,82 @@ export const usuarioService = {
         }
         
         if (!authUser?.user) {
-             console.error("[createUsuario] Usuário não retornado pelo Auth");
-             throw new Error("Erro ao criar usuário no Auth");
+             throw new Error(messages.usuario.erro.criarAuth);
         }
 
         console.log("[createUsuario] Usuário Auth criado:", authUser.user.id);
 
-        const { turnos, ...rest } = data;
+        // Extract fields that don't belong to the 'usuarios' table
+        const { links, turnos, ...rest } = data;
 
+        // Prepare Usuario Data
         const usuarioData: any = {
             ...rest,
-            id: authUser.user.id, // Use Auth ID
+            id: authUser.user.id,
+            email: emailNormalizado,
             nome_completo: cleanString(data.nome_completo),
-            ativo: data.ativo !== undefined ? data.ativo : true,
-            primeiro_acesso: true, // Force password change
+            perfil_id: data.perfil_id,
+            cpf: onlyDigits(data.cpf),
+            telefone: onlyDigits(data.telefone),
+            status: data.status || STATUS.ATIVO, 
+            senha_padrao: data.status === STATUS.PENDENTE ? false : true
         };
+
+        // Ensure numeric fields are correctly typed if they exist in rest
+        if (usuarioData.perfil_id) usuarioData.perfil_id = parseInt(usuarioData.perfil_id);
+        if (usuarioData.moto_ano) usuarioData.moto_ano = parseInt(usuarioData.moto_ano);
+        if (usuarioData.valor_ajuda_custo) usuarioData.valor_ajuda_custo = parseFloat(usuarioData.valor_ajuda_custo);
 
         console.log("[createUsuario] Inserindo no banco...");
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
             .insert([usuarioData])
-            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*)")
+            .select("*, perfil:perfis(*)")
             .single();
 
         if (error) {
             console.error("[createUsuario] Erro no Banco:", error);
-            // Rollback Auth if DB fails
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
             throw error;
         }
         
         console.log("[createUsuario] Sucesso DB. ID:", inserted.id);
 
-        // Sync turnos if provided
-        if (turnos && Array.isArray(turnos)) {
-            console.log("[createUsuario] Inserindo turnos:", turnos.length);
-            const turnosData = turnos.map(t => ({
-                usuario_id: inserted.id,
-                hora_inicio: t.hora_inicio,
-                hora_fim: t.hora_fim
-            }));
-            const { error: turnosError } = await supabaseAdmin
-                .from("usuario_turnos")
-                .insert(turnosData);
-            if (turnosError) {
-                 console.error("[createUsuario] Erro ao inserir turnos:", turnosError);
-                 throw turnosError;
-            }
+        // Sync Links (Colaborador x Cliente x Empresa x Turno)
+        if (links && Array.isArray(links)) {
+            console.log("[createUsuario] Inserindo vínculos:", links.length);
+            await colaboradorClienteService.syncLinks(inserted.id, links);
         }
 
         return this.getUsuario(inserted.id);
     },
 
     async updateUsuario(id: string, data: Partial<any>): Promise<any> {
-        if (!id) throw new Error("ID do usuário é obrigatório");
+        if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
 
-        const { turnos, ...rest } = data;
-
-        // Validate Shifts if being updated
-        if (turnos && Array.isArray(turnos)) {
-            validateShifts(turnos);
-        }
+        // Extract fields that don't belong to the 'usuarios' table or are handled separately
+        const { links, turnos, cliente_id, empresa_id, ativo, ...rest } = data;
 
         const usuarioData: any = { ...rest };
+        if (ativo !== undefined) {
+            usuarioData.status = ativo ? STATUS.ATIVO : STATUS.INATIVO;
+        }
         if (data.nome_completo) usuarioData.nome_completo = cleanString(data.nome_completo);
+        if (data.cpf) usuarioData.cpf = onlyDigits(data.cpf);
+        if (data.telefone) usuarioData.telefone = onlyDigits(data.telefone);
+
 
         const { data: updated, error } = await supabaseAdmin
             .from("usuarios")
             .update(usuarioData)
             .eq("id", id)
-            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*)")
+            .select("*, perfil:perfis(*)")
             .single();
         if (error) throw error;
 
-        // Sync turnos if provided
-        if (turnos && Array.isArray(turnos)) {
-            // Remove existing turnos and insert new ones (simple sync)
-            const { error: deleteError } = await supabaseAdmin
-                .from("usuario_turnos")
-                .delete()
-                .eq("usuario_id", id);
-            if (deleteError) throw deleteError;
-
-            const turnosData = turnos.map(t => ({
-                usuario_id: id,
-                hora_inicio: t.hora_inicio,
-                hora_fim: t.hora_fim
-            }));
-            const { error: turnosError } = await supabaseAdmin
-                .from("usuario_turnos")
-                .insert(turnosData);
-            if (turnosError) throw turnosError;
+        // Sync Links
+        if (links && Array.isArray(links)) {
+            await colaboradorClienteService.syncLinks(id, links);
         }
 
         return this.getUsuario(id);
@@ -133,23 +115,27 @@ export const usuarioService = {
     async getUsuario(id: string): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*), turnos:usuario_turnos(*)")
+            .select("*, perfil:perfis(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
-        return data;
+
+        // Fetch Links separately (or could use join if configured)
+        const links = await colaboradorClienteService.listLinks(id);
+        
+        return { ...data, links }; // Return nested links
     },
 
     async listUsuarios(filtros?: {
         searchTerm?: string;
         perfil_id?: number;
-        cliente_id?: number;
-        empresa_id?: number;
-        ativo?: string;
+        cliente_id?: number; 
+        empresa_id?: number; 
+        status?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), cliente:clientes(*), empresa:empresas(*), turnos:usuario_turnos(*)")
+            .select("*, perfil:perfis(*), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia))")
             .order("nome_completo", { ascending: true });
 
         if (filtros?.searchTerm) {
@@ -159,22 +145,44 @@ export const usuarioService = {
         }
 
         if (filtros?.perfil_id) query = query.eq("perfil_id", filtros.perfil_id);
-        if (filtros?.cliente_id) query = query.eq("cliente_id", filtros.cliente_id);
-        if (filtros?.empresa_id) query = query.eq("empresa_id", filtros.empresa_id);
         
-        // Fix: Explicitly check for boolean true/false string
-        if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {
-             query = query.eq("ativo", filtros.ativo === "true");
+        if (filtros?.status && filtros.status !== "todos") {
+             if (filtros.status === 'ativo') {
+                 query = query.eq("status", STATUS.ATIVO);
+             } else if (filtros.status === 'inativo') {
+                 query = query.eq("status", STATUS.INATIVO);
+                 // Let's assume strict mapping for now, but usually 'inativo' in filter might mean everything not active.
+                 // Given the specific new statuses, let's map commonly.
+                 // But wait, the frontend might send 'PENDENTE' specifically.
+                 // Let's stick to what the value actually is if it matches a known status.
+             } else {
+                 query = query.eq("status", filtros.status.toUpperCase());
+             }
         }
 
-        const { data, error } = await query;
+        const { data: users, error } = await query;
         if (error) throw error;
 
-        return data || [];
+        let result = users || [];
+
+        // Apply Link Filters (Client/Company)
+        if (filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos') {
+             result = result.filter((u: any) => 
+                 u.links?.some((l: any) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
+             );
+        }
+
+        if (filtros?.empresa_id && filtros.empresa_id.toString() !== 'todos') {
+             result = result.filter((u: any) => 
+                 u.links?.some((l: any) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
+             );
+        }
+
+        return result;
     },
 
     async deleteUsuario(id: string): Promise<void> {
-        if (!id) throw new Error("ID do usuário é obrigatório");
+        if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
         
         // Delete from Auth (Cascade should handle public.usuarios if configured, otherwise we delete manually too)
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
@@ -195,13 +203,13 @@ export const usuarioService = {
         if (error) throw error;
     },
 
-    async toggleAtivo(id: string, novoStatus: boolean): Promise<boolean> {
+    async updateStatus(id: string, novoStatus: string): Promise<string> {
         const { error } = await supabaseAdmin
             .from("usuarios")
-            .update({ ativo: novoStatus })
+            .update({ status: novoStatus })
             .eq("id", id);
 
-        if (error) throw new Error(`Falha ao ${novoStatus ? "ativar" : "desativar"} o usuário.`);
+        if (error) throw new Error(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`);
         return novoStatus;
     },
 };

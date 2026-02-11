@@ -1,28 +1,18 @@
-// Aplicação Fastify compartilhada
-// Usado tanto para desenvolvimento local quanto para Vercel serverless
 import fastifyCors from "@fastify/cors";
 import Fastify, { FastifyInstance } from "fastify";
-import routes from "./api/routes.js";
+import { logger } from "./config/logger.js";
+import { globalErrorHandler } from "./errors/errorHandler.js";
+import routes from "./routes/index.js";
 
 export async function createApp(): Promise<FastifyInstance> {
   try {
     const app = Fastify({
-      logger: {
-        level: process.env.LOG_LEVEL || "info",
-        transport:
-          process.env.NODE_ENV !== "production"
-            ? {
-                target: "pino-pretty",
-                options: { 
-                  colorize: true,
-                  translateTime: 'HH:MM:ss Z',
-                  ignore: 'pid,hostname',
-                  singleLine: true
-                },
-              }
-            : undefined,
-      },
-    });
+      loggerInstance: logger as any,
+      disableRequestLogging: false,
+    }) as FastifyInstance;
+
+    // Global Error Handler
+    app.setErrorHandler(globalErrorHandler);
 
     // Configuração de CORS
     const allowedOrigins = process.env.ALLOWED_ORIGINS
