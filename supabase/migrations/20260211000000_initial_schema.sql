@@ -346,9 +346,6 @@ CREATE TABLE IF NOT EXISTS "public"."usuarios" (
     "moto_cor" "text",
     "moto_ano" "text",
     "moto_placa" "text",
-    "nome_operacao" "text",
-    "empresa_financeiro_id" bigint,
-    "valor_ajuda_custo" numeric(10,2) DEFAULT 0,
     "senha_padrao" boolean DEFAULT false
 );
 
@@ -510,11 +507,6 @@ ALTER TABLE ONLY "public"."registros_ponto"
 
 ALTER TABLE ONLY "public"."registros_ponto"
     ADD CONSTRAINT "registros_ponto_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "public"."usuarios"("id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."usuarios"
-    ADD CONSTRAINT "usuarios_empresa_financeiro_id_fkey" FOREIGN KEY ("empresa_financeiro_id") REFERENCES "public"."empresas"("id");
 
 
 
