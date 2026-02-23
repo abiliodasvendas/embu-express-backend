@@ -40,19 +40,11 @@ export const ROLES = {
     ADMIN: 'admin',
     MOTOBOY: 'motoboy',
     CLIENTE: 'cliente',
-    CEO: 'ceo',
-    DIRETOR: 'diretor',
-    COORDENADOR: 'coordenador',
-    SUPERVISOR: 'supervisor',
-    FISCAL: 'fiscal',
-    FINANCEIRO_CAR: 'financeiro_car',
-    FINANCEIRO_CAP: 'financeiro_cap',
-    FINANCEIRO_RH: 'financeiro_rh',
-    ORGANIZADORA: 'organizadora',
 } as const;
 
 export const PROTECTED_ROLES_NAMES = [
     ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
     ROLES.CLIENTE,
     ROLES.MOTOBOY
 ];
