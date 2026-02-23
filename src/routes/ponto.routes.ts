@@ -1,8 +1,11 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { PERMISSIONS } from "../constants/permissions.enum.js";
+import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { pontoService } from "../services/ponto.service.js";
 
 const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-    app.post("/", async (request: any, reply) => {
+    // ADMIN: Inserção manual de ponto
+    app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_CRIAR)] }, async (request: any, reply) => {
         const data = request.body as any;
         try {
             const result = await pontoService.registrarPonto(data);
@@ -12,14 +15,12 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.post("/toggle", async (request: any, reply) => {
-        // Agora aceita location
+    // OPERACIONAL: Motoboy batendo ponto
+    app.post("/toggle", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
         const { usuario_id, location } = request.body as any;
-        
-        // Se nao vier no body, tentar pegar do usuario logado (se houver middleware)
-        // Por enquanto, mobile manda no body
+
         if (!usuario_id) return reply.status(400).send({ error: "usuario_id obrigatório" });
-        
+
         try {
             const result = await pontoService.togglePonto(usuario_id, location);
             return reply.status(200).send(result);
@@ -28,25 +29,28 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    // Endpoint flexivel para "Hoje"
-    app.get("/hoje", async (request: any, reply) => {
-         const { usuarioId } = request.query as any;
-         
-         if (!usuarioId) {
-             return reply.status(400).send({ error: "usuarioId obrigatorio na query" });
-         }
-         
-         try {
+    // OPERACIONAL / ADMIN: Ver ponto de hoje (Usado pelo App para mostrar status)
+    // Permite que tanto quem bate ponto quanto quem monitora consigam ver.
+    app.get("/hoje", {
+        preHandler: [verifyPermissao([PERMISSIONS.PONTO.REGISTRAR, PERMISSIONS.PONTO.ADMIN_VER])]
+    }, async (request: any, reply) => {
+        const { usuarioId } = request.query as any;
+
+        if (!usuarioId) {
+            return reply.status(400).send({ error: "usuarioId obrigatorio na query" });
+        }
+
+        try {
             const result = await pontoService.getPontoHoje(usuarioId);
-            // IMPORTANT: Return null if not found, NOT empty object, otherwise frontend thinks it's a valid record
             return reply.status(200).send(result);
-         } catch (err: any) {
+        } catch (err: any) {
             console.error("[API] GET /hoje error:", err);
             return reply.status(400).send({ error: err.message });
-         }
+        }
     });
 
-    app.put("/:id", async (request: any, reply) => {
+    // ADMIN: Editar ponto manualmente
+    app.put("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_EDITAR)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {
@@ -57,7 +61,8 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.delete("/:id", async (request: any, reply) => {
+    // ADMIN: Deletar ponto
+    app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_DELETAR)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         try {
             await pontoService.deletePonto(id);
@@ -67,7 +72,8 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.get("/:id", async (request: any, reply) => {
+    // ADMIN: Ver detalhes de um ponto específico
+    app.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         try {
             const result = await pontoService.getPonto(id);
@@ -77,7 +83,8 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.get("/", async (request: any, reply) => {
+    // ADMIN: Listar pontos
+    app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, async (request: any, reply) => {
         const filtros = request.query;
         try {
             const result = await pontoService.listPontos(filtros);
@@ -87,7 +94,10 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.get("/hoje/:usuarioId", async (request: any, reply) => {
+    // OPERACIONAL / ADMIN
+    app.get("/hoje/:usuarioId", {
+        preHandler: [verifyPermissao([PERMISSIONS.PONTO.REGISTRAR, PERMISSIONS.PONTO.ADMIN_VER])]
+    }, async (request: any, reply) => {
         const usuarioId = request.params["usuarioId"] as string;
         try {
             const result = await pontoService.getPontoHoje(usuarioId);
@@ -97,49 +107,49 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    // --- PAUSAS ---
-    app.post("/pausa/inicio", async (request: any, reply) => {
+    // --- PAUSAS (OPERACIONAL) ---
+    app.post("/pausa/inicio", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
         const data = request.body as any;
         try {
-             const result = await pontoService.iniciarPausa(data);
-             return reply.status(201).send(result);
+            const result = await pontoService.iniciarPausa(data);
+            return reply.status(201).send(result);
         } catch (err: any) {
-             return reply.status(400).send({ error: err.message });
+            return reply.status(400).send({ error: err.message });
         }
     });
 
     // RESTful: Iniciar pausa de um ponto específico
-    app.post("/:id/pausas", async (request: any, reply) => {
+    app.post("/:id/pausas", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
         const ponto_id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {
-             const result = await pontoService.iniciarPausa({ ...data, ponto_id });
-             return reply.status(201).send(result);
+            const result = await pontoService.iniciarPausa({ ...data, ponto_id });
+            return reply.status(201).send(result);
         } catch (err: any) {
-             return reply.status(400).send({ error: err.message });
+            return reply.status(400).send({ error: err.message });
         }
     });
 
-    app.post("/pausa/fim", async (request: any, reply) => {
+    app.post("/pausa/fim", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
         const { id, ...data } = request.body as any;
         if (!id) return reply.status(400).send({ error: "ID da pausa obrigatório" });
         try {
-             const result = await pontoService.finalizarPausa(id, data);
-             return reply.status(200).send(result);
+            const result = await pontoService.finalizarPausa(id, data);
+            return reply.status(200).send(result);
         } catch (err: any) {
-             return reply.status(400).send({ error: err.message });
+            return reply.status(400).send({ error: err.message });
         }
     });
 
     // RESTful: Finalizar uma pausa específica
-    app.put("/pausas/:id", async (request: any, reply) => {
+    app.put("/pausas/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {
-             const result = await pontoService.finalizarPausa(id, data);
-             return reply.status(200).send(result);
+            const result = await pontoService.finalizarPausa(id, data);
+            return reply.status(200).send(result);
         } catch (err: any) {
-             return reply.status(400).send({ error: err.message });
+            return reply.status(400).send({ error: err.message });
         }
     });
 };

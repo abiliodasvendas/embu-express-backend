@@ -1,4 +1,4 @@
-import { PERFIL_ID, STATUS } from "../config/constants.js";
+import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { cleanString, onlyDigits } from "../utils/utils.js";
 
@@ -9,16 +9,25 @@ export interface AuthSession {
 }
 
 import { messages } from "../constants/messages.js";
+import { ROLES } from "../constants/permissions.enum.js";
 
 export const authService = {
     async login(cpf: string, password: string): Promise<AuthSession> {
         // 1. Find user by CPF to get email
         const cpfDigits = onlyDigits(cpf);
         if (!cpfDigits) throw new Error(messages.auth.erro.cpfSenhaObrigatorios);
-        
+
         const { data: user, error: userError } = await supabaseAdmin
             .from("usuarios")
-            .select("email, status, perfil_id, senha_padrao")
+            .select(`
+                email, status, perfil_id, senha_padrao,
+                perfil:perfis(
+                    nome,
+                    perfil_permissoes(
+                        permissao:permissoes(nome_interno)
+                    )
+                )
+            `)
             .eq("cpf", cpfDigits)
             .single();
 
@@ -43,13 +52,20 @@ export const authService = {
             throw new Error(messages.auth.erro.credenciaisInvalidas);
         }
 
+        // Formatar as permissões para um array de strings simples: ["usuarios:ver", "perfis:criar"]
+        const permissoesArray = (user.perfil as any)?.perfil_permissoes?.map(
+            (pp: any) => pp.permissao.nome_interno
+        ) || [];
+
         return {
             access_token: authData.session.access_token,
             refresh_token: authData.session.refresh_token,
             user: {
                 ...authData.user,
                 perfil_id: user.perfil_id,
-                senha_padrao: user.senha_padrao
+                perfil_nome: (user.perfil as any)?.nome,
+                senha_padrao: user.senha_padrao,
+                permissoes: permissoesArray
             }
         };
     },
@@ -118,6 +134,19 @@ export const authService = {
 
         try {
             // 2. Create Profile
+            // Buscar o ID dinâmico do perfil motoboy
+            const { data: perfilMotoboy } = await supabaseAdmin
+                .from("perfis")
+                .select("id")
+                .eq("nome", ROLES.MOTOBOY)
+                .single();
+
+            if (!perfilMotoboy) {
+                throw new Error("Perfil de motoboy não encontrado no sistema.");
+            }
+
+            const perfilMotoboyId = perfilMotoboy.id;
+
             const usuarioData = {
                 id: authUser.user.id,
                 email: emailNormalizado,
@@ -138,7 +167,7 @@ export const authService = {
                 cnh_categoria: profileData.cnh_categoria?.toUpperCase(),
                 chave_pix: profileData.chave_pix,
                 status: STATUS.PENDENTE,
-                perfil_id: PERFIL_ID.MOTOBOY
+                perfil_id: perfilMotoboyId
             };
 
             const { data: inserted, error: dbError } = await supabaseAdmin

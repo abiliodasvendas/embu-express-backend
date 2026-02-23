@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { PERMISSIONS } from "../constants/permissions.enum.js";
+import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { clientService } from "../services/client.service.js";
 
 const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-    app.post("/", async (request: any, reply) => {
+    app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.CRIAR)] }, async (request: any, reply) => {
         const data = request.body as any;
         try {
             const result = await clientService.createClient(data);
@@ -12,7 +14,7 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.put("/:id", async (request: any, reply) => {
+    app.put("/:id", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.EDITAR)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {
@@ -23,7 +25,7 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.delete("/:id", async (request: any, reply) => {
+    app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.DELETAR)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         try {
             await clientService.deleteClient(id);
@@ -33,7 +35,7 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.patch("/:id/toggle-ativo", async (request: any, reply) => {
+    app.patch("/:id/toggle-ativo", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.STATUS)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         const { novoStatus } = request.body as { novoStatus: boolean };
         try {
@@ -44,7 +46,7 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.get("/:id", async (request: any, reply) => {
+    app.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.VER)] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         try {
             const result = await clientService.getClient(id);
@@ -54,7 +56,7 @@ const clientRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.get("/", async (request: any, reply) => {
+    app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.CLIENTES.VER)] }, async (request: any, reply) => {
         const { searchTerm, ativo, includeId } = request.query;
         try {
             const result = await clientService.listClients({

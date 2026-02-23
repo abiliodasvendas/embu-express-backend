@@ -1,9 +1,11 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { PERMISSIONS } from "../constants/permissions.enum.js";
+import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { empresaService } from "../services/empresa.service.js";
 
 const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Listar empresas
-    app.get("/", async (request: any, reply) => {
+    app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.VER)] }, async (request: any, reply) => {
         try {
             const { searchTerm, ativo, includeId } = request.query as any;
             const empresas = await empresaService.listEmpresas({ searchTerm, ativo, includeId });
@@ -14,7 +16,7 @@ const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // Obter empresa por ID
-    app.get("/:id", async (request: any, reply) => {
+    app.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.VER)] }, async (request: any, reply) => {
         try {
             const id = parseInt(request.params["id"]);
             const empresa = await empresaService.getEmpresa(id);
@@ -25,7 +27,7 @@ const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // Criar nova empresa
-    app.post("/", async (request: any, reply) => {
+    app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.CRIAR)] }, async (request: any, reply) => {
         try {
             const novaEmpresa = await empresaService.createEmpresa(request.body);
             return reply.status(201).send(novaEmpresa);
@@ -35,7 +37,7 @@ const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // Atualizar empresa
-    app.put("/:id", async (request: any, reply) => {
+    app.put("/:id", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.EDITAR)] }, async (request: any, reply) => {
         try {
             const id = parseInt(request.params["id"]);
             const atualizada = await empresaService.updateEmpresa(id, request.body);
@@ -46,15 +48,15 @@ const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // Toggle Status (Ativar/Desativar)
-    app.patch("/:id/toggle-ativo", async (request: any, reply) => {
+    app.patch("/:id/toggle-ativo", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.STATUS)] }, async (request: any, reply) => {
         try {
             const id = parseInt(request.params["id"]);
             const { novoStatus } = request.body as { novoStatus: boolean };
-            
+
             if (novoStatus === undefined) {
                 return reply.status(400).send({ error: "Status obrigatório" });
             }
-            
+
             await empresaService.toggleAtivo(id, novoStatus);
             return reply.status(200).send({ success: true, ativo: novoStatus });
         } catch (error: any) {
@@ -63,7 +65,7 @@ const empresaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // Deletar empresa
-    app.delete("/:id", async (request: any, reply) => {
+    app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.EMPRESAS.DELETAR)] }, async (request: any, reply) => {
         try {
             const id = parseInt(request.params["id"]);
             await empresaService.deleteEmpresa(id);
