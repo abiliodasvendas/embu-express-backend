@@ -14,7 +14,7 @@ export const usuarioService = {
         // 1. Create Auth User
         const cpfDigits = onlyDigits(data.cpf);
         const tempPassword = cpfDigits.substring(0, 6);
-        
+
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: emailNormalizado,
             password: tempPassword,
@@ -28,9 +28,9 @@ export const usuarioService = {
             console.error("[createUsuario] Erro no Auth:", authError);
             throw authError;
         }
-        
+
         if (!authUser?.user) {
-             throw new Error(messages.usuario.erro.criarAuth);
+            throw new Error(messages.usuario.erro.criarAuth);
         }
 
         // Extract fields that don't belong to the 'usuarios' table
@@ -44,8 +44,10 @@ export const usuarioService = {
             nome_completo: cleanString(data.nome_completo),
             perfil_id: data.perfil_id,
             cpf: onlyDigits(data.cpf),
+            cnpj: data.cnpj?.trim() === "" ? null : data.cnpj,
             telefone: onlyDigits(data.telefone),
-            status: data.status || STATUS.ATIVO, 
+            telefone_recado: data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado),
+            status: data.status || STATUS.ATIVO,
             senha_padrao: data.status === STATUS.PENDENTE ? false : true
         };
 
@@ -63,7 +65,7 @@ export const usuarioService = {
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
             throw error;
         }
-        
+
         // Sync Links (Colaborador x Cliente x Empresa x Turno)
         if (links && Array.isArray(links)) {
             await colaboradorClienteService.syncLinks(inserted.id, links);
@@ -82,9 +84,15 @@ export const usuarioService = {
         if (ativo !== undefined) {
             usuarioData.status = ativo ? STATUS.ATIVO : STATUS.INATIVO;
         }
-        if (data.nome_completo) usuarioData.nome_completo = cleanString(data.nome_completo);
-        if (data.cpf) usuarioData.cpf = onlyDigits(data.cpf);
-        if (data.telefone) usuarioData.telefone = onlyDigits(data.telefone);
+        if (data.nome_completo !== undefined) usuarioData.nome_completo = cleanString(data.nome_completo);
+        if (data.cpf !== undefined) usuarioData.cpf = onlyDigits(data.cpf);
+        if (data.telefone !== undefined) usuarioData.telefone = onlyDigits(data.telefone);
+        if (data.telefone_recado !== undefined) {
+            usuarioData.telefone_recado = data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado);
+        }
+        if (data.cnpj !== undefined) {
+            usuarioData.cnpj = data.cnpj?.trim() === "" ? null : data.cnpj;
+        }
 
 
         const { data: updated, error } = await supabaseAdmin
@@ -113,15 +121,15 @@ export const usuarioService = {
 
         // Fetch Links separately (or could use join if configured)
         const links = await colaboradorClienteService.listLinks(id);
-        
+
         return { ...data, links }; // Return nested links
     },
 
     async listUsuarios(filtros?: {
         searchTerm?: string;
         perfil_id?: number;
-        cliente_id?: number; 
-        empresa_id?: number; 
+        cliente_id?: number;
+        empresa_id?: number;
         status?: string;
     }): Promise<any[]> {
         let query = supabaseAdmin
@@ -136,19 +144,19 @@ export const usuarioService = {
         }
 
         if (filtros?.perfil_id) query = query.eq("perfil_id", filtros.perfil_id);
-        
+
         if (filtros?.status && filtros.status !== "todos") {
-             if (filtros.status === 'ativo') {
-                 query = query.eq("status", STATUS.ATIVO);
-             } else if (filtros.status === 'inativo') {
-                 query = query.eq("status", STATUS.INATIVO);
-                 // Let's assume strict mapping for now, but usually 'inativo' in filter might mean everything not active.
-                 // Given the specific new statuses, let's map commonly.
-                 // But wait, the frontend might send 'PENDENTE' specifically.
-                 // Let's stick to what the value actually is if it matches a known status.
-             } else {
-                 query = query.eq("status", filtros.status.toUpperCase());
-             }
+            if (filtros.status === 'ativo') {
+                query = query.eq("status", STATUS.ATIVO);
+            } else if (filtros.status === 'inativo') {
+                query = query.eq("status", STATUS.INATIVO);
+                // Let's assume strict mapping for now, but usually 'inativo' in filter might mean everything not active.
+                // Given the specific new statuses, let's map commonly.
+                // But wait, the frontend might send 'PENDENTE' specifically.
+                // Let's stick to what the value actually is if it matches a known status.
+            } else {
+                query = query.eq("status", filtros.status.toUpperCase());
+            }
         }
 
         const { data: users, error } = await query;
@@ -158,15 +166,15 @@ export const usuarioService = {
 
         // Apply Link Filters (Client/Company)
         if (filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos') {
-             result = result.filter((u: any) => 
-                 u.links?.some((l: any) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
-             );
+            result = result.filter((u: any) =>
+                u.links?.some((l: any) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
+            );
         }
 
         if (filtros?.empresa_id && filtros.empresa_id.toString() !== 'todos') {
-             result = result.filter((u: any) => 
-                 u.links?.some((l: any) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
-             );
+            result = result.filter((u: any) =>
+                u.links?.some((l: any) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
+            );
         }
 
         return result;
@@ -174,12 +182,12 @@ export const usuarioService = {
 
     async deleteUsuario(id: string): Promise<void> {
         if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
-        
+
         // Delete from Auth (Cascade should handle public.usuarios if configured, otherwise we delete manually too)
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
         if (authError) {
-             // If user not found in auth (already deleted or inconsistent), try deleting from DB directly to clean up
-             console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
+            // If user not found in auth (already deleted or inconsistent), try deleting from DB directly to clean up
+            console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
         }
 
         // Explicitly delete links first to ensure no FK constraint issues
@@ -190,7 +198,7 @@ export const usuarioService = {
             .from("usuarios")
             .delete()
             .eq("id", id);
-            
+
         if (error) throw error;
     },
 

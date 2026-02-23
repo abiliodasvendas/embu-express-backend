@@ -387,8 +387,6 @@ ALTER TABLE ONLY "public"."empresas"
 
 ALTER TABLE ONLY "public"."usuarios"
     ADD CONSTRAINT "profiles_cpf_key" UNIQUE ("cpf");
-ALTER TABLE ONLY "public"."usuarios"
-    ADD CONSTRAINT "profiles_cnpj_key" UNIQUE ("cnpj");
 
 
 
