@@ -52,7 +52,6 @@ export const usuarioService = {
         };
 
         if (usuarioData.perfil_id) usuarioData.perfil_id = parseInt(usuarioData.perfil_id);
-        if (usuarioData.valor_ajuda_custo) usuarioData.valor_ajuda_custo = parseFloat(usuarioData.valor_ajuda_custo);
 
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
