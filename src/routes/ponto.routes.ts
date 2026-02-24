@@ -17,12 +17,12 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // OPERACIONAL: Motoboy batendo ponto
     app.post("/toggle", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
-        const { usuario_id, location } = request.body as any;
+        const { usuario_id, location, cliente_id, empresa_id } = request.body as any;
 
         if (!usuario_id) return reply.status(400).send({ error: "usuario_id obrigatório" });
 
         try {
-            const result = await pontoService.togglePonto(usuario_id, location);
+            const result = await pontoService.togglePonto(usuario_id, location, cliente_id, empresa_id);
             return reply.status(200).send(result);
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });
