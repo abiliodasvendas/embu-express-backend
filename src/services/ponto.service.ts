@@ -293,10 +293,10 @@ export const pontoService = {
             const clienteMudou = data.cliente_id !== undefined && data.cliente_id !== existing.cliente_id;
 
             let snapshot: any = undefined;
-            if (!clienteMudou && existing.detalhes_calculo?.entrada?.turno_base) {
+            if (!clienteMudou && existing.detalhes_calculo?.entrada?.turno_base && existing.detalhes_calculo?.saida?.turno_base) {
                 snapshot = {
                     hora_inicio: existing.detalhes_calculo.entrada.turno_base,
-                    hora_fim: existing.detalhes_calculo.saida?.turno_base || existing.detalhes_calculo.entrada.turno_base
+                    hora_fim: existing.detalhes_calculo.saida.turno_base
                 };
             }
 
