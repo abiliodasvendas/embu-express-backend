@@ -44,7 +44,13 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
                 return; // Acesso liberado
             }
 
-            // 4. Check permissions
+            // 4. Self-Access Bypass (Allow user to view/edit their own data)
+            const targetedId = (request.params as any)?.id;
+            if (targetedId && targetedId === user.id) {
+                return; // Allowed self-access bypass
+            }
+
+            // 5. Check permissions
             const permissoesArray = (usuario.perfil as any)?.perfil_permissoes?.map(
                 (pp: any) => pp.permissao.nome_interno
             ) || [];

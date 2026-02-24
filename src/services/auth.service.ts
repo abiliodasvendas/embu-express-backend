@@ -88,7 +88,7 @@ export const authService = {
         await supabaseAdmin.auth.admin.signOut(token);
     },
 
-    async updatePassword(token: string, newPassword: string): Promise<void> {
+    async updatePassword(token: string, newPassword: string): Promise<any> {
         const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
         if (userError || !user) {
@@ -108,6 +108,22 @@ export const authService = {
             .from("usuarios")
             .update({ senha_padrao: false })
             .eq("id", user.id);
+
+        // 4. Generate new session
+        const { data: sessionData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+            email: user.email!,
+            password: newPassword
+        });
+
+        if (signInError || !sessionData.session) {
+            throw new Error("Senha atualizada, mas falha ao obter nova sessão. Faça o login novamente.");
+        }
+
+        return {
+            access_token: sessionData.session.access_token,
+            refresh_token: sessionData.session.refresh_token,
+            user: sessionData.user
+        };
     },
 
     async selfRegister(data: any): Promise<any> {

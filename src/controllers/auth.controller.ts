@@ -47,7 +47,7 @@ export const AuthController = {
     async updatePassword(request: FastifyRequest, reply: FastifyReply) {
         const authHeader = request.headers.authorization;
         if (!authHeader) return reply.status(401).send({ error: messages.auth.erro.tokenAusente });
-        
+
         const token = authHeader.replace("Bearer ", "");
         const { password, oldPassword } = request.body as any;
 
@@ -58,20 +58,20 @@ export const AuthController = {
         try {
             // Verify old password first if provided
             if (oldPassword) {
-                 const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-                 if (user && user.email) {
+                const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+                if (user && user.email) {
                     const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
                         email: user.email,
                         password: oldPassword
                     });
                     if (signInError) throw new Error(messages.auth.erro.senhaIncorreta);
-                 }
+                }
             }
 
-            await authService.updatePassword(token, password);
-            return reply.status(200).send({ success: true, message: messages.auth.sucesso.senhaAtualizada });
+            const session = await authService.updatePassword(token, password);
+            return reply.status(200).send({ success: true, message: messages.auth.sucesso.senhaAtualizada, session });
         } catch (err: any) {
-             return reply.status(400).send({ error: err.message });
+            return reply.status(400).send({ error: err.message });
         }
     },
 
