@@ -2,6 +2,7 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { configuracaoService } from "./configuracao.service.js";
+import { PONTO_STATUS } from "../constants/ponto.enum.js";
 
 // Interface para Pausa
 interface PausaPayload {
@@ -51,11 +52,12 @@ async function calculateStatus(
     entrada_km?: number | null,
     saida_km?: number | null,
     pausasMinutos: number = 0,
-    clienteId?: number // Novo: força o turno por cliente se disponível
+    clienteId?: number,
+    snapshotTurno?: { hora_inicio: string; hora_fim: string }
 ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
     // Default values
-    let status_entrada = "CINZA";
-    let status_saida = "CINZA";
+    let status_entrada = PONTO_STATUS.CINZA;
+    let status_saida = PONTO_STATUS.CINZA;
     let saldo_minutos: number | null = null;
 
     const detalhes: any = {
@@ -78,34 +80,38 @@ async function calculateStatus(
     detalhes.entrada.tolerancia = limiteAmarelo;
     detalhes.saida.tolerancia = toleranciaSaida;
 
-    // 2. Buscar turnos (Links)
-    const { data: turnos } = await supabaseAdmin
-        .from("colaborador_clientes")
-        .select("*")
-        .eq("colaborador_id", usuarioId);
-
     let melhorTurno: any = null;
 
-    if (turnos && turnos.length > 0) {
-        const [hEntrada, mEntrada] = parseTime(entrada);
-        const entradaMinutosTotal = hEntrada * 60 + mEntrada;
+    if (snapshotTurno) {
+        melhorTurno = snapshotTurno;
+    } else {
+        // 2. Buscar turnos (Links)
+        const { data: turnos } = await supabaseAdmin
+            .from("colaborador_clientes")
+            .select("*")
+            .eq("colaborador_id", usuarioId);
 
-        // Se o clienteId foi passado, prioriza ele. Caso contrário, busca o mais próximo.
-        if (clienteId) {
-            melhorTurno = turnos.find(t => t.cliente_id === clienteId);
-        }
+        if (turnos && turnos.length > 0) {
+            const [hEntrada, mEntrada] = parseTime(entrada);
+            const entradaMinutosTotal = hEntrada * 60 + mEntrada;
 
-        if (!melhorTurno) {
-            let menorDiff = Infinity;
-            turnos.forEach(turno => {
-                const [hT, mT] = parseTime(turno.hora_inicio);
-                const turnoInicioMinutos = hT * 60 + mT;
-                const diff = Math.abs(entradaMinutosTotal - turnoInicioMinutos);
-                if (diff < menorDiff) {
-                    menorDiff = diff;
-                    melhorTurno = turno;
-                }
-            });
+            // Se o clienteId foi passado, prioriza ele. Caso contrário, busca o mais próximo.
+            if (clienteId) {
+                melhorTurno = turnos.find(t => t.cliente_id === clienteId);
+            }
+
+            if (!melhorTurno) {
+                let menorDiff = Infinity;
+                turnos.forEach(turno => {
+                    const [hT, mT] = parseTime(turno.hora_inicio);
+                    const turnoInicioMinutos = hT * 60 + mT;
+                    const diff = Math.abs(entradaMinutosTotal - turnoInicioMinutos);
+                    if (diff < menorDiff) {
+                        menorDiff = diff;
+                        melhorTurno = turno;
+                    }
+                });
+            }
         }
     }
 
@@ -120,9 +126,10 @@ async function calculateStatus(
         detalhes.entrada.turno_base = melhorTurno.hora_inicio;
         detalhes.entrada.diff_minutos = diffEntrada;
 
-        if (Math.abs(diffEntrada) <= toleranciaVerde) status_entrada = "VERDE";
-        else if (Math.abs(diffEntrada) <= limiteAmarelo) status_entrada = "AMARELO";
-        else status_entrada = "VERMELHO";
+        if (diffEntrada < -toleranciaVerde) status_entrada = PONTO_STATUS.ANTECIPADA;
+        else if (diffEntrada <= toleranciaVerde) status_entrada = PONTO_STATUS.VERDE;
+        else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
+        else status_entrada = PONTO_STATUS.VERMELHO;
 
         // 4. Cálculos de Saída
         if (saida) {
@@ -135,9 +142,9 @@ async function calculateStatus(
             detalhes.saida.turno_base = melhorTurno.hora_fim;
             detalhes.saida.diff_minutos = diffSaida;
 
-            if (diffSaida < -toleranciaSaida) status_saida = "ANTECIPADA";
-            else if (Math.abs(diffSaida) <= toleranciaSaida) status_saida = "VERDE";
-            else status_saida = "AMARELO"; // HE
+            if (diffSaida < -toleranciaSaida) status_saida = PONTO_STATUS.ANTECIPADA;
+            else if (Math.abs(diffSaida) <= toleranciaSaida) status_saida = PONTO_STATUS.VERDE;
+            else status_saida = PONTO_STATUS.AMARELO; // HE
 
             // 5. Saldo e Tempo Trabalhado
             const start = new Date(entrada).getTime();
@@ -281,6 +288,18 @@ export const pontoService = {
                 }, 0);
             }
 
+            // Integridade histórica: Se não mudou o cliente, tenta reutilizar o turno que já estava salvo no ponto
+            const clienteIdAtualValue = data.cliente_id !== undefined ? data.cliente_id : existing.cliente_id;
+            const clienteMudou = data.cliente_id !== undefined && data.cliente_id !== existing.cliente_id;
+
+            let snapshot: any = undefined;
+            if (!clienteMudou && existing.detalhes_calculo?.entrada?.turno_base) {
+                snapshot = {
+                    hora_inicio: existing.detalhes_calculo.entrada.turno_base,
+                    hora_fim: existing.detalhes_calculo.saida?.turno_base || existing.detalhes_calculo.entrada.turno_base
+                };
+            }
+
             const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
                 existing.usuario_id,
                 entrada,
@@ -288,7 +307,8 @@ export const pontoService = {
                 entradaKm,
                 saidaKm,
                 Math.round(totalPausas),
-                existing.cliente_id // Passamos o cliente já vinculado ao ponto
+                clienteIdAtualValue,
+                snapshot
             );
 
             payload.status_entrada = status_entrada;

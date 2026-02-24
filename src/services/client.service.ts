@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { cleanString } from "../utils/utils.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 
 export const clientService = {
     async createClient(data: any): Promise<any> {
@@ -83,7 +84,7 @@ export const clientService = {
             query = query.or(orClause);
         }
 
-        if (filtros?.ativo !== undefined && filtros.ativo !== "todos") {
+        if (filtros?.ativo !== undefined && filtros.ativo !== CADASTRO_STATUS.TODOS) {
             if (filtros.includeId) {
                 query = query.or(`ativo.eq.${filtros.ativo === "true"},id.eq.${filtros.includeId}`);
             } else {

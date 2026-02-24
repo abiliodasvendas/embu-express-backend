@@ -1,0 +1,6 @@
+export enum CADASTRO_STATUS {
+    ATIVO = "ATIVO",
+    INATIVO = "INATIVO",
+    PENDENTE = "PENDENTE",
+    TODOS = "todos"
+}
