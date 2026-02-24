@@ -114,7 +114,7 @@ INSERT INTO "public"."usuarios" (
     1, -- super_admin
     'Admin Master',
     '03075544574',
-    'embuexpress@gmail.com',
+    'admin@embuexpress.com.br',
     'ATIVO',
     false
 ) ON CONFLICT (id) DO NOTHING;

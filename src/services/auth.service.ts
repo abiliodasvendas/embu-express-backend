@@ -153,6 +153,7 @@ export const authService = {
                 nome_completo: nomeLimpo,
                 cpf: isCnpj ? null : cpfDigits,
                 cnpj: isCnpj ? cpfDigits : (profileData.cnpj?.trim() === "" ? null : profileData.cnpj),
+                rg: profileData.rg || null,
                 telefone: onlyDigits(profileData.telefone),
                 telefone_recado: profileData.telefone_recado?.trim() === "" ? null : onlyDigits(profileData.telefone_recado),
                 data_nascimento: profileData.data_nascimento || null,
