@@ -50,7 +50,8 @@ async function calculateStatus(
     saida: string | null | undefined,
     entrada_km?: number | null,
     saida_km?: number | null,
-    pausasMinutos: number = 0
+    pausasMinutos: number = 0,
+    clienteId?: number // Novo: força o turno por cliente se disponível
 ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
     // Default values
     let status_entrada = "CINZA";
@@ -60,62 +61,109 @@ async function calculateStatus(
     const detalhes: any = {
         entrada: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
         saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
-        resumo: {} // Novo objeto para dados extras
+        resumo: { horas_trabalhadas: "--:--" }
     };
 
-    // Calculo básico de KM (sem regras complexas por enquanto)
     if (entrada_km != null && saida_km != null) {
         detalhes.resumo.diff_km = saida_km - entrada_km;
     }
 
     if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
 
-    // ... (config and shift fetching remains similar, just condensed here for context if needed, but only replacing logic)
     // 1. Buscar configurações
     const toleranciaVerde = await configuracaoService.getConfiguracao("tolerancia_verde_min").then(d => Number(d?.valor || 5));
     const limiteAmarelo = await configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15));
     const toleranciaSaida = await configuracaoService.getConfiguracao("tolerancia_saida_min").then(d => Number(d?.valor || 10));
-    const limiteHoraExtra = await configuracaoService.getConfiguracao("limite_he_excessiva_min").then(d => Number(d?.valor || 120));
 
     detalhes.entrada.tolerancia = limiteAmarelo;
     detalhes.saida.tolerancia = toleranciaSaida;
 
-    // 2. Buscar turnos (Links: ColaboradorCliente)
-    const { data: turnos, error: turnoError } = await supabaseAdmin
+    // 2. Buscar turnos (Links)
+    const { data: turnos } = await supabaseAdmin
         .from("colaborador_clientes")
         .select("*")
         .eq("colaborador_id", usuarioId);
 
-    if (turnoError) console.error(messages.ponto.erro.buscarTurnos, turnoError);
-
     let melhorTurno: any = null;
-    let menorDiffInicio = Infinity;
 
-    // Helper inside
     if (turnos && turnos.length > 0) {
         const [hEntrada, mEntrada] = parseTime(entrada);
-        const entradaMinutos = hEntrada * 60 + mEntrada;
+        const entradaMinutosTotal = hEntrada * 60 + mEntrada;
 
-        turnos.forEach(turno => {
-            // Turno agora vem de colaborador_clientes, formato HH:mm:ss
-            const [hTurno, mTurno] = parseTime(turno.hora_inicio);
-            const turnoMinutos = hTurno * 60 + mTurno;
-            const diff = Math.abs(entradaMinutos - turnoMinutos);
-            if (diff < menorDiffInicio) {
-                menorDiffInicio = diff;
-                melhorTurno = turno;
-            }
-        });
+        // Se o clienteId foi passado, prioriza ele. Caso contrário, busca o mais próximo.
+        if (clienteId) {
+            melhorTurno = turnos.find(t => t.cliente_id === clienteId);
+        }
+
+        if (!melhorTurno) {
+            let menorDiff = Infinity;
+            turnos.forEach(turno => {
+                const [hT, mT] = parseTime(turno.hora_inicio);
+                const turnoInicioMinutos = hT * 60 + mT;
+                const diff = Math.abs(entradaMinutosTotal - turnoInicioMinutos);
+                if (diff < menorDiff) {
+                    menorDiff = diff;
+                    melhorTurno = turno;
+                }
+            });
+        }
     }
 
-    // ... (rest of function)
+    // 3. Cálculos de Entrada
+    if (melhorTurno) {
+        const [hE, mE] = parseTime(entrada);
+        const entradaMinutos = hE * 60 + mE;
+        const [hT, mT] = parseTime(melhorTurno.hora_inicio);
+        const turnoInicioMinutos = hT * 60 + mT;
+
+        const diffEntrada = entradaMinutos - turnoInicioMinutos;
+        detalhes.entrada.turno_base = melhorTurno.hora_inicio;
+        detalhes.entrada.diff_minutos = diffEntrada;
+
+        if (Math.abs(diffEntrada) <= toleranciaVerde) status_entrada = "VERDE";
+        else if (Math.abs(diffEntrada) <= limiteAmarelo) status_entrada = "AMARELO";
+        else status_entrada = "VERMELHO";
+
+        // 4. Cálculos de Saída
+        if (saida) {
+            const [hS, mS] = parseTime(saida);
+            const saidaMinutos = hS * 60 + mS;
+            const [hTF, mTF] = parseTime(melhorTurno.hora_fim);
+            const turnoFimMinutos = hTF * 60 + mTF;
+
+            const diffSaida = saidaMinutos - turnoFimMinutos;
+            detalhes.saida.turno_base = melhorTurno.hora_fim;
+            detalhes.saida.diff_minutos = diffSaida;
+
+            if (diffSaida < -toleranciaSaida) status_saida = "ANTECIPADA";
+            else if (Math.abs(diffSaida) <= toleranciaSaida) status_saida = "VERDE";
+            else status_saida = "AMARELO"; // HE
+
+            // 5. Saldo e Tempo Trabalhado
+            const start = new Date(entrada).getTime();
+            const end = new Date(saida).getTime();
+            const brutoMinutos = Math.round((end - start) / 60000);
+            const liquidoMinutos = brutoMinutos - pausasMinutos;
+
+            detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
+
+            const esperadoMinutos = turnoFimMinutos - turnoInicioMinutos;
+            saldo_minutos = liquidoMinutos - esperadoMinutos;
+        }
+    } else if (saida) {
+        // Cálculo básico sem turno
+        const start = new Date(entrada).getTime();
+        const end = new Date(saida).getTime();
+        const liquidoMinutos = Math.round((end - start) / 60000) - pausasMinutos;
+        detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
+    }
 
     return {
         status_entrada,
         status_saida,
         detalhes_calculo: detalhes,
         saldo_minutos,
-        melhorTurno // EXPOSE FOUND SHIFT
+        melhorTurno
     };
 }
 
@@ -157,7 +205,9 @@ export const pontoService = {
             data.entrada_hora,
             data.saida_hora,
             data.entrada_km,
-            data.saida_km
+            data.saida_km,
+            0,
+            data.cliente_id
         );
 
         // SMART LINKING: If no client provided, use the one from Best Shift
@@ -237,7 +287,8 @@ export const pontoService = {
                 saida,
                 entradaKm,
                 saidaKm,
-                Math.round(totalPausas)
+                Math.round(totalPausas),
+                existing.cliente_id // Passamos o cliente já vinculado ao ponto
             );
 
             payload.status_entrada = status_entrada;
@@ -260,7 +311,7 @@ export const pontoService = {
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
             // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
-            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
+            .select("*, cliente:clientes(*), usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
@@ -271,8 +322,8 @@ export const pontoService = {
         let query = supabaseAdmin
             .from("registros_ponto")
             // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
-            // Fetch embedded links to get client info
-            .select("*, usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
+            // Fetch embedded links to get client info and also the direct client linked to the record
+            .select("*, cliente:clientes(nome_fantasia), usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
             .order("data_referencia", { ascending: false });
 
 
