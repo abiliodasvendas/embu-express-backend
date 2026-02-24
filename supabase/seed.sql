@@ -37,7 +37,6 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (17, 'empresas:editar', 'Empresas', 'Alterar dados da empresa'),
 (18, 'empresas:deletar', 'Empresas', 'Remover empresa do sistema'),
 (19, 'empresas:status', 'Empresas', 'Ativar/desativar empresa'),
-(20, 'ponto:registrar', 'Ponto (Operacional)', 'Iniciar, pausar e finalizar próprio expediente via App'),
 (21, 'ponto:admin_ver', 'Ponto (Controle)', 'Visualizar lista e detalhes de pontos da equipe'),
 (22, 'ponto:admin_criar', 'Ponto (Controle)', 'Inserir marcação de ponto manualmente no painel'),
 (23, 'ponto:admin_editar', 'Ponto (Controle)', 'Alterar ou corrigir horário de uma marcação existente'),
@@ -48,7 +47,7 @@ ON CONFLICT (id) DO NOTHING;
 -- CEO (Id 4) gets all permissions
 INSERT INTO "public"."perfil_permissoes" ("perfil_id", "permissao_id") VALUES
 (4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10),
-(4, 11), (4, 12), (4, 13), (4, 14), (4, 15), (4, 16), (4, 17), (4, 18), (4, 19), (4, 20),
+(4, 11), (4, 12), (4, 13), (4, 14), (4, 15), (4, 16), (4, 17), (4, 18), (4, 19),
 (4, 21), (4, 22), (4, 23), (4, 24)
 ON CONFLICT DO NOTHING;
 

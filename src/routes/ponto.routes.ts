@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { PERMISSIONS } from "../constants/permissions.enum.js";
-import { verifyPermissao } from "../middlewares/auth.middleware.js";
+import { verifyOperacional, verifyPermissao } from "../middlewares/auth.middleware.js";
 import { pontoService } from "../services/ponto.service.js";
 
 const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -16,7 +16,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // OPERACIONAL: Motoboy batendo ponto
-    app.post("/toggle", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
+    app.post("/toggle", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
         const { usuario_id, location } = request.body as any;
 
         if (!usuario_id) return reply.status(400).send({ error: "usuario_id obrigatório" });
@@ -32,7 +32,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // OPERACIONAL / ADMIN: Ver ponto de hoje (Usado pelo App para mostrar status)
     // Permite que tanto quem bate ponto quanto quem monitora consigam ver.
     app.get("/hoje", {
-        preHandler: [verifyPermissao([PERMISSIONS.PONTO.REGISTRAR, PERMISSIONS.PONTO.ADMIN_VER])]
+        preHandler: [verifyOperacional()]
     }, async (request: any, reply) => {
         const { usuarioId } = request.query as any;
 
@@ -96,7 +96,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // OPERACIONAL / ADMIN
     app.get("/hoje/:usuarioId", {
-        preHandler: [verifyPermissao([PERMISSIONS.PONTO.REGISTRAR, PERMISSIONS.PONTO.ADMIN_VER])]
+        preHandler: [verifyOperacional()]
     }, async (request: any, reply) => {
         const usuarioId = request.params["usuarioId"] as string;
         try {
@@ -108,7 +108,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // --- PAUSAS (OPERACIONAL) ---
-    app.post("/pausa/inicio", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
+    app.post("/pausa/inicio", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
         const data = request.body as any;
         try {
             const result = await pontoService.iniciarPausa(data);
@@ -119,7 +119,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // RESTful: Iniciar pausa de um ponto específico
-    app.post("/:id/pausas", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
+    app.post("/:id/pausas", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
         const ponto_id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {
@@ -130,7 +130,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    app.post("/pausa/fim", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
+    app.post("/pausa/fim", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
         const { id, ...data } = request.body as any;
         if (!id) return reply.status(400).send({ error: "ID da pausa obrigatório" });
         try {
@@ -142,7 +142,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
 
     // RESTful: Finalizar uma pausa específica
-    app.put("/pausas/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.REGISTRAR)] }, async (request: any, reply) => {
+    app.put("/pausas/:id", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
         const data = request.body as any;
         try {

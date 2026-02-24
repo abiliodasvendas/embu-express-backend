@@ -73,7 +73,13 @@ export const perfilService = {
 
         // Proteger perfis core de mudar de nome
         if (current && PROTECTED_ROLES_NAMES.includes(current.nome) && data.nome) {
-            throw new Error("Não é possível alterar o nome de um perfil nativo do sistema.");
+            // Em vez de retornar erro 400 apenas por o frontend ter enviado o próprio nome na request,
+            // barramos a alteração se o nome *tentar* ser diferente, ou apenas ignoramos a key de 'nome'.
+            if (data.nome !== current.nome) {
+                throw new Error("Não é possível alterar o nome de um perfil nativo do sistema.");
+            }
+            // Se o nome enviado for igual ao atual (como acontece quando o form preenche), não atualiza nada no campo nome.
+            delete data.nome;
         }
 
         const updateData: any = {};

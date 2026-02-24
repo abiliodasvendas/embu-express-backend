@@ -27,7 +27,6 @@ export const PERMISSIONS = {
         STATUS: 'empresas:status',
     },
     PONTO: {
-        REGISTRAR: 'ponto:registrar', // Operacional (Motoboy bate ponto)
         ADMIN_VER: 'ponto:admin_ver', // Painel: Ver lista de todos
         ADMIN_CRIAR: 'ponto:admin_criar', // Painel: Inserir ponto manualmente
         ADMIN_EDITAR: 'ponto:admin_editar', // Painel: Corrigir linha
