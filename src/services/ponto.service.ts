@@ -4,6 +4,20 @@ import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
 
+// Helper para processar dados de localização
+function processLocationData(loc: any) {
+    if (!loc) return { lat: null, lng: null, metadata: {} };
+    return {
+        lat: loc.latitude || null,
+        lng: loc.longitude || null,
+        metadata: {
+            accuracy: loc.accuracy,
+            address: loc.address,
+            device: loc.device
+        }
+    };
+}
+
 // Interface para Pausa
 interface PausaPayload {
     ponto_id: number;
@@ -226,6 +240,9 @@ export const pontoService = {
             finalEmpresaId = melhorTurno.empresa_id;
         }
 
+        const { lat: eLat, lng: eLng, metadata: eMeta } = processLocationData(data.entrada_loc);
+        const { lat: sLat, lng: sLng, metadata: sMeta } = processLocationData(data.saida_loc);
+
         const payload = {
             ...data,
             entrada_km: data.entrada_km ?? null,
@@ -237,7 +254,13 @@ export const pontoService = {
             cliente_id: finalClienteId,
             empresa_id: finalEmpresaId,
             entrada_loc: data.entrada_loc || null,
-            saida_loc: data.saida_loc || null
+            saida_loc: data.saida_loc || null,
+            entrada_lat: eLat,
+            entrada_lng: eLng,
+            entrada_metadata: eMeta,
+            saida_lat: sLat,
+            saida_lng: sLng,
+            saida_metadata: sMeta
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -315,6 +338,21 @@ export const pontoService = {
             payload.status_saida = status_saida;
             payload.detalhes_calculo = detalhes_calculo;
             payload.saldo_minutos = saldo_minutos;
+        }
+
+        // Process location if provided
+        if (data.entrada_loc) {
+            const { lat, lng, metadata } = processLocationData(data.entrada_loc);
+            payload.entrada_lat = lat;
+            payload.entrada_lng = lng;
+            payload.entrada_metadata = metadata;
+        }
+
+        if (data.saida_loc) {
+            const { lat, lng, metadata } = processLocationData(data.saida_loc);
+            payload.saida_lat = lat;
+            payload.saida_lng = lng;
+            payload.saida_metadata = metadata;
         }
 
         const { data: updated, error } = await supabaseAdmin
@@ -470,13 +508,20 @@ export const pontoService = {
 
         if (openPausa) throw new Error(messages.ponto.erro.pausaAberta);
 
+        if (openPausa) throw new Error(messages.ponto.erro.pausaAberta);
+
+        const { lat, lng, metadata } = processLocationData(data.inicio_loc);
+
         const { data: inserted, error } = await supabaseAdmin
             .from("registros_pausas")
             .insert([{
                 ponto_id: data.ponto_id,
                 inicio_hora: data.inicio_hora,
                 inicio_km: data.inicio_km,
-                inicio_loc: data.inicio_loc
+                inicio_loc: data.inicio_loc,
+                inicio_lat: lat,
+                inicio_lng: lng,
+                inicio_metadata: metadata
             }])
             .select()
             .single();
@@ -488,12 +533,17 @@ export const pontoService = {
     async finalizarPausa(id: number, data: Partial<PausaPayload>): Promise<any> {
         if (!data.fim_hora) data.fim_hora = new Date().toISOString();
 
+        const { lat, lng, metadata } = processLocationData(data.fim_loc);
+
         const { data: updated, error } = await supabaseAdmin
             .from("registros_pausas")
             .update({
                 fim_hora: data.fim_hora,
                 fim_km: data.fim_km,
-                fim_loc: data.fim_loc
+                fim_loc: data.fim_loc,
+                fim_lat: lat,
+                fim_lng: lng,
+                fim_metadata: metadata
             })
             .eq("id", id)
             .select()
@@ -553,5 +603,18 @@ export const pontoService = {
         }
 
         return Math.max(...kmas);
+    },
+
+    async getRelatorioMensal(usuarioId: string, mes: number, ano: number): Promise<any[]> {
+        const { data, error } = await supabaseAdmin
+            .from("v_relatorio_mensal_ponto")
+            .select("*")
+            .eq("usuario_id", usuarioId)
+            .filter("data_referencia", "gte", `${ano}-${String(mes).padStart(2, '0')}-01`)
+            .filter("data_referencia", "lte", `${ano}-${String(mes).padStart(2, '0')}-31`)
+            .order("data_referencia", { ascending: true });
+
+        if (error) throw error;
+        return data || [];
     }
 };

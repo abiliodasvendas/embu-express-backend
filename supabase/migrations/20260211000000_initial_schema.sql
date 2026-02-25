@@ -191,6 +191,12 @@ CREATE TABLE IF NOT EXISTS "public"."registros_pausas" (
     "fim_km" integer,
     "inicio_loc" "jsonb",
     "fim_loc" "jsonb",
+    "inicio_lat" numeric,
+    "inicio_lng" numeric,
+    "inicio_metadata" jsonb DEFAULT '{}'::jsonb,
+    "fim_lat" numeric,
+    "fim_lng" numeric,
+    "fim_metadata" jsonb DEFAULT '{}'::jsonb,
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
@@ -224,12 +230,18 @@ CREATE TABLE IF NOT EXISTS "public"."registros_ponto" (
     "criado_por" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
-    "detalhes_calculo" "jsonb" DEFAULT '{}'::"jsonb",
+    "detalhes_calculo" "jsonb" DEFAULT '{}'::jsonb,
     "saldo_minutos" integer DEFAULT 0,
     "cliente_id" bigint,
     "empresa_id" bigint,
     "entrada_loc" "jsonb",
-    "saida_loc" "jsonb"
+    "saida_loc" "jsonb",
+    "entrada_lat" numeric,
+    "entrada_lng" numeric,
+    "entrada_metadata" jsonb DEFAULT '{}'::jsonb,
+    "saida_lat" numeric,
+    "saida_lng" numeric,
+    "saida_metadata" jsonb DEFAULT '{}'::jsonb
 );
 
 
@@ -687,6 +699,45 @@ CREATE TRIGGER "tr_colaborador_clientes_updated_at" BEFORE UPDATE ON "public"."c
 CREATE TRIGGER "tr_empresas_updated_at" BEFORE UPDATE ON "public"."empresas" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 CREATE TRIGGER "tr_clientes_updated_at" BEFORE UPDATE ON "public"."clientes" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 CREATE TRIGGER "tr_registros_pausas_updated_at" BEFORE UPDATE ON "public"."registros_pausas" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
+
+
+-- VIEWS FOR REPORTING AND AUDIT
+CREATE OR REPLACE VIEW "public"."v_relatorio_mensal_ponto" AS
+SELECT 
+    rp.id,
+    rp.usuario_id,
+    u.nome_completo AS colaborador_nome,
+    u.cpf AS colaborador_cpf,
+    rp.data_referencia,
+    rp.entrada_hora,
+    rp.saida_hora,
+    rp.saldo_minutos,
+    rp.status_entrada,
+    rp.status_saida,
+    rp.cliente_id,
+    c.nome_fantasia AS cliente_nome,
+    (SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(fim_hora, inicio_hora) - inicio_hora))/60), 0) FROM registros_pausas WHERE ponto_id = rp.id) AS total_pausas_minutos,
+    (SELECT COUNT(*) FROM registros_pausas WHERE ponto_id = rp.id) AS qtd_pausas
+FROM public.registros_ponto rp
+JOIN public.usuarios u ON u.id = rp.usuario_id
+LEFT JOIN public.clientes c ON c.id = rp.cliente_id;
+
+CREATE OR REPLACE VIEW "public"."v_auditoria_localizacao" AS
+SELECT 
+    rp.id AS ponto_id,
+    rp.usuario_id,
+    rp.data_referencia,
+    rp.entrada_lat,
+    rp.entrada_lng,
+    rp.entrada_metadata->>'accuracy' AS entrada_precisao,
+    rp.saida_lat,
+    rp.saida_lng,
+    rp.saida_metadata->>'accuracy' AS saida_precisao,
+    rp.cliente_id
+FROM public.registros_ponto rp;
+
+GRANT SELECT ON "public"."v_relatorio_mensal_ponto" TO anon, authenticated, service_role;
+GRANT SELECT ON "public"."v_auditoria_localizacao" TO anon, authenticated, service_role;
 
 
 
