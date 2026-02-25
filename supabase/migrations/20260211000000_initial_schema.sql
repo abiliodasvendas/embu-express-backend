@@ -71,8 +71,7 @@ CREATE TABLE IF NOT EXISTS "public"."colaborador_clientes" (
     "valor_contrato" numeric DEFAULT 0 NOT NULL,
     "valor_aluguel" numeric DEFAULT 0,
     "valor_bonus" numeric DEFAULT 0,
-    "ajuda_custo" numeric DEFAULT 0,
-    "mei" boolean DEFAULT false
+    "ajuda_custo" numeric DEFAULT 0
 );
 
 
@@ -95,7 +94,6 @@ COMMENT ON COLUMN "public"."colaborador_clientes"."ajuda_custo" IS 'Ajuda de cus
 
 
 
-COMMENT ON COLUMN "public"."colaborador_clientes"."mei" IS 'Se é contrato MEI neste vínculo';
 
 
 

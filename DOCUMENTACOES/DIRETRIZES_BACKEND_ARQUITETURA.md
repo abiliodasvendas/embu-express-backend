@@ -87,8 +87,8 @@ Este documento serve como referência única de verdade para a arquitetura do pr
 
 ## 5. Gestão de Banco de Dados (Migrações)
 > [!IMPORTANT]
-> - **Ambiente de Desenvolvimento (`ENVIRONMENT_STATUS: development`):** Enquanto estivermos em desenvolvimento, **NÃO** crie novas migrações para pequenos ajustes de schema. Em vez disso, atualize diretamente o arquivo de migração inicial `supabase/migrations/20260211000000_initial_schema.sql`.
-> - **Ambiente de Produção (`ENVIRONMENT_STATUS: production`):** Quando o sistema estiver em produção (flag alterada manualmente), as mudanças de schema **DEVEM** ser feitas via novas migrações (`ALTER TABLE`, etc) para preservar os dados existentes.
+> - **Ambiente de Desenvolvimento (`ENVIRONMENT_STATUS: development`):** Enquanto estivermos em desenvolvimento, **EVOLUA** o arquivo de migração inicial `supabase/migrations/20260211000000_initial_schema.sql` ao invés de criar novos arquivos de migração.
+> - **Ambiente de Produção (`ENVIRONMENT_STATUS: production`):** Quando o sistema estiver em produção (flag alterada manualmente), as alterações de schema **DEVEM** ser feitas via novas migrações (`ALTER TABLE`, etc) para preservar dados.
 
 ---
 *Documento criado em: 20/01/2026*
