@@ -1,5 +1,7 @@
 # Diretrizes de Arquitetura e Desenvolvimento - Embu Express Backend
 
+ENVIRONMENT_STATUS: development
+
 ## 🎯 Objetivo
 Este documento serve como referência única de verdade para a arquitetura do projeto Backend da Embu Express (pasta embu-express-backend). Deve ser consultado por IAs e desenvolvedores antes de iniciar qualquer modificação no código.
 
@@ -80,6 +82,13 @@ Este documento serve como referência única de verdade para a arquitetura do pr
 - **Validação:** Zod
 - **Filas:** BullMQ + Redis (para jobs em background)
 - **Logs:** Pino (via logger config)
+
+---
+
+## 5. Gestão de Banco de Dados (Migrações)
+> [!IMPORTANT]
+> - **Ambiente de Desenvolvimento (`ENVIRONMENT_STATUS: development`):** Enquanto estivermos em desenvolvimento, **NÃO** crie novas migrações para pequenos ajustes de schema. Em vez disso, atualize diretamente o arquivo de migração inicial `supabase/migrations/20260211000000_initial_schema.sql`.
+> - **Ambiente de Produção (`ENVIRONMENT_STATUS: production`):** Quando o sistema estiver em produção (flag alterada manualmente), as mudanças de schema **DEVEM** ser feitas via novas migrações (`ALTER TABLE`, etc) para preservar os dados existentes.
 
 ---
 *Documento criado em: 20/01/2026*

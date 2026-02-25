@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS "public"."colaborador_clientes" (
     "hora_fim" time without time zone NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
-    "valor_contrato" numeric DEFAULT 0,
+    "valor_contrato" numeric DEFAULT 0 NOT NULL,
     "valor_aluguel" numeric DEFAULT 0,
     "valor_bonus" numeric DEFAULT 0,
     "ajuda_custo" numeric DEFAULT 0,
