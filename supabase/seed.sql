@@ -40,15 +40,19 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (21, 'ponto:admin_ver', 'Ponto (Controle)', 'Visualizar lista e detalhes de pontos da equipe'),
 (22, 'ponto:admin_criar', 'Ponto (Controle)', 'Inserir marcação de ponto manualmente no painel'),
 (23, 'ponto:admin_editar', 'Ponto (Controle)', 'Alterar ou corrigir horário de uma marcação existente'),
-(24, 'ponto:admin_deletar', 'Ponto (Controle)', 'Excluir registro de ponto equivocado')
+(24, 'ponto:admin_deletar', 'Ponto (Controle)', 'Excluir registro de ponto equivocado'),
+(25, 'configuracoes:ver', 'Configuração', 'Visualizar parâmetros do sistema'),
+(26, 'configuracoes:editar', 'Configuração', 'Alterar parâmetros do sistema')
 ON CONFLICT (id) DO NOTHING;
 
--- 1.2 Bind Basic Permissions to some Profiles as examples (Optional, they can be edited in UI later)
--- CEO (Id 4) gets all permissions
+-- CEO (Id 4) and Super Admin (Id 1) get all permissions
 INSERT INTO "public"."perfil_permissoes" ("perfil_id", "permissao_id") VALUES
+(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10),
+(1, 11), (1, 12), (1, 13), (1, 14), (1, 15), (1, 16), (1, 17), (1, 18), (1, 19),
+(1, 21), (1, 22), (1, 23), (1, 24), (1, 25), (1, 26),
 (4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10),
 (4, 11), (4, 12), (4, 13), (4, 14), (4, 15), (4, 16), (4, 17), (4, 18), (4, 19),
-(4, 21), (4, 22), (4, 23), (4, 24)
+(4, 21), (4, 22), (4, 23), (4, 24), (4, 25), (4, 26)
 ON CONFLICT DO NOTHING;
 
 -- 2. Create System Configurations

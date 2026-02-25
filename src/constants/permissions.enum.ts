@@ -32,6 +32,10 @@ export const PERMISSIONS = {
         ADMIN_EDITAR: 'ponto:admin_editar', // Painel: Corrigir linha
         ADMIN_DELETAR: 'ponto:admin_deletar', // Painel: Excluir linha
     },
+    CONFIGURACAO: {
+        VER: 'configuracoes:ver',
+        EDITAR: 'configuracoes:editar',
+    },
 } as const;
 
 export const ROLES = {
