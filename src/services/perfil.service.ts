@@ -10,11 +10,17 @@ export const perfilService = {
                 perfil_permissoes(
                     permissao_id,
                     permissao:permissoes(nome_interno, modulo, descricao)
-                )
+                ),
+                usuarios:usuarios(count)
             `)
+            .eq("usuarios.status", "ATIVO")
             .order("nome", { ascending: true });
         if (error) throw error;
-        return data || [];
+
+        return (data || []).map(p => ({
+            ...p,
+            total_colaboradores: p.usuarios?.[0]?.count || 0
+        }));
     },
 
     async getPerfil(id: number): Promise<any> {
