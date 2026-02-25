@@ -17,12 +17,12 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // OPERACIONAL: Motoboy batendo ponto
     app.post("/toggle", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
-        const { usuario_id, location, cliente_id, empresa_id } = request.body as any;
+        const { usuario_id, location, km, cliente_id, empresa_id } = request.body as any;
 
         if (!usuario_id) return reply.status(400).send({ error: "usuario_id obrigatório" });
 
         try {
-            const result = await pontoService.togglePonto(usuario_id, location, cliente_id, empresa_id);
+            const result = await pontoService.togglePonto(usuario_id, location, km, cliente_id, empresa_id);
             return reply.status(200).send(result);
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });
@@ -148,6 +148,16 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         try {
             const result = await pontoService.finalizarPausa(id, data);
             return reply.status(200).send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+    // OPERACIONAL: Buscar a última quilometragem registrada (para validação)
+    app.get("/ultimo-km/:usuarioId", { preHandler: [verifyOperacional()] }, async (request: any, reply) => {
+        const usuarioId = request.params["usuarioId"] as string;
+        try {
+            const result = await pontoService.getUltimoKm(usuarioId);
+            return reply.send({ km: result });
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });
         }

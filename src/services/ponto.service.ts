@@ -397,7 +397,7 @@ export const pontoService = {
         return data;
     },
 
-    async togglePonto(usuarioId: string, location?: any, clienteId?: number, empresaId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
+    async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
         // 1. Buscar último registro
         const { data: lastRecord, error } = await supabaseAdmin
             .from("registros_ponto")
@@ -422,7 +422,8 @@ export const pontoService = {
             if (diffHours < 16) {
                 const updated = await this.updatePonto(lastRecord.id, {
                     saida_hora: nowDesc,
-                    saida_loc: location
+                    saida_loc: location,
+                    saida_km: km
                 });
                 return { action: 'CLOSE', record: updated };
             }
@@ -437,6 +438,7 @@ export const pontoService = {
             saida_hora: null,
             criado_por: usuarioId,
             entrada_loc: location,
+            entrada_km: km,
             cliente_id: clienteId,
             empresa_id: empresaId
         });
@@ -507,14 +509,49 @@ export const pontoService = {
         return updated;
     },
 
-    async getPausas(pontoId: number): Promise<any[]> {
-        const { data, error } = await supabaseAdmin
-            .from("registros_pausas")
-            .select("*")
-            .eq("ponto_id", pontoId)
-            .order("inicio_hora", { ascending: true });
+    async getUltimoKm(usuarioId: string): Promise<number> {
+        // Busca o último KM da tabela de pontos
+        const { data: lastPonto } = await supabaseAdmin
+            .from("registros_ponto")
+            .select("id, entrada_km, saida_km")
+            .eq("usuario_id", usuarioId)
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (error) throw error;
-        return data || [];
+        // Busca o último KM da tabela de pausas
+        const { data: lastPausa } = await supabaseAdmin
+            .from("registros_pausas")
+            .select("inicio_km, fim_km")
+            .eq("ponto_id", lastPonto?.id || 0) // Considera o ponto atual se existir
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        // Pega todos os valores de KM possíveis
+        const kmas = [
+            lastPonto?.entrada_km || 0,
+            lastPonto?.saida_km || 0,
+            lastPausa?.inicio_km || 0,
+            lastPausa?.fim_km || 0
+        ];
+
+        // Se não houver nada, busca o último registro de ponto geral do usuário para garantir
+        if (Math.max(...kmas) === 0) {
+            const { data: absoluteLast } = await supabaseAdmin
+                .from("registros_ponto")
+                .select("saida_km, entrada_km")
+                .eq("usuario_id", usuarioId)
+                .not("entrada_km", "is", null)
+                .order("id", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (absoluteLast) {
+                return absoluteLast.saida_km || absoluteLast.entrada_km || 0;
+            }
+        }
+
+        return Math.max(...kmas);
     }
 };
