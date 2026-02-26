@@ -23,6 +23,7 @@ export async function createApp(): Promise<FastifyInstance> {
       "http://localhost:5173",
       "http://localhost:8080",
       "https://embu-express.vercel.app",
+      "https://dev-embu-express.vercel.app",
       "https://localhost", // Android Capacitor
       "capacitor://localhost", // iOS Capacitor
       "http://localhost" // Web/General fallback
@@ -35,8 +36,8 @@ export async function createApp(): Promise<FastifyInstance> {
         // Permitir requisições sem origin (mobile apps, Postman, etc)
         if (!origin) return callback(null, true);
 
-        // Verificar se a origin está na lista de permitidas
-        if (allowedOrigins.includes(origin)) {
+        // Verificar se a origin está na lista de permitidas ou se "*" foi definido
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
           callback(null, true);
         } else {
           // Em produção, rejeitar origens não permitidas
