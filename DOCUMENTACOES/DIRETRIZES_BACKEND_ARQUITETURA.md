@@ -7,7 +7,7 @@ Este documento serve como referência única de verdade para a arquitetura do pr
 
 ---
 
-## 1. Princípios Gerais
+### 1. Princípios Gerais
 - **Controller Magro, Service Gordo:** A lógica de negócios **DEVE** residir nos services. Os controllers servem apenas para: receber a requisição, validar entrada (Zod), chamar o serviço e devolver a resposta.
 - **Tipagem Forte:** Use DTOs definidos em `src/types/dtos` para validar entradas e tipar saídas. Não use `any` a menos que estritamente necessário (ex: bibliotecas legadas).
 - **Validação com Zod:** Toda entrada de dados em rotas (body, query, params) deve ser validada usando schemas do Zod.
