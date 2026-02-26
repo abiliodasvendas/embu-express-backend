@@ -29,10 +29,7 @@ export const getLatestUpdate = async (
         if (error) {
             // PGRST116 is the error code for "no rows returned" in Supabase
             if (error.code === "PGRST116") {
-                return reply.status(404).send({
-                    error: "Not Found",
-                    message: "Nenhuma atualização encontrada para a plataforma informada.",
-                });
+                return reply.status(200).send(null);
             }
             throw error;
         }
