@@ -24,9 +24,9 @@ export async function createApp(): Promise<FastifyInstance> {
       "http://localhost:8080",
       "https://embu-express.vercel.app",
       "https://dev-embu-express.vercel.app",
-      "https://localhost", // Android Capacitor
-      "capacitor://localhost", // iOS Capacitor
-      "http://localhost" // Web/General fallback
+      "https://localhost",
+      "capacitor://localhost",
+      "http://localhost"
     ];
 
     const allowedOrigins = Array.from(new Set([...envOrigins, ...defaultOrigins]));
