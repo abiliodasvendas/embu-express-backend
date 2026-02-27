@@ -23,6 +23,15 @@ export const perfilService = {
         }));
     },
 
+    async listPublicPerfis(): Promise<any[]> {
+        const { data, error } = await supabaseAdmin
+            .from("perfis")
+            .select("id, nome, descricao")
+            .order("nome", { ascending: true });
+        if (error) throw error;
+        return data || [];
+    },
+
     async getPerfil(id: number): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("perfis")

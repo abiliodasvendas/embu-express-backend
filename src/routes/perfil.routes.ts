@@ -4,6 +4,15 @@ import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { perfilService } from "../services/perfil.service.js";
 
 const perfilRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+    app.get("/publico", async (request, reply) => {
+        try {
+            const result = await perfilService.listPublicPerfis();
+            return reply.status(200).send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
     app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.PERFIS.VER)] }, async (request, reply) => {
         try {
             const result = await perfilService.listPerfis();
