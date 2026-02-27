@@ -81,7 +81,8 @@ async function calculateStatus(
     };
 
     if (entrada_km != null && saida_km != null) {
-        detalhes.resumo.diff_km = saida_km - entrada_km;
+        // Preserva a precisão decimal no cálculo da diferença
+        detalhes.resumo.diff_km = Number((saida_km - entrada_km).toFixed(3));
     }
 
     if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
