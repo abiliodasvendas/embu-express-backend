@@ -380,6 +380,9 @@ ALTER TABLE ONLY "public"."permissoes" ALTER COLUMN "id" SET DEFAULT "nextval"('
 ALTER TABLE ONLY "public"."clientes"
     ADD CONSTRAINT "clients_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."clientes"
+    ADD CONSTRAINT "clientes_cnpj_key" UNIQUE ("cnpj");
+
 
 
 ALTER TABLE ONLY "public"."colaborador_clientes"
@@ -395,10 +398,22 @@ ALTER TABLE ONLY "public"."configuracoes_sistema"
 ALTER TABLE ONLY "public"."empresas"
     ADD CONSTRAINT "empresas_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."empresas"
+    ADD CONSTRAINT "empresas_cnpj_key" UNIQUE ("cnpj");
+
 
 
 ALTER TABLE ONLY "public"."usuarios"
-    ADD CONSTRAINT "profiles_cpf_key" UNIQUE ("cpf");
+    ADD CONSTRAINT "usuarios_cpf_key" UNIQUE ("cpf");
+
+ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "usuarios_email_key" UNIQUE ("email");
+
+ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "usuarios_cnpj_key" UNIQUE ("cnpj");
+
+ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "usuarios_chave_pix_key" UNIQUE ("chave_pix");
 
 
 
@@ -718,8 +733,8 @@ SELECT
     rp.status_saida,
     rp.cliente_id,
     c.nome_fantasia AS cliente_nome,
-    (SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(fim_hora, inicio_hora) - inicio_hora))/60), 0) FROM registros_pausas WHERE ponto_id = rp.id) AS total_pausas_minutos,
-    (SELECT COUNT(*) FROM registros_pausas WHERE ponto_id = rp.id) AS qtd_pausas
+    (SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(fim_hora, inicio_hora) - inicio_hora))/60), 0) FROM public.registros_pausas WHERE ponto_id = rp.id) AS total_pausas_minutos,
+    (SELECT COUNT(*) FROM public.registros_pausas WHERE ponto_id = rp.id) AS qtd_pausas
 FROM public.registros_ponto rp
 JOIN public.usuarios u ON u.id = rp.usuario_id
 LEFT JOIN public.clientes c ON c.id = rp.cliente_id;
@@ -741,16 +756,14 @@ FROM public.registros_ponto rp;
 GRANT SELECT ON "public"."v_relatorio_mensal_ponto" TO anon, authenticated, service_role;
 GRANT SELECT ON "public"."v_auditoria_localizacao" TO anon, authenticated, service_role;
 
-
-
-
-
-
-
-
 -- --- STORAGE CONFIGURATION ---
 
 -- 1. Create the bucket 'ota' if it doesn't exist
 INSERT INTO storage.buckets (id, name, public) 
-VALUES ('ota', 'ota', true) 
+VALUES ('ota', 'ota', true)
 ON CONFLICT (id) DO NOTHING;
+
+
+
+
+

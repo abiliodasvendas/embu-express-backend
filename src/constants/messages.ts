@@ -39,6 +39,9 @@ export const messages = {
       atualizarStatus: "Falha ao atualizar status",
       autoExclusao: "Você não pode excluir seu próprio usuário.",
       autoDesativacao: "Você não pode desativar seu próprio usuário.",
+      cpfJaExiste: "Este CPF já está cadastrado no sistema.",
+      emailJaExiste: "Este E-mail já está cadastrado no sistema.",
+      cnpjJaExiste: "Este CNPJ já está cadastrado no sistema.",
     }
   },
   ponto: {
@@ -58,6 +61,7 @@ export const messages = {
       nomeObrigatorio: "Nome fantasia é obrigatório",
       idObrigatorio: "ID do cliente é obrigatório",
       falhaAtivarDesativar: "Falha ao {acao} o cliente.",
+      cnpjJaExiste: "Este CNPJ já está cadastrado para outro cliente.",
     }
   },
   empresa: {
@@ -65,6 +69,7 @@ export const messages = {
       nomeObrigatorio: "Nome fantasia é obrigatório",
       idObrigatorio: "ID da empresa é obrigatório",
       falhaAtivarDesativar: "Falha ao {acao} a empresa.",
+      cnpjJaExiste: "Este CNPJ já está cadastrado para outra empresa.",
     }
   }
 };

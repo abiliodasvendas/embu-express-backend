@@ -21,7 +21,13 @@ export const clientService = {
             .insert([clientData])
             .select()
             .single();
-        if (error) throw error;
+
+        if (error) {
+            if (error.code === '23505' && error.message?.toLowerCase().includes('cnpj')) {
+                throw new Error(messages.cliente.erro.cnpjJaExiste);
+            }
+            throw error;
+        }
 
         return inserted;
     },
@@ -41,7 +47,13 @@ export const clientService = {
             .eq("id", id)
             .select()
             .single();
-        if (error) throw error;
+
+        if (error) {
+            if (error.code === '23505' && error.message?.toLowerCase().includes('cnpj')) {
+                throw new Error(messages.cliente.erro.cnpjJaExiste);
+            }
+            throw error;
+        }
 
         return updated;
     },

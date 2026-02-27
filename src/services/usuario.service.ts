@@ -62,6 +62,16 @@ export const usuarioService = {
         if (error) {
             console.error("[createUsuario] Erro no Banco:", error);
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+
+            // Handle unique constraint violations
+            if (error.code === '23505') {
+                if (error.message?.includes('cpf')) {
+                    throw new Error(messages.usuario.erro.cpfJaExiste);
+                }
+                if (error.message?.includes('email')) {
+                    throw new Error(messages.usuario.erro.emailJaExiste);
+                }
+            }
             throw error;
         }
 
@@ -100,7 +110,20 @@ export const usuarioService = {
             .eq("id", id)
             .select("*, perfil:perfis(*)")
             .single();
-        if (error) throw error;
+
+        if (error) {
+            console.error("[updateUsuario] Erro no Banco:", error);
+            // Handle unique constraint violations
+            if (error.code === '23505') {
+                if (error.message?.includes('cpf')) {
+                    throw new Error(messages.usuario.erro.cpfJaExiste);
+                }
+                if (error.message?.includes('email')) {
+                    throw new Error(messages.usuario.erro.emailJaExiste);
+                }
+            }
+            throw error;
+        }
 
         // Sync Links
         if (links && Array.isArray(links)) {
