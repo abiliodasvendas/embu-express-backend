@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
+import { logger } from "../config/logger.js";
 
 export const colaboradorClienteService = {
     /**
@@ -66,6 +67,7 @@ export const colaboradorClienteService = {
     },
 
     async createLink(linkData: any): Promise<any> {
+        logger.info({ linkData }, "[colaboradorClienteService] Criando vínculo");
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .insert(linkData)
@@ -77,6 +79,7 @@ export const colaboradorClienteService = {
     },
 
     async updateLink(id: number, linkData: any): Promise<any> {
+        logger.info({ id, linkData }, "[colaboradorClienteService] Atualizando vínculo");
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .update(linkData)
