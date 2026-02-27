@@ -15,17 +15,29 @@ export async function createApp(): Promise<FastifyInstance> {
     app.setErrorHandler(globalErrorHandler);
 
     // Configuração de CORS
-    const allowedOrigins = process.env.ALLOWED_ORIGINS
+    const envOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-      : ["http://localhost:5173", "http://localhost:8080", "https://embu-express.vercel.app"];
+      : [];
+
+    const defaultOrigins = [
+      "http://localhost:5173",
+      "http://localhost:8080",
+      "https://embu-express.vercel.app",
+      "https://dev-embu-express.vercel.app",
+      "https://localhost",
+      "capacitor://localhost",
+      "http://localhost"
+    ];
+
+    const allowedOrigins = Array.from(new Set([...envOrigins, ...defaultOrigins]));
 
     await app.register(fastifyCors, {
       origin: (origin, callback) => {
         // Permitir requisições sem origin (mobile apps, Postman, etc)
         if (!origin) return callback(null, true);
 
-        // Verificar se a origin está na lista de permitidas
-        if (allowedOrigins.includes(origin)) {
+        // Verificar se a origin está na lista de permitidas ou se "*" foi definido
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
           callback(null, true);
         } else {
           // Em produção, rejeitar origens não permitidas
