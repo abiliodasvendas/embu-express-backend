@@ -1,11 +1,11 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import { supabaseAdmin } from "../config/supabase.js";
-import { messages } from "../constants/messages.js";
-import { usuarioService } from "../services/usuario.service.js";
-import { createVinculoSchema, updateVinculoSchema } from "../types/dtos/colaborador-cliente.dto.js";
-import { AppError } from "../errors/AppError.js";
 import { z } from "zod";
 import { logger } from "../config/logger.js";
+import { supabaseAdmin } from "../config/supabase.js";
+import { messages } from "../constants/messages.js";
+import { AppError } from "../errors/AppError.js";
+import { usuarioService } from "../services/usuario.service.js";
+import { createVinculoSchema, updateVinculoSchema } from "../types/dtos/colaborador-cliente.dto.js";
 
 export const UsuarioController = {
     async create(request: FastifyRequest, reply: FastifyReply) {
@@ -110,12 +110,9 @@ export const UsuarioController = {
         }
     },
 
-    // --- Vínculos (Turnos) ---
-
     async createVinculo(request: FastifyRequest, reply: FastifyReply) {
         try {
             const data = createVinculoSchema.parse(request.body);
-            // Import dynamically to avoid circular dependency if any, though here it's fine.
             const { colaboradorClienteService } = await import("../services/colaborador-cliente.service.js");
             const result = await colaboradorClienteService.createLink(data);
             return reply.status(201).send(result);

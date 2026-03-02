@@ -1,6 +1,6 @@
+import { logger } from "../config/logger.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { logger } from "../config/logger.js";
 
 export const colaboradorClienteService = {
     /**
