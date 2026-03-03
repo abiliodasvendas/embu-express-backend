@@ -3,6 +3,7 @@ import { messages } from "../constants/messages.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
+import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
 
 // Helper para processar dados de localização
 function processLocationData(loc: any) {
@@ -191,14 +192,17 @@ async function calculateStatus(
 
 export const pontoService = {
     async registrarPonto(data: any): Promise<any> {
+        const entrada_hora = data.entrada_hora ? toBRTime(data.entrada_hora) : getNowBR();
+        const saida_hora = data.saida_hora ? toBRTime(data.saida_hora) : null;
+
         // 1. Validações Básicas (Ordem e Duração)
-        const orderCheck = TimeRecordRules.validateTimeOrder(data.entrada_hora, data.saida_hora);
+        const orderCheck = TimeRecordRules.validateTimeOrder(entrada_hora, saida_hora);
         if (!orderCheck.valid) throw new Error(orderCheck.message);
 
-        const durationCheck = TimeRecordRules.validateMinDuration(data.entrada_hora, data.saida_hora);
+        const durationCheck = TimeRecordRules.validateMinDuration(entrada_hora, saida_hora);
         if (!durationCheck.valid) throw new Error(durationCheck.message);
 
-        const maxDurationCheck = TimeRecordRules.validateMaxDuration(data.entrada_hora, data.saida_hora);
+        const maxDurationCheck = TimeRecordRules.validateMaxDuration(entrada_hora, saida_hora);
         if (!maxDurationCheck.valid) throw new Error(maxDurationCheck.message);
 
         // 2. Validação de Sobreposição
@@ -224,8 +228,8 @@ export const pontoService = {
         // 3. Calcular status e detalhes antes de salvar
         const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await calculateStatus(
             data.usuario_id,
-            data.entrada_hora,
-            data.saida_hora,
+            entrada_hora,
+            saida_hora,
             data.entrada_km,
             data.saida_km,
             0,
@@ -246,10 +250,12 @@ export const pontoService = {
 
         const payload = {
             ...data,
+            entrada_hora,
+            saida_hora,
             entrada_km: data.entrada_km ?? null,
             saida_km: data.saida_km ?? null,
             status_entrada,
-            status_saida: data.saida_hora ? (data.status_saida || status_saida) : null,
+            status_saida: saida_hora ? (data.status_saida || status_saida) : null,
             detalhes_calculo,
             saldo_minutos,
             cliente_id: finalClienteId,
@@ -281,8 +287,8 @@ export const pontoService = {
             // We need to fetch the existing record if one of the times is missing to calculate correctly? 
             // For simplicity, we assume the frontend sends what is needed or we fetch inside (better).
             const existing = await this.getPonto(id);
-            const entrada = data.entrada_hora || existing.entrada_hora;
-            const saida = data.saida_hora !== undefined ? data.saida_hora : existing.saida_hora; // Handle explicit null
+            const entrada = data.entrada_hora ? toBRTime(data.entrada_hora) : existing.entrada_hora;
+            const saida = data.saida_hora !== undefined ? (data.saida_hora ? toBRTime(data.saida_hora) : null) : existing.saida_hora; // Handle explicit null
 
             const entradaKm = data.entrada_km !== undefined ? data.entrada_km : existing.entrada_km;
             const saidaKm = data.saida_km !== undefined ? data.saida_km : existing.saida_km;
@@ -334,6 +340,18 @@ export const pontoService = {
                 clienteIdAtualValue,
                 snapshot
             );
+
+            // --- RELATIVE KM LOGIC (2.3) FOR EXIT ---
+            if (saida && saidaKm) {
+                let lastKmForExit = 0;
+                const { data: lastPausaForExit } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
+                lastKmForExit = lastPausaForExit?.fim_km || existing.entrada_km || 0;
+
+                const diffKm = Math.abs(saidaKm - lastKmForExit);
+                if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
+
+                payload.saida_distancia_trabalho = Math.max(0, saidaKm - lastKmForExit);
+            }
 
             payload.status_entrada = status_entrada;
             payload.status_saida = status_saida;
@@ -423,20 +441,23 @@ export const pontoService = {
     },
 
     async getPontoHoje(usuarioId: string): Promise<any> {
-        const hoje = new Date().toISOString().split('T')[0];
+        const hoje = toLocalDateString(new Date(getNowBR()));
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*, cliente:clientes(*), pausas:registros_pausas(*)")
             .eq("usuario_id", usuarioId)
             .eq("data_referencia", hoje)
-            .order('id', { ascending: false })
-            .limit(1)
+            .order("entrada_hora", { ascending: false })
             .maybeSingle();
+
         if (error) throw error;
         return data;
     },
 
     async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
+        const now = getNowBR();
+        const todayStr = toLocalDateString(new Date(now));
+
         // 1. Buscar último registro
         const { data: lastRecord, error } = await supabaseAdmin
             .from("registros_ponto")
@@ -448,8 +469,8 @@ export const pontoService = {
 
         if (error) throw error;
 
-        const nowSEO = new Date();
-        const nowDesc = nowSEO.toISOString();
+        const nowSEO = new Date(now);
+        const nowDesc = now;
 
         // Cenário A: Turno Aberto e < 16h -> FECHAR
         if (lastRecord && !lastRecord.saida_hora) {
@@ -469,7 +490,7 @@ export const pontoService = {
         }
 
         // Cenário B: Turno Fechado, Inexistente, ou Aberto > 16h -> ABRIR
-        const dataRef = nowDesc.split('T')[0];
+        const dataRef = todayStr;
         const newRecord = await this.registrarPonto({
             usuario_id: usuarioId,
             data_referencia: dataRef,
@@ -497,7 +518,8 @@ export const pontoService = {
 
     async iniciarPausa(data: PausaPayload): Promise<any> {
         if (!data.ponto_id) throw new Error(messages.ponto.erro.idPontoObrigatorio);
-        if (!data.inicio_hora) data.inicio_hora = new Date().toISOString();
+        if (!data.inicio_hora) data.inicio_hora = getNowBR();
+        else data.inicio_hora = toBRTime(data.inicio_hora);
 
         // Check if there is already an open pause?
         const { data: openPausa } = await supabaseAdmin
@@ -509,7 +531,17 @@ export const pontoService = {
 
         if (openPausa) throw new Error(messages.ponto.erro.pausaAberta);
 
-        if (openPausa) throw new Error(messages.ponto.erro.pausaAberta);
+        // --- RELATIVE KM LOGIC (2.3) ---
+        // Calcula distancia_trabalho entre a última marcação (entrada ou fim da última pausa) e agora
+        let lastKm = 0;
+        const { data: pointData } = await supabaseAdmin.from("registros_ponto").select("entrada_km").eq("id", data.ponto_id).single();
+        const { data: lastPausa } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", data.ponto_id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
+
+        lastKm = lastPausa?.fim_km || pointData?.entrada_km || 0;
+        const diffKm = data.inicio_km ? Math.abs(data.inicio_km - lastKm) : 0;
+        if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
+
+        const distanciaTrabalho = data.inicio_km ? Math.max(0, data.inicio_km - lastKm) : 0;
 
         const { lat, lng, metadata } = processLocationData(data.inicio_loc);
 
@@ -522,7 +554,8 @@ export const pontoService = {
                 inicio_loc: data.inicio_loc,
                 inicio_lat: lat,
                 inicio_lng: lng,
-                inicio_metadata: metadata
+                inicio_metadata: metadata,
+                distancia_trabalho: distanciaTrabalho // KM rodado em trabalho até esta pausa
             }])
             .select()
             .single();
@@ -532,7 +565,17 @@ export const pontoService = {
     },
 
     async finalizarPausa(id: number, data: Partial<PausaPayload>): Promise<any> {
-        if (!data.fim_hora) data.fim_hora = new Date().toISOString();
+        if (!data.fim_hora) data.fim_hora = getNowBR();
+        else data.fim_hora = toBRTime(data.fim_hora);
+
+        const { data: currentPausa } = await supabaseAdmin.from("registros_pausas").select("inicio_km").eq("id", id).single();
+
+        if (data.fim_km && currentPausa?.inicio_km) {
+            const diffKm = Math.abs(data.fim_km - currentPausa.inicio_km);
+            if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
+        }
+
+        const distanciaPausa = (data.fim_km && currentPausa?.inicio_km) ? Math.max(0, data.fim_km - currentPausa.inicio_km) : 0;
 
         const { lat, lng, metadata } = processLocationData(data.fim_loc);
 
@@ -544,7 +587,8 @@ export const pontoService = {
                 fim_loc: data.fim_loc,
                 fim_lat: lat,
                 fim_lng: lng,
-                fim_metadata: metadata
+                fim_metadata: metadata,
+                distancia_pausa: distanciaPausa // KM rodado durante a pausa
             })
             .eq("id", id)
             .select()

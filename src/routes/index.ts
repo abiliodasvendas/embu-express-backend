@@ -7,6 +7,8 @@ import empresaRoutes from "./empresa.routes.js";
 import perfilRoutes from "./perfil.routes.js";
 import pontoRoutes from "./ponto.routes.js";
 import usuarioRoutes from "./usuario.routes.js";
+import ocorrenciaRoutes from "./ocorrencia.routes.js";
+import financeiroRoutes from "./financeiro.routes.js";
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Embu Express Routes
@@ -18,6 +20,8 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(perfilRoutes, { prefix: "/api/perfis" });
   app.register(pontoRoutes, { prefix: "/api/pontos" });
   app.register(usuarioRoutes, { prefix: "/api/usuarios" });
+  app.register(ocorrenciaRoutes, { prefix: "/api/ocorrencias" });
+  app.register(financeiroRoutes, { prefix: "/api/financeiro" });
 };
 
 export default routes;

@@ -32,7 +32,11 @@ export const colaboradorClienteService = {
             valor_contrato: link.valor_contrato,
             valor_aluguel: link.valor_aluguel,
             valor_bonus: link.valor_bonus,
-            ajuda_custo: link.ajuda_custo
+            ajuda_custo: link.ajuda_custo,
+            valor_mei: link.valor_mei,
+            data_inicio: link.data_inicio,
+            data_fim: link.data_fim,
+            valor_adiantamento: link.valor_adiantamento
         }));
 
         // 3. Insere novos

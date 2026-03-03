@@ -42,17 +42,21 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (23, 'ponto:admin_editar', 'Ponto (Controle)', 'Alterar ou corrigir horário de uma marcação existente'),
 (24, 'ponto:admin_deletar', 'Ponto (Controle)', 'Excluir registro de ponto equivocado'),
 (25, 'configuracoes:ver', 'Configuração', 'Visualizar parâmetros do sistema'),
-(26, 'configuracoes:editar', 'Configuração', 'Alterar parâmetros do sistema')
+(26, 'configuracoes:editar', 'Configuração', 'Alterar parâmetros do sistema'),
+(27, 'ocorrencias:ver', 'Ocorrências', 'Visualizar lista de ocorrências'),
+(28, 'ocorrencias:criar', 'Ocorrências', 'Registrar nova ocorrência'),
+(29, 'ocorrencias:editar', 'Ocorrências', 'Editar ocorrências existentes'),
+(30, 'ocorrencias:deletar', 'Ocorrências', 'Remover registros de ocorrência')
 ON CONFLICT (id) DO NOTHING;
 
 -- CEO (Id 4) and Super Admin (Id 1) get all permissions
 INSERT INTO "public"."perfil_permissoes" ("perfil_id", "permissao_id") VALUES
 (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10),
 (1, 11), (1, 12), (1, 13), (1, 14), (1, 15), (1, 16), (1, 17), (1, 18), (1, 19),
-(1, 21), (1, 22), (1, 23), (1, 24), (1, 25), (1, 26),
+(1, 21), (1, 22), (1, 23), (1, 24), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30),
 (4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10),
 (4, 11), (4, 12), (4, 13), (4, 14), (4, 15), (4, 16), (4, 17), (4, 18), (4, 19),
-(4, 21), (4, 22), (4, 23), (4, 24), (4, 25), (4, 26)
+(4, 21), (4, 22), (4, 23), (4, 24), (4, 25), (4, 26), (4, 27), (4, 28), (4, 29), (4, 30)
 ON CONFLICT DO NOTHING;
 
 -- 2. Create System Configurations
@@ -121,3 +125,13 @@ INSERT INTO "public"."usuarios" (
     'ATIVO',
     false
 ) ON CONFLICT (id) DO NOTHING;
+
+
+-- 5. Create Initial Occurrence Types
+INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao") VALUES
+(1, 'Falta'),
+(2, 'Atraso'),
+(3, 'Bônus Extra'),
+(4, 'Quebra de Equipamento'),
+(5, 'Outros')
+ON CONFLICT (id) DO NOTHING;

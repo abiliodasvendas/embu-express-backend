@@ -44,10 +44,12 @@ export const usuarioService = {
             nome_completo: cleanString(data.nome_completo),
             perfil_id: data.perfil_id,
             cpf: onlyDigits(data.cpf),
-            cnpj: data.cnpj?.trim() === "" ? null : data.cnpj,
+            cnpj: (data.cnpj === undefined || data.cnpj === null || data.cnpj.trim() === "") ? null : data.cnpj,
             telefone: onlyDigits(data.telefone),
             telefone_recado: data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado),
             status: data.status || STATUS.ATIVO,
+            tipo_chave_pix: data.tipo_chave_pix || null,
+            chave_pix: data.chave_pix || null,
             senha_padrao: data.status === STATUS.PENDENTE ? false : true
         };
 
@@ -101,6 +103,12 @@ export const usuarioService = {
         }
         if (data.cnpj !== undefined) {
             usuarioData.cnpj = data.cnpj?.trim() === "" ? null : data.cnpj;
+        }
+        if (data.tipo_chave_pix !== undefined) {
+            usuarioData.tipo_chave_pix = data.tipo_chave_pix || null;
+        }
+        if (data.chave_pix !== undefined) {
+            usuarioData.chave_pix = data.chave_pix || null;
         }
 
 

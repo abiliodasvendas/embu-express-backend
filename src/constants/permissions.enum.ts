@@ -36,6 +36,16 @@ export const PERMISSIONS = {
         VER: 'configuracoes:ver',
         EDITAR: 'configuracoes:editar',
     },
+    OCORRENCIAS: {
+        VER: 'ocorrencias:ver',
+        CRIAR: 'ocorrencias:criar',
+        EDITAR: 'ocorrencias:editar',
+        DELETAR: 'ocorrencias:deletar',
+        TIPOS: 'ocorrencias:tipos',
+    },
+    FINANCEIRO: {
+        EXTRATO: 'financeiro:extrato',
+    },
 } as const;
 
 export const ROLES = {

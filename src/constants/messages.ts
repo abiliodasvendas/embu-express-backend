@@ -54,6 +54,7 @@ export const messages = {
       duracaoMinima: "O registro deve ter duração mínima de {min} minuto(s).",
       duracaoMaxima: "O registro excede o limite máximo de {max} horas.",
       sobreposicao: "O horário informado conflita com outro registro existente.",
+      kmInvalido: "O KM informado parece incorreto (diferença muito grande). Verifique o valor.",
     }
   },
   cliente: {
