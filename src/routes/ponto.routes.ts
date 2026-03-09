@@ -162,6 +162,22 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             return reply.status(400).send({ error: err.message });
         }
     });
+    // ADMIN: Relatório Mensal (Espelho de Ponto)
+    app.get("/relatorio-mensal/:usuario_id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, async (request: any, reply) => {
+        const usuario_id = request.params["usuario_id"] as string;
+        const { mes, ano } = request.query as any;
+
+        if (!mes || !ano) {
+            return reply.status(400).send({ error: "mes e ano são obrigatórios na query" });
+        }
+
+        try {
+            const result = await pontoService.getRelatorioMensal(usuario_id, parseInt(mes), parseInt(ano));
+            return reply.status(200).send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
 };
 
 export default pontoRoutes;

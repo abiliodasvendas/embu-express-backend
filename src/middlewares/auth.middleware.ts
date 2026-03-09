@@ -23,6 +23,7 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             const { data: usuario, error: dbError } = await supabaseAdmin
                 .from("usuarios")
                 .select(`
+                    status,
                     perfil:perfis(
                         nome,
                         perfil_permissoes(
@@ -35,6 +36,10 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
 
             if (dbError || !usuario) {
                 return reply.status(403).send({ error: "Usuário não encontrado." });
+            }
+
+            if (usuario.status !== 'ATIVO') {
+                return reply.status(403).send({ error: "Sua conta está inativa. Acesso negado." });
             }
 
             const nomePerfil = (usuario.perfil as any)?.nome;
@@ -87,6 +92,7 @@ export function verifyOperacional() {
             const { data: usuario, error: dbError } = await supabaseAdmin
                 .from("usuarios")
                 .select(`
+                    status,
                     perfil:perfis(nome)
                 `)
                 .eq("id", user.id)
@@ -94,6 +100,10 @@ export function verifyOperacional() {
 
             if (dbError || !usuario) {
                 return reply.status(403).send({ error: "Usuário não encontrado." });
+            }
+
+            if (usuario.status !== 'ATIVO') {
+                return reply.status(403).send({ error: "Sua conta está inativa. Acesso negado." });
             }
 
             const nomePerfil = (usuario.perfil as any)?.nome;

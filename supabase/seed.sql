@@ -46,17 +46,20 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (27, 'ocorrencias:ver', 'Ocorrências', 'Visualizar lista de ocorrências'),
 (28, 'ocorrencias:criar', 'Ocorrências', 'Registrar nova ocorrência'),
 (29, 'ocorrencias:editar', 'Ocorrências', 'Editar ocorrências existentes'),
-(30, 'ocorrencias:deletar', 'Ocorrências', 'Remover registros de ocorrência')
+(30, 'ocorrencias:deletar', 'Ocorrências', 'Remover registros de ocorrência'),
+(31, 'financeiro:extrato', 'Financeiro', 'Visualizar extrato mensal'),
+(32, 'financeiro:fechar', 'Financeiro', 'Realizar fechamento mensal'),
+(33, 'financeiro:pagar', 'Financeiro', 'Marcar fechamento como pago')
 ON CONFLICT (id) DO NOTHING;
 
 -- CEO (Id 4) and Super Admin (Id 1) get all permissions
 INSERT INTO "public"."perfil_permissoes" ("perfil_id", "permissao_id") VALUES
 (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10),
 (1, 11), (1, 12), (1, 13), (1, 14), (1, 15), (1, 16), (1, 17), (1, 18), (1, 19),
-(1, 21), (1, 22), (1, 23), (1, 24), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30),
+(1, 21), (1, 22), (1, 23), (1, 24), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30), (1, 31), (1, 32), (1, 33),
 (4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10),
 (4, 11), (4, 12), (4, 13), (4, 14), (4, 15), (4, 16), (4, 17), (4, 18), (4, 19),
-(4, 21), (4, 22), (4, 23), (4, 24), (4, 25), (4, 26), (4, 27), (4, 28), (4, 29), (4, 30)
+(4, 21), (4, 22), (4, 23), (4, 24), (4, 25), (4, 26), (4, 27), (4, 28), (4, 29), (4, 30), (4, 31), (4, 32), (4, 33)
 ON CONFLICT DO NOTHING;
 
 -- 2. Create System Configurations
@@ -115,7 +118,8 @@ INSERT INTO "public"."usuarios" (
     "cpf",
     "email",
     "status",
-    "senha_padrao"
+    "senha_padrao",
+    "tipo_chave_pix"
 ) VALUES (
     'e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c',
     1, -- super_admin
@@ -123,7 +127,8 @@ INSERT INTO "public"."usuarios" (
     '03075544574',
     'admin@embuexpress.com.br',
     'ATIVO',
-    false
+    false,
+    'CPF'
 ) ON CONFLICT (id) DO NOTHING;
 
 

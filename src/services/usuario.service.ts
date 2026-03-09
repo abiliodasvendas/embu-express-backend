@@ -1,7 +1,7 @@
 import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { cleanString, onlyDigits } from "../utils/utils.js";
+import { cleanString, getNowBR, onlyDigits, toLocalDateString } from "../utils/utils.js";
 import { colaboradorClienteService } from "./colaborador-cliente.service.js";
 
 export const usuarioService = {
@@ -161,6 +161,7 @@ export const usuarioService = {
         cliente_id?: number;
         empresa_id?: number;
         status?: string;
+        sem_ponto_hoje?: boolean;
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
@@ -194,6 +195,25 @@ export const usuarioService = {
 
         let result = users || [];
 
+        // Fetch today's points for all listed users
+        const hoje = toLocalDateString(new Date());
+        const userIds = result.map((u: any) => u.id);
+
+        if (userIds.length > 0) {
+            const { data: pontosHoje } = await supabaseAdmin
+                .from("registros_ponto")
+                .select("*")
+                .in("usuario_id", userIds)
+                .eq("data_referencia", hoje);
+
+            if (pontosHoje) {
+                result = result.map((u: any) => ({
+                    ...u,
+                    ponto_hoje: pontosHoje.find((p: any) => p.usuario_id === u.id) || null
+                }));
+            }
+        }
+
         // Apply Link Filters (Client/Company)
         if (filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos') {
             result = result.filter((u: any) =>
@@ -205,6 +225,11 @@ export const usuarioService = {
             result = result.filter((u: any) =>
                 u.links?.some((l: any) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
             );
+        }
+
+        // Filter by "No point today" if requested
+        if (filtros?.sem_ponto_hoje) {
+            result = result.filter((u: any) => !u.ponto_hoje);
         }
 
         return result;

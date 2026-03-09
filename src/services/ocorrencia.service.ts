@@ -21,7 +21,7 @@ export const ocorrenciaService = {
     async listOcorrencias(filtros?: { usuario_id?: string; colaborador_cliente_id?: number; data_inicio?: string; data_fim?: string }): Promise<any[]> {
         let query = supabaseAdmin
             .from("ocorrencias")
-            .select("*, tipo:tipos_ocorrencia(*), colaborador:usuarios(*), criado_por_usuario:usuarios!ocorrencias_criado_por_fkey(*), vinculo:colaborador_clientes(*, cliente:clientes(nome_fantasia))")
+            .select("*, tipo:tipos_ocorrencia(*), colaborador:usuarios!fk_ocorrencia_colaborador(*), criado_por_usuario:usuarios!fk_ocorrencia_criado_por(*), vinculo:colaborador_clientes(*, cliente:clientes(nome_fantasia))")
             .order("data_ocorrencia", { ascending: false });
 
         if (filtros?.usuario_id) {

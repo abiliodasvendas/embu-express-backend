@@ -45,6 +45,8 @@ export const PERMISSIONS = {
     },
     FINANCEIRO: {
         EXTRATO: 'financeiro:extrato',
+        FECHAR: 'financeiro:fechar',
+        PAGAR: 'financeiro:pagar',
     },
 } as const;
 
