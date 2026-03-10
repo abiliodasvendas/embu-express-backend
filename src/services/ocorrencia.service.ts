@@ -9,20 +9,72 @@ export const ocorrenciaService = {
         const { data, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
             .select("*")
-            .order("nome", { ascending: true });
+            .order("descricao", { ascending: true });
 
         if (error) throw error;
         return data || [];
     },
 
     /**
+     * Cria um novo tipo de ocorrência.
+     */
+    async createTipoOcorrencia(data: any): Promise<any> {
+        const { data: inserted, error } = await supabaseAdmin
+            .from("tipos_ocorrencia")
+            .insert([data])
+            .select()
+            .single();
+
+        if (error) throw error;
+        return inserted;
+    },
+
+    /**
+     * Atualiza um tipo de ocorrência.
+     */
+    async updateTipoOcorrencia(id: number, data: any): Promise<any> {
+        const { data: updated, error } = await supabaseAdmin
+            .from("tipos_ocorrencia")
+            .update(data)
+            .eq("id", id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return updated;
+    },
+
+    /**
+     * Remove um tipo de ocorrência.
+     */
+    async deleteTipoOcorrencia(id: number): Promise<void> {
+        const { error } = await supabaseAdmin
+            .from("tipos_ocorrencia")
+            .delete()
+            .eq("id", id);
+
+        if (error) throw error;
+    },
+
+    /**
      * Lista ocorrências com filtros.
      */
-    async listOcorrencias(filtros?: { usuario_id?: string; colaborador_cliente_id?: number; data_inicio?: string; data_fim?: string }): Promise<any[]> {
+    async listOcorrencias(filtros?: {
+        usuario_id?: string;
+        colaborador_cliente_id?: number;
+        data_inicio?: string;
+        data_fim?: string;
+        order?: string;
+        ascending?: boolean;
+    }): Promise<any[]> {
         let query = supabaseAdmin
             .from("ocorrencias")
-            .select("*, tipo:tipos_ocorrencia(*), colaborador:usuarios!fk_ocorrencia_colaborador(*), criado_por_usuario:usuarios!fk_ocorrencia_criado_por(*), vinculo:colaborador_clientes(*, cliente:clientes(nome_fantasia))")
-            .order("data_ocorrencia", { ascending: false });
+            .select("*, tipo:tipos_ocorrencia(*), colaborador:usuarios!fk_ocorrencia_colaborador(*), criado_por_usuario:usuarios!fk_ocorrencia_criado_por(*), vinculo:colaborador_clientes(*, cliente:clientes(nome_fantasia))");
+
+        const orderField = filtros?.order || "data_ocorrencia";
+        const isAscending = filtros?.ascending === true || (typeof filtros?.ascending === "string" && filtros.ascending === "true");
+
+        query = query.order(orderField, { ascending: isAscending });
 
         if (filtros?.usuario_id) {
             query = query.eq("colaborador_id", filtros.usuario_id);

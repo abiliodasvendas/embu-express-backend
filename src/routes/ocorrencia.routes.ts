@@ -14,6 +14,40 @@ const ocorrenciaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
+    // Criar tipo de ocorrência
+    app.post("/tipos", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, async (request, reply) => {
+        const data = request.body as any;
+        try {
+            const result = await ocorrenciaService.createTipoOcorrencia(data);
+            return reply.status(201).send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // Atualizar tipo de ocorrência
+    app.put("/tipos/:id", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, async (request, reply) => {
+        const id = parseInt((request.params as any).id);
+        const data = request.body as any;
+        try {
+            const result = await ocorrenciaService.updateTipoOcorrencia(id, data);
+            return reply.send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // Deletar tipo de ocorrência
+    app.delete("/tipos/:id", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, async (request, reply) => {
+        const id = parseInt((request.params as any).id);
+        try {
+            await ocorrenciaService.deleteTipoOcorrencia(id);
+            return reply.status(204).send();
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
     // Listar ocorrências com filtros
     app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.VER)] }, async (request, reply) => {
         const filtros = request.query as any;

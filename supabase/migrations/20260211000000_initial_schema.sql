@@ -184,6 +184,8 @@ COMMENT ON COLUMN "public"."empresas"."codigo" IS 'Sigla da empresa (ex: EE, ES,
 CREATE TABLE IF NOT EXISTS "public"."tipos_ocorrencia" (
     "id" integer NOT NULL,
     "descricao" character varying(100) NOT NULL,
+    "impacto_financeiro" boolean DEFAULT false,
+    "valor_padrao" numeric DEFAULT 0,
     "created_at" timestamp with time zone DEFAULT "now"()
 );
 
@@ -211,7 +213,7 @@ CREATE TABLE IF NOT EXISTS "public"."ocorrencias" (
     "valor" numeric DEFAULT 0,
     "impacto_financeiro" boolean DEFAULT false,
     "tipo_lancamento" character varying(10) DEFAULT 'SAIDA'::character varying,
-    "observacao" "text",
+    "observacao" "text" NOT NULL,
     "criado_por" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
