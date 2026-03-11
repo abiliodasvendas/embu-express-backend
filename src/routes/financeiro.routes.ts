@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { PERMISSIONS } from "../constants/permissions.enum.js";
 import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { financeiroService } from "../services/financeiro.service.js";
-import { getExtratoSchema, fecharMesSchema, marcarPagoSchema } from "../types/dtos/financeiro.dto.js";
+import { fecharMesSchema, getExtratoSchema } from "../types/dtos/financeiro.dto.js";
 
 const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Obter extrato mensal do colaborador
@@ -19,29 +19,15 @@ const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    // Fechar mês (Snapshot)
-    app.post("/fechar/:usuarioId", {
-        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.FECHAR)]
-    }, async (request, reply) => {
-        const { params, body } = fecharMesSchema.parse(request);
-        const fechadoPor = (request as any).user.id;
-
-        try {
-            const result = await financeiroService.confirmarFechamento(params.usuarioId, body.mes, body.ano, fechadoPor);
-            return reply.send(result);
-        } catch (err: any) {
-            return reply.status(400).send({ error: err.message });
-        }
-    });
-
-    // Marcar como pago
-    app.put("/pagar/:id", {
+    // Processar Pagamento (Snapshot + Marcação de Pago)
+    app.post("/pagar/:usuarioId", {
         preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
     }, async (request, reply) => {
-        const { params } = marcarPagoSchema.parse(request);
+        const { params, body } = fecharMesSchema.parse(request);
+        const pagoPor = (request as any).user.id;
 
         try {
-            const result = await financeiroService.marcarComoPago(params.id);
+            const result = await financeiroService.processarPagamento(params.usuarioId, body.mes, body.ano, pagoPor);
             return reply.send(result);
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });

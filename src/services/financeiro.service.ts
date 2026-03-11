@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { FINANCEIRO_STATUS, LANCAMENTO_TIPO } from "../constants/financeiro.enum.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
-import { pontoService } from "./ponto.service.js";
 
 export const financeiroService = {
     /**
@@ -20,13 +20,13 @@ export const financeiroService = {
         if (fechamentoExistente) {
             return {
                 ...fechamentoExistente.resumo_json,
-                status: fechamentoExistente.pago ? 'PAGO' : 'FECHADO',
+                status: FINANCEIRO_STATUS.PAGO,
                 id_fechamento: fechamentoExistente.id,
                 data_pagamento: fechamentoExistente.data_pagamento
             };
         }
 
-        // 2. Cálculo Dinâmico (Draft)
+        // 2. Cálculo Dinâmico (Rascunho)
         // Buscar Vínculos (Turnos) do Colaborador
         const { data: links, error: linkError } = await supabaseAdmin
             .from("colaborador_clientes")
@@ -79,18 +79,20 @@ export const financeiroService = {
 
             // 2. CALCULAR DIAS REALMENTE ATIVOS NO PERÍODO (PRO-RATA)
             let diasAtivosNoMes = 0;
+            const datasAtivas: string[] = [];
             for (let d = diaInicioEfetivo; d <= diaFimEfetivo; d++) {
                 const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
                 const diaSemana = dataAtual.getUTCDay();
                 if (escalaSemanal.includes(diaSemana)) {
                     diasAtivosNoMes++;
+                    datasAtivas.push(dataAtual.toISOString().split('T')[0]); // Guarda a data no formato YYYY-MM-DD
                 }
             }
 
             // Ocorrências vinculadas a este turno
             const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
-            const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === 'ENTRADA').reduce((acc, o) => acc + (o.valor || 0), 0);
-            const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === 'SAIDA').reduce((acc, o) => acc + (o.valor || 0), 0);
+            const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
+            const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
 
             // Fórmula Dinâmica: (Salário / DiasÚteisDoMês) * DiasAtivosNoPeríodo
             const proRataBase = diasUteisNoMesTotal > 0 ? (saldoFixoTurno / diasUteisNoMesTotal) * diasAtivosNoMes : 0;
@@ -103,6 +105,9 @@ export const financeiroService = {
                 saldo_fixo_original: saldoFixoTurno,
                 dias_base_mes: diasUteisNoMesTotal,
                 dias_ativos_no_mes: diasAtivosNoMes,
+                datas_ativas: datasAtivas,
+                data_inicio: link.data_inicio || null,
+                data_fim: link.data_fim || null,
                 creditos_ocorrencia: totalCreditosTurno,
                 debitos_ocorrencia: totalDebitosTurno,
                 valor_calculado: parseFloat(valorFinalTurno.toFixed(2))
@@ -114,7 +119,7 @@ export const financeiroService = {
 
         return {
             periodo: { mes, ano },
-            status: 'DRAFT',
+            status: FINANCEIRO_STATUS.RASCUNHO,
             resumo_por_cliente: resumoClientes,
             ocorrencias: ocorrencias,
             totais: {
@@ -124,11 +129,14 @@ export const financeiroService = {
     },
 
     /**
-     * Efetua o fechamento (Snapshot) do mês.
+     * Efetua o fechamento e pagamento em uma única ação.
+     * Gera o snapshot e marca como pago.
      */
-    async confirmarFechamento(usuarioId: string, mes: number, ano: number, fechadoPor: string): Promise<any> {
+    async processarPagamento(usuarioId: string, mes: number, ano: number, pagoPor: string): Promise<any> {
+        // Gera o cálculo atual (Rascunho)
         const extrato = await this.getExtratoMensal(usuarioId, mes, ano);
 
+        // Salva o snapshot final e marca como pago simultaneamente
         const { data, error } = await supabaseAdmin
             .from("fechamentos_financeiros")
             .upsert({
@@ -137,24 +145,11 @@ export const financeiroService = {
                 ano,
                 resumo_json: extrato,
                 saldo_final: extrato.totais.saldo_final,
-                fechado_por: fechadoPor,
-                data_fechamento: new Date().toISOString()
+                fechado_por: pagoPor,
+                data_fechamento: new Date().toISOString(),
+                pago: true,
+                data_pagamento: new Date().toISOString()
             }, { onConflict: "colaborador_id, mes, ano" })
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
-    },
-
-    /**
-     * Marca um fechamento como pago.
-     */
-    async marcarComoPago(id: number): Promise<any> {
-        const { data, error } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .update({ pago: true, data_pagamento: new Date().toISOString() })
-            .eq("id", id)
             .select()
             .single();
 

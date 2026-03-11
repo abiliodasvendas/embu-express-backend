@@ -72,5 +72,11 @@ export const messages = {
       falhaAtivarDesativar: "Falha ao {acao} a empresa.",
       cnpjJaExiste: "Este CNPJ já está cadastrado para outra empresa.",
     }
+  },
+  ocorrencia: {
+    erro: {
+      vinculoObrigatorioImpacto: "Lançamentos com impacto financeiro devem estar vinculados a um turno (vínculo).",
+      descricaoJaExiste: "Já existe um tipo de ocorrência com esta descrição."
+    }
   }
 };

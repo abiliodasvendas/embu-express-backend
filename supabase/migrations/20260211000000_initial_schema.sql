@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS "public"."clientes" (
     "updated_at" timestamp with time zone DEFAULT "now"(),
     "ativo" boolean DEFAULT true NOT NULL,
     "dias_trabalhados" integer,
-    "km_contratados" integer
+    "km_contratados" integer,
+    "escala_semanal" integer[] DEFAULT ARRAY[1, 2, 3, 4, 5, 6]
 );
 
 
@@ -135,9 +136,7 @@ CREATE TABLE IF NOT EXISTS "public"."empresas" (
     "ativo" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
-    "codigo" "text",
-    "km_contratados" integer DEFAULT 0,
-    "escala_semanal" integer[] DEFAULT ARRAY[1, 2, 3, 4, 5, 6] -- Padrão Seg-Sab
+    "codigo" "text"
 );
 
 
@@ -579,6 +578,8 @@ ALTER TABLE ONLY "public"."app_updates"
 ALTER TABLE ONLY "public"."tipos_ocorrencia"
     ADD CONSTRAINT "tipos_ocorrencia_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."tipos_ocorrencia"
+    ADD CONSTRAINT "tipos_ocorrencia_descricao_key" UNIQUE ("descricao");
 
 ALTER TABLE ONLY "public"."ocorrencias"
     ADD CONSTRAINT "ocorrencias_pkey" PRIMARY KEY ("id");
@@ -651,12 +652,12 @@ ALTER TABLE ONLY "public"."registros_pausas"
 
 
 ALTER TABLE ONLY "public"."registros_ponto"
-    ADD CONSTRAINT "fk_ponto_cliente" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "fk_ponto_cliente" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE RESTRICT;
 
 
 
 ALTER TABLE ONLY "public"."registros_ponto"
-    ADD CONSTRAINT "fk_ponto_empresa" FOREIGN KEY ("empresa_id") REFERENCES "public"."empresas"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "fk_ponto_empresa" FOREIGN KEY ("empresa_id") REFERENCES "public"."empresas"("id") ON DELETE RESTRICT;
 
 
 
@@ -699,7 +700,7 @@ ALTER TABLE ONLY "public"."ocorrencias"
 
 
 ALTER TABLE ONLY "public"."ocorrencias"
-    ADD CONSTRAINT "fk_ocorrencia_vinculo" FOREIGN KEY ("colaborador_cliente_id") REFERENCES "public"."colaborador_clientes"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "fk_ocorrencia_vinculo" FOREIGN KEY ("colaborador_cliente_id") REFERENCES "public"."colaborador_clientes"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."ocorrencias"
     ADD CONSTRAINT "fk_ocorrencia_criado_por" FOREIGN KEY ("criado_por") REFERENCES "public"."usuarios"("id") ON DELETE SET NULL;

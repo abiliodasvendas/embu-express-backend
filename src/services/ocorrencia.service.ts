@@ -1,5 +1,6 @@
-import { supabaseAdmin } from "../config/supabase.js";
 import { logger } from "../config/logger.js";
+import { supabaseAdmin } from "../config/supabase.js";
+import { messages } from "../constants/messages.js";
 
 export const ocorrenciaService = {
     /**
@@ -19,6 +20,18 @@ export const ocorrenciaService = {
      * Cria um novo tipo de ocorrência.
      */
     async createTipoOcorrencia(data: any): Promise<any> {
+        // Validation: Check for duplicate descriptions (case-insensitive)
+        if (data.descricao) {
+            const { data: existing } = await supabaseAdmin
+                .from("tipos_ocorrencia")
+                .select("id")
+                .ilike("descricao", data.descricao);
+
+            if (existing && existing.length > 0) {
+                throw new Error(messages.ocorrencia.erro.descricaoJaExiste);
+            }
+        }
+
         const { data: inserted, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
             .insert([data])
@@ -33,6 +46,19 @@ export const ocorrenciaService = {
      * Atualiza um tipo de ocorrência.
      */
     async updateTipoOcorrencia(id: number, data: any): Promise<any> {
+        // Validation: Check for duplicate descriptions (ignoring the current one)
+        if (data.descricao) {
+            const { data: existing } = await supabaseAdmin
+                .from("tipos_ocorrencia")
+                .select("id")
+                .ilike("descricao", data.descricao)
+                .neq("id", id);
+
+            if (existing && existing.length > 0) {
+                throw new Error(messages.ocorrencia.erro.descricaoJaExiste);
+            }
+        }
+
         const { data: updated, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
             .update(data)
@@ -69,7 +95,13 @@ export const ocorrenciaService = {
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("ocorrencias")
-            .select("*, tipo:tipos_ocorrencia(*), colaborador:usuarios!fk_ocorrencia_colaborador(*), criado_por_usuario:usuarios!fk_ocorrencia_criado_por(*), vinculo:colaborador_clientes(*, cliente:clientes(nome_fantasia))");
+            .select(`
+                *,
+                tipo:tipos_ocorrencia(id, descricao),
+                colaborador:usuarios!fk_ocorrencia_colaborador(id, nome_completo),
+                criado_por_usuario:usuarios!fk_ocorrencia_criado_por(id, nome_completo),
+                vinculo:colaborador_clientes(id, cliente:clientes(id, nome_fantasia))
+            `);
 
         const orderField = filtros?.order || "data_ocorrencia";
         const isAscending = filtros?.ascending === true || (typeof filtros?.ascending === "string" && filtros.ascending === "true");
@@ -105,7 +137,7 @@ export const ocorrenciaService = {
 
         // Regra de Negócio: Impacto financeiro só é possível se houver vínculo com turno
         if (data.impacto_financeiro && !data.colaborador_cliente_id) {
-            throw new Error("Lançamentos com impacto financeiro devem estar vinculados a um turno (vínculo).");
+            throw new Error(messages.ocorrencia.erro.vinculoObrigatorioImpacto);
         }
 
         const { data: inserted, error } = await supabaseAdmin

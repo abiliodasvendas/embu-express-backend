@@ -59,11 +59,15 @@ const ocorrenciaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    // Criar ocorrência
     app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.CRIAR)] }, async (request, reply) => {
         const data = request.body as any;
+        const userId = (request as any).user.id;
+        
         try {
-            const result = await ocorrenciaService.createOcorrencia(data);
+            const result = await ocorrenciaService.createOcorrencia({
+                ...data,
+                criado_por: userId
+            });
             return reply.status(201).send(result);
         } catch (err: any) {
             return reply.status(400).send({ error: err.message });

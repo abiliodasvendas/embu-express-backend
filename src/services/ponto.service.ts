@@ -1,9 +1,9 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { TimeRecordRules } from "../utils/timeRecordRules.js";
-import { configuracaoService } from "./configuracao.service.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
+import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { configuracaoService } from "./configuracao.service.js";
 
 // Helper para processar dados de localização
 function processLocationData(loc: any) {
@@ -102,12 +102,15 @@ async function calculateStatus(
         melhorTurno = snapshotTurno;
     } else {
         // 2. Buscar turnos (Links)
-        const { data: turnos } = await supabaseAdmin
+        const { data: todosOsTurnos } = await supabaseAdmin
             .from("colaborador_clientes")
             .select("*")
             .eq("colaborador_id", usuarioId);
 
-        if (turnos && turnos.length > 0) {
+        const hoje = new Date().toISOString().split('T')[0];
+        const turnos = todosOsTurnos?.filter(t => !t.data_fim || t.data_fim >= hoje) || [];
+
+        if (turnos.length > 0) {
             const [hEntrada, mEntrada] = parseTime(entrada);
             const entradaMinutosTotal = hEntrada * 60 + mEntrada;
 

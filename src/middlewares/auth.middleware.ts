@@ -1,7 +1,8 @@
 import { FastifyReply, FastifyRequest } from "fastify";
+import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
-import { PERMISSIONS, PermissionKey, ROLES } from "../constants/permissions.enum.js";
-import { authService } from "../services/auth.service.js"; // or similar to fetch user role
+import { messages } from "../constants/messages.js";
+import { PermissionKey, ROLES } from "../constants/permissions.enum.js";
 // In this case, we could query the permissions based on the token.
 
 export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionKey[]) {
@@ -9,14 +10,17 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
         try {
             const token = request.headers.authorization?.replace('Bearer ', '');
             if (!token) {
-                return reply.status(401).send({ error: "Token não fornecido." });
+                return reply.status(401).send({ error: messages.auth.erro.tokenAusente });
             }
 
             // 1. Get user from Auth
             const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
             if (authError || !user) {
-                return reply.status(401).send({ error: "Token inválido ou expirado." });
+                return reply.status(401).send({ error: messages.auth.erro.tokenInvalido });
             }
+
+            // Attach user to request for use in routes
+            (request as any).user = user;
 
             // 2. Fetch User Profile and Permissions
             // Note: Since auth logic bypasses RLS using service_role, we query public.usuarios
@@ -35,11 +39,11 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
                 .single();
 
             if (dbError || !usuario) {
-                return reply.status(403).send({ error: "Usuário não encontrado." });
+                return reply.status(403).send({ error: messages.auth.erro.usuarioNaoEncontrado });
             }
 
-            if (usuario.status !== 'ATIVO') {
-                return reply.status(403).send({ error: "Sua conta está inativa. Acesso negado." });
+            if (usuario.status !== STATUS.ATIVO) {
+                return reply.status(403).send({ error: messages.auth.erro.acessoNegado });
             }
 
             const nomePerfil = (usuario.perfil as any)?.nome;
@@ -65,13 +69,13 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             const hasPermission = requiredPerms.some((p) => permissoesArray.includes(p));
 
             if (!hasPermission) {
-                return reply.status(403).send({ error: "Acesso negado: você não tem permissão para esta ação." });
+                return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
             }
 
             // If everything is fine, proceed
             return;
         } catch (error) {
-            return reply.status(500).send({ error: "Erro interno ao verificar permissões." });
+            return reply.status(500).send({ error: messages.sistema.erro.interno });
         }
     };
 }
@@ -81,12 +85,12 @@ export function verifyOperacional() {
         try {
             const token = request.headers.authorization?.replace('Bearer ', '');
             if (!token) {
-                return reply.status(401).send({ error: "Token não fornecido." });
+                return reply.status(401).send({ error: messages.auth.erro.tokenAusente });
             }
 
             const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
             if (authError || !user) {
-                return reply.status(401).send({ error: "Token inválido ou expirado." });
+                return reply.status(401).send({ error: messages.auth.erro.tokenInvalido });
             }
 
             const { data: usuario, error: dbError } = await supabaseAdmin
@@ -99,11 +103,11 @@ export function verifyOperacional() {
                 .single();
 
             if (dbError || !usuario) {
-                return reply.status(403).send({ error: "Usuário não encontrado." });
+                return reply.status(403).send({ error: messages.auth.erro.usuarioNaoEncontrado });
             }
 
-            if (usuario.status !== 'ATIVO') {
-                return reply.status(403).send({ error: "Sua conta está inativa. Acesso negado." });
+            if (usuario.status !== STATUS.ATIVO) {
+                return reply.status(403).send({ error: messages.auth.erro.acessoNegado });
             }
 
             const nomePerfil = (usuario.perfil as any)?.nome;
@@ -112,9 +116,9 @@ export function verifyOperacional() {
                 return; // Todos exceto CLIENTE têm acesso operacional.
             }
 
-            return reply.status(403).send({ error: "Acesso negado." });
+            return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
         } catch (error) {
-            return reply.status(500).send({ error: "Erro interno." });
+            return reply.status(500).send({ error: messages.sistema.erro.interno });
         }
     };
 }

@@ -140,3 +140,6 @@ INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao") VALUES
 (4, 'Quebra de Equipamento'),
 (5, 'Outros')
 ON CONFLICT (id) DO NOTHING;
+
+-- Sync sequences after manual ID inserts
+SELECT setval('public.tipos_ocorrencia_id_seq', (SELECT MAX(id) FROM public.tipos_ocorrencia) + 1);

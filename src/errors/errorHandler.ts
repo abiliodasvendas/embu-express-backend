@@ -55,6 +55,21 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
     }
 
+    // 2.5 Erro de Banco de Dados (Supabase/Postgres)
+    if ((error as any).code === '23503') {
+        logger.warn({
+            msg: "Violação de Chave Estrangeira (Integridade SQL)",
+            error: error.message,
+            method,
+            url
+        });
+        return reply.status(400).send({
+            status: "error",
+            message: "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.",
+            code: '23503'
+        });
+    }
+
     // 3. Erro Desconhecido (Bug / Infra)
     logger.error({
         msg: "Erro Interno (500)",
