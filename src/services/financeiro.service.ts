@@ -1,6 +1,16 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO } from "../constants/financeiro.enum.js";
+import { getNowBR, toBRTime } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
+
+function formatFechamento(f: any) {
+    if (!f) return f;
+    const result = { ...f };
+    if (result.data_fechamento) result.data_fechamento = toBRTime(result.data_fechamento);
+    if (result.data_pagamento) result.data_pagamento = toBRTime(result.data_pagamento);
+    if (result.created_at) result.created_at = toBRTime(result.created_at);
+    return result;
+}
 
 export const financeiroService = {
     /**
@@ -22,7 +32,7 @@ export const financeiroService = {
                 ...fechamentoExistente.resumo_json,
                 status: FINANCEIRO_STATUS.PAGO,
                 id_fechamento: fechamentoExistente.id,
-                data_pagamento: fechamentoExistente.data_pagamento
+                data_pagamento: toBRTime(fechamentoExistente.data_pagamento)
             };
         }
 
@@ -168,14 +178,14 @@ export const financeiroService = {
                 resumo_json: extrato,
                 saldo_final: extrato.totais.saldo_final,
                 fechado_por: pagoPor,
-                data_fechamento: new Date().toISOString(),
+                data_fechamento: getNowBR(),
                 pago: true,
-                data_pagamento: new Date().toISOString()
+                data_pagamento: getNowBR()
             }, { onConflict: "colaborador_id, mes, ano" })
             .select()
             .single();
 
         if (error) throw error;
-        return data;
+        return formatFechamento(data);
     }
 };

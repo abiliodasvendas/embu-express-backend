@@ -19,6 +19,27 @@ function processLocationData(loc: any) {
     };
 }
 
+// Helper para formatar campos de data/hora para o fuso de Brasília nos retornos da API
+function formatPoint(p: any) {
+    if (!p) return p;
+    const result = { ...p };
+    if (result.entrada_hora) result.entrada_hora = toBRTime(result.entrada_hora);
+    if (result.saida_hora) result.saida_hora = toBRTime(result.saida_hora);
+    if (result.created_at) result.created_at = toBRTime(result.created_at);
+    if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
+    
+    if (result.pausas && Array.isArray(result.pausas)) {
+        result.pausas = result.pausas.map((pa: any) => ({
+            ...pa,
+            inicio_hora: pa.inicio_hora ? toBRTime(pa.inicio_hora) : null,
+            fim_hora: pa.fim_hora ? toBRTime(pa.fim_hora) : null,
+            created_at: pa.created_at ? toBRTime(pa.created_at) : null,
+            updated_at: pa.updated_at ? toBRTime(pa.updated_at) : null
+        }));
+    }
+    return result;
+}
+
 // Interface para Pausa
 interface PausaPayload {
     ponto_id: number;
@@ -114,7 +135,7 @@ async function calculateStatus(
             .select("*")
             .eq("colaborador_id", usuarioId);
 
-        const hoje = new Date().toISOString().split('T')[0];
+        const hoje = toLocalDateString();
         const turnos = todosOsTurnos?.filter(t => !t.data_fim || t.data_fim >= hoje) || [];
 
         if (turnos.length > 0) {
@@ -343,7 +364,7 @@ export const pontoService = {
                                 colaborador_id: data.usuario_id,
                                 colaborador_cliente_id: melhorTurno.id,
                                 tipo_id: tipoOcorrenciaId,
-                                data_ocorrencia: new Date().toISOString(),
+                                data_ocorrencia: getNowBR(),
                                 valor: valorFeriado,
                                 impacto_financeiro: true,
                                 tipo_lancamento: "ENTRADA",
@@ -360,7 +381,7 @@ export const pontoService = {
         }
         // --- FIM LÓGICA DE BÔNUS DE FERIADO ---
 
-        return inserted?.[0];
+        return formatPoint(inserted?.[0]);
     },
 
     async updatePonto(id: number, data: Partial<any>): Promise<any> {
@@ -484,7 +505,7 @@ export const pontoService = {
             .select();
 
         if (error) throw error;
-        return updated?.[0];
+        return formatPoint(updated?.[0]);
     },
 
     async getPonto(id: number): Promise<any> {
@@ -495,7 +516,7 @@ export const pontoService = {
             .eq("id", id)
             .limit(1);
         if (error) throw error;
-        return data?.[0];
+        return formatPoint(data?.[0]);
     },
 
     async listPontos(filtros?: any): Promise<any[]> {
@@ -566,7 +587,7 @@ export const pontoService = {
                 }
 
                 // Retornar um "mock" de registro de ponto vazio para o turno ausente
-                return {
+                return formatPoint({
                     id: `ausente-${link.colaborador_id}-${link.cliente_id}`,
                     usuario_id: link.colaborador_id,
                     data_referencia: dataRef,
@@ -578,7 +599,7 @@ export const pontoService = {
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
                     ausente: true
-                };
+                });
             });
         }
 
@@ -615,7 +636,7 @@ export const pontoService = {
 
         const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+        return (data || []).map(formatPoint);
     },
 
     async getPontoHoje(usuarioId: string): Promise<any> {
@@ -629,7 +650,7 @@ export const pontoService = {
             .limit(1);
 
         if (error) throw error;
-        return data?.[0] || null;
+        return formatPoint(data?.[0]) || null;
     },
 
     async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
@@ -680,7 +701,7 @@ export const pontoService = {
             cliente_id: clienteId,
             empresa_id: empresaId
         });
-        return { action: 'OPEN', record: newRecord };
+        return { action: 'OPEN', record: formatPoint(newRecord) };
     },
 
     async deletePonto(id: number): Promise<void> {
@@ -738,7 +759,13 @@ export const pontoService = {
             .select();
 
         if (error) throw error;
-        return inserted?.[0];
+        // Formata o retorno da pausa (simulando que formatPoint trata pausas isoladas se necessário ou usando toBRTime manual)
+        const insertedRec = inserted?.[0];
+        if (insertedRec) {
+            insertedRec.inicio_hora = toBRTime(insertedRec.inicio_hora);
+            if (insertedRec.fim_hora) insertedRec.fim_hora = toBRTime(insertedRec.fim_hora);
+        }
+        return insertedRec;
     },
 
     async finalizarPausa(id: number, data: Partial<PausaPayload>): Promise<any> {
@@ -774,6 +801,10 @@ export const pontoService = {
         if (!updated || updated.length === 0) throw new Error("Erro ao finalizar pausa: registro não encontrado.");
 
         const result = updated[0];
+        if (result) {
+            result.inicio_hora = toBRTime(result.inicio_hora);
+            if (result.fim_hora) result.fim_hora = toBRTime(result.fim_hora);
+        }
 
         // Trigger generic update on Ponto to recalculate balance (saldo_minutos)
         if (result?.ponto_id) {

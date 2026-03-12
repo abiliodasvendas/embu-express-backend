@@ -1,6 +1,16 @@
 import { logger } from "../config/logger.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
+import { toBRTime } from "../utils/utils.js";
+
+function formatOcorrencia(o: any) {
+    if (!o) return o;
+    const result = { ...o };
+    if (result.data_ocorrencia) result.data_ocorrencia = toBRTime(result.data_ocorrencia);
+    if (result.created_at) result.created_at = toBRTime(result.created_at);
+    if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
+    return result;
+}
 
 export const ocorrenciaService = {
     /**
@@ -130,7 +140,7 @@ export const ocorrenciaService = {
 
         const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+        return (data || []).map(formatOcorrencia);
     },
 
     /**
@@ -148,7 +158,7 @@ export const ocorrenciaService = {
             .single();
 
         if (error) throw error;
-        return inserted;
+        return formatOcorrencia(inserted);
     },
 
     /**
@@ -166,7 +176,7 @@ export const ocorrenciaService = {
             .single();
 
         if (error) throw error;
-        return updated;
+        return formatOcorrencia(updated);
     },
 
     /**

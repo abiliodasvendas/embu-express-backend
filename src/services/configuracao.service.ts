@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { getNowBR } from "../utils/utils.js";
 
 export const configuracaoService = {
     async listConfiguracoes(): Promise<any[]> {
@@ -25,7 +26,7 @@ export const configuracaoService = {
     async updateConfiguracao(chave: string, valor: string): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("configuracoes_sistema")
-            .update({ valor, updated_at: new Date().toISOString() })
+            .update({ valor, updated_at: getNowBR() })
             .eq("chave", chave)
             .select()
             .limit(1);
