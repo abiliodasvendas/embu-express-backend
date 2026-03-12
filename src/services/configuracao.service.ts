@@ -28,8 +28,8 @@ export const configuracaoService = {
             .update({ valor, updated_at: new Date().toISOString() })
             .eq("chave", chave)
             .select()
-            .single();
+            .limit(1);
         if (error) throw error;
-        return data;
+        return data?.[0];
     }
 };
