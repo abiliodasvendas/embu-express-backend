@@ -100,7 +100,7 @@ export const ocorrenciaService = {
                 tipo:tipos_ocorrencia(id, descricao),
                 colaborador:usuarios!fk_ocorrencia_colaborador(id, nome_completo),
                 criado_por_usuario:usuarios!fk_ocorrencia_criado_por(id, nome_completo),
-                vinculo:colaborador_clientes(id, cliente:clientes(id, nome_fantasia))
+                vinculo:colaborador_clientes(id, hora_inicio, hora_fim, cliente:clientes(id, nome_fantasia))
             `);
 
         const orderField = filtros?.order || "data_ocorrencia";
@@ -134,11 +134,6 @@ export const ocorrenciaService = {
      */
     async createOcorrencia(data: any): Promise<any> {
         logger.info({ data }, "[ocorrenciaService] Criando ocorrência");
-
-        // Regra de Negócio: Impacto financeiro só é possível se houver vínculo com turno
-        if (data.impacto_financeiro && !data.colaborador_cliente_id) {
-            throw new Error(messages.ocorrencia.erro.vinculoObrigatorioImpacto);
-        }
 
         const { data: inserted, error } = await supabaseAdmin
             .from("ocorrencias")

@@ -103,6 +103,14 @@ export const financeiroService = {
                 nome_fantasia: link.cliente?.nome_fantasia,
                 id_vinculo: link.id,
                 saldo_fixo_original: saldoFixoTurno,
+                valores_fixos: {
+                    contrato: link.valor_contrato || 0,
+                    mei: link.valor_mei || 0,
+                    bonus: link.valor_bonus || 0,
+                    ajuda_custo: link.ajuda_custo || 0,
+                    aluguel: link.valor_aluguel || 0,
+                    adiantamento: link.valor_adiantamento || 0
+                },
                 dias_base_mes: diasUteisNoMesTotal,
                 dias_ativos_no_mes: diasAtivosNoMes,
                 datas_ativas: datasAtivas,
@@ -114,15 +122,29 @@ export const financeiroService = {
             };
         }).filter(Boolean); // Remove vínculos inativos no período
 
-        // 4. Consolidado Final
-        const saldoFinal = (resumoClientes as any[]).reduce((acc, r) => acc + (r?.valor_calculado || 0), 0);
+        // 4. Ocorrências Avulsas (não vinculadas a turno)
+        const ocorrenciasAvulsas = ocorrencias.filter(o => !o.colaborador_cliente_id && o.impacto_financeiro);
+        const creditosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
+        const debitosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
+        const saldoAvulso = creditosAvulsos - debitosAvulsos;
+
+        // 5. Consolidado Final
+        const totalTurnos = (resumoClientes as any[]).reduce((acc, r) => acc + (r?.valor_calculado || 0), 0);
+        const saldoFinal = totalTurnos + saldoAvulso;
 
         return {
             periodo: { mes, ano },
             status: FINANCEIRO_STATUS.RASCUNHO,
             resumo_por_cliente: resumoClientes,
             ocorrencias: ocorrencias,
+            ocorrencias_avulsas: {
+                creditos: creditosAvulsos,
+                debitos: debitosAvulsos,
+                saldo: parseFloat(saldoAvulso.toFixed(2))
+            },
             totais: {
+                total_turnos: parseFloat(totalTurnos.toFixed(2)),
+                total_avulso: parseFloat(saldoAvulso.toFixed(2)),
                 saldo_final: parseFloat(saldoFinal.toFixed(2))
             }
         };
