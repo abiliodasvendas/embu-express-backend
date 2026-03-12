@@ -67,7 +67,8 @@ INSERT INTO "public"."configuracoes_sistema" ("chave", "valor", "descricao") VAL
 ('tolerancia_verde_min', '5', 'Tolerância para status VERDE (minutos)'),
 ('tolerancia_amarelo_min', '15', 'Tolerância para status AMARELO (minutos)'),
 ('tolerancia_saida_min', '10', 'Tolerância para batida de saída Antecipada/Atrasada (minutos)'),
-('limite_he_excessiva_min', '120', 'Limite para alerta de Hora Extra excessiva (minutos)')
+('limite_he_excessiva_min', '120', 'Limite para alerta de Hora Extra excessiva (minutos)'),
+('valor_adicional_feriado', '0', 'Valor em reais adicionado para cada feriado trabalhado')
 ON CONFLICT (chave) DO NOTHING;
 
 -- 3. Create Admin Auth User
@@ -133,12 +134,13 @@ INSERT INTO "public"."usuarios" (
 
 
 -- 5. Create Initial Occurrence Types
-INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao") VALUES
-(1, 'Falta'),
-(2, 'Atraso'),
-(3, 'Bônus Extra'),
-(4, 'Quebra de Equipamento'),
-(5, 'Outros')
+INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao", "impacto_financeiro") VALUES
+(1, 'Falta', false),
+(2, 'Atraso', false),
+(3, 'Bônus Extra', true),
+(4, 'Quebra de Equipamento', false),
+(5, 'Outros', false),
+(6, 'Feriado Trabalhado', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Sync sequences after manual ID inserts

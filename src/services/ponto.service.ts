@@ -279,6 +279,66 @@ export const pontoService = {
             .select();
 
         if (error) throw error;
+
+        // --- LÓGICA DE BÔNUS DE FERIADO ---
+        if (!saida_hora && melhorTurno && melhorTurno.id) {
+            try {
+                // 1. Verifica se a data de referência é um feriado
+                const { data: feriados } = await supabaseAdmin
+                    .from("feriados")
+                    .select("id, descricao")
+                    .eq("data", data.data_referencia);
+
+                if (feriados && feriados.length > 0) {
+                    const feriado = feriados[0];
+
+                    // 2. Busca a configuração de valor para feriados
+                    const configFeriado = await configuracaoService.getConfiguracao("valor_adicional_feriado");
+                    const valorFeriado = configFeriado?.valor ? Number(configFeriado.valor) : 0;
+
+                    if (valorFeriado > 0) {
+                        // 3. Busca o tipo de ocorrência 'Feriado Trabalhado'
+                        let tipoOcorrenciaId = null;
+                        const { data: tipos } = await supabaseAdmin
+                            .from("tipos_ocorrencia")
+                            .select("id")
+                            .ilike("descricao", "Feriado Trabalhado");
+
+                        if (tipos && tipos.length > 0) {
+                            tipoOcorrenciaId = tipos[0].id;
+                        } else {
+                            // Criação fallback
+                            const { data: novoTipo } = await supabaseAdmin
+                                .from("tipos_ocorrencia")
+                                .insert([{ descricao: "Feriado Trabalhado", impacto_financeiro: true }])
+                                .select()
+                                .single();
+                            tipoOcorrenciaId = novoTipo?.id;
+                        }
+
+                        // 4. Cria a ocorrência financeira
+                        if (tipoOcorrenciaId) {
+                            await supabaseAdmin.from("ocorrencias").insert([{
+                                colaborador_id: data.usuario_id,
+                                colaborador_cliente_id: melhorTurno.id,
+                                tipo_id: tipoOcorrenciaId,
+                                data_ocorrencia: new Date().toISOString(),
+                                valor: valorFeriado,
+                                impacto_financeiro: true,
+                                tipo_lancamento: "ENTRADA",
+                                observacao: `Inclusão automática: ${feriado.descricao || 'Feriado Trabalhado'}`,
+                                criado_por: data.usuario_id
+                            }]);
+                        }
+                    }
+                }
+            } catch (feriadoError) {
+                // Apenas logamos o erro, não impedimos o ponto de ser registrado
+                console.error("Erro ao processar bônus automático de feriado:", feriadoError);
+            }
+        }
+        // --- FIM LÓGICA DE BÔNUS DE FERIADO ---
+
         return inserted?.[0];
     },
 
