@@ -183,6 +183,7 @@ export const authService = {
                 cnh_vencimento: profileData.cnh_vencimento || null,
                 cnh_categoria: profileData.cnh_categoria?.trim() === "" ? null : profileData.cnh_categoria.toUpperCase(),
                 chave_pix: profileData.chave_pix?.trim() === "" ? null : profileData.chave_pix,
+                tipo_chave_pix: profileData.tipo_chave_pix || "CPF",
                 status: STATUS.PENDENTE,
                 perfil_id: perfilMotoboyId
             };

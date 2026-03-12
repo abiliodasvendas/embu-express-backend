@@ -48,7 +48,7 @@ export const usuarioService = {
             telefone: onlyDigits(data.telefone),
             telefone_recado: data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado),
             status: data.status || STATUS.ATIVO,
-            tipo_chave_pix: data.tipo_chave_pix || null,
+            tipo_chave_pix: data.tipo_chave_pix || "CPF",
             chave_pix: data.chave_pix || null,
             senha_padrao: data.status === STATUS.PENDENTE ? false : true
         };
@@ -100,7 +100,7 @@ export const usuarioService = {
             usuarioData.cnpj = data.cnpj?.trim() === "" ? null : data.cnpj;
         }
         if (data.tipo_chave_pix !== undefined) {
-            usuarioData.tipo_chave_pix = data.tipo_chave_pix || null;
+            usuarioData.tipo_chave_pix = data.tipo_chave_pix || "CPF";
         }
         if (data.chave_pix !== undefined) {
             usuarioData.chave_pix = data.chave_pix || null;
