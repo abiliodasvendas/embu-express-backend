@@ -546,6 +546,10 @@ export const pontoService = {
                 userQuery = userQuery.or(`nome_completo.ilike.%${filtros.searchTerm}%,cpf.ilike.%${filtros.searchTerm}%`);
             }
 
+            if (filtros.usuario_id && filtros.usuario_id !== 'todos') {
+                userQuery = userQuery.eq("id", filtros.usuario_id);
+            }
+
             const { data: users, error: userError } = await userQuery;
             if (userError) throw userError;
 
@@ -626,7 +630,12 @@ export const pontoService = {
                 mappedResults.push({ ...p, usuario: user || p.usuario });
             });
 
-            return mappedResults;
+            // Ordenar alfabeticamente pelo nome do colaborador
+            return mappedResults.sort((a, b) => {
+                const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
+                const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
+                return nomeA.localeCompare(nomeB);
+            });
         }
 
         // Comportamento original (apenas quem registrou ponto)
@@ -662,7 +671,15 @@ export const pontoService = {
 
         const { data, error } = await query;
         if (error) throw error;
-        return (data || []).map(formatPoint);
+        
+        const results = (data || []).map(formatPoint);
+        
+        // Ordenar alfabeticamente pelo nome do colaborador
+        return results.sort((a, b) => {
+            const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
+            const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
+            return nomeA.localeCompare(nomeB);
+        });
     },
 
     async getPontoHoje(usuarioId: string): Promise<any> {
