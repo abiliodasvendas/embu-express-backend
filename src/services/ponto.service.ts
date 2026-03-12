@@ -282,10 +282,12 @@ export const pontoService = {
         // SMART LINKING: If no client provided, use the one from Best Shift
         let finalClienteId = data.cliente_id;
         let finalEmpresaId = data.empresa_id;
+        let finalVinculoId = data.colaborador_cliente_id;
 
-        if (!finalClienteId && melhorTurno) {
-            finalClienteId = melhorTurno.cliente_id;
-            finalEmpresaId = melhorTurno.empresa_id;
+        if (melhorTurno) {
+            if (!finalClienteId) finalClienteId = melhorTurno.cliente_id;
+            if (!finalEmpresaId) finalEmpresaId = melhorTurno.empresa_id;
+            if (!finalVinculoId) finalVinculoId = melhorTurno.id;
         }
 
         const { lat: eLat, lng: eLng, metadata: eMeta } = processLocationData(data.entrada_loc);
@@ -305,6 +307,7 @@ export const pontoService = {
             saldo_minutos,
             cliente_id: finalClienteId,
             empresa_id: finalEmpresaId,
+            colaborador_cliente_id: finalVinculoId,
             entrada_loc: data.entrada_loc || null,
             saida_loc: data.saida_loc || null,
             entrada_lat: eLat,
@@ -452,7 +455,7 @@ export const pontoService = {
                 kmTrabalhadoFinal += Math.max(0, saidaKm - lastKmForExit);
             }
 
-            const { status_entrada, status_saida, detalhes_calculo, saldo_minutos } = await calculateStatus(
+            const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await calculateStatus(
                 existing.usuario_id,
                 entrada,
                 saida,
@@ -464,6 +467,11 @@ export const pontoService = {
                 clienteIdAtualValue,
                 snapshot
             );
+
+            if (melhorTurno) {
+                payload.colaborador_cliente_id = melhorTurno.id;
+                payload.empresa_id = melhorTurno.empresa_id;
+            }
 
             // --- RELATIVE KM LOGIC (2.3) FOR EXIT ---
             if (saida && saidaKm) {
@@ -578,17 +586,26 @@ export const pontoService = {
             if (pontoError) throw pontoError;
 
             // 4. Montar o "Left Join" baseado nos Links
-            return activeLinks.map(link => {
-                // Tenta encontrar um ponto que bata com o usuario e o cliente (turno)
-                const ponto = pontos?.find(p => p.usuario_id === link.colaborador_id && p.cliente_id === link.cliente_id);
+            const usedPointIds = new Set<string>();
+            const mappedResults = activeLinks.map(link => {
+                // Tenta encontrar um ponto que bata com o usuario e o turno específico
+                // Usamos a nova coluna colaborador_cliente_id ou o fallback de horário para dados antigos
+                const ponto = pontos?.find(p => 
+                    p.usuario_id === link.colaborador_id && 
+                    (
+                        (p.colaborador_cliente_id && String(p.colaborador_cliente_id) === String(link.id)) ||
+                        (!p.colaborador_cliente_id && p.cliente_id === link.cliente_id && p.detalhes_calculo?.entrada?.turno_base === link.hora_inicio)
+                    )
+                );
                 
                 if (ponto) {
+                    usedPointIds.add(ponto.id.toString());
                     return { ...ponto, usuario: link.usuario };
                 }
 
                 // Retornar um "mock" de registro de ponto vazio para o turno ausente
                 return formatPoint({
-                    id: `ausente-${link.colaborador_id}-${link.cliente_id}`,
+                    id: `ausente-${link.id}`, // Usar o ID do vínculo para garantir unicidade absoluta
                     usuario_id: link.colaborador_id,
                     data_referencia: dataRef,
                     usuario: link.usuario,
@@ -601,6 +618,15 @@ export const pontoService = {
                     ausente: true
                 });
             });
+
+            // 5. Adicionar pontos que não foram mapeados a nenhum link (ex: trabalho extra ou erro de troca de turno)
+            const leftoverPontos = pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [];
+            leftoverPontos.forEach(p => {
+                const user = users.find(u => u.id === p.usuario_id);
+                mappedResults.push({ ...p, usuario: user || p.usuario });
+            });
+
+            return mappedResults;
         }
 
         // Comportamento original (apenas quem registrou ponto)
@@ -653,7 +679,7 @@ export const pontoService = {
         return formatPoint(data?.[0]) || null;
     },
 
-    async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
+    async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number, colaboradorClienteId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
         const now = getNowBR();
         const todayStr = toLocalDateString(new Date(now));
 
@@ -699,7 +725,8 @@ export const pontoService = {
             entrada_loc: location,
             entrada_km: km,
             cliente_id: clienteId,
-            empresa_id: empresaId
+            empresa_id: empresaId,
+            colaborador_cliente_id: colaboradorClienteId
         });
         return { action: 'OPEN', record: formatPoint(newRecord) };
     },

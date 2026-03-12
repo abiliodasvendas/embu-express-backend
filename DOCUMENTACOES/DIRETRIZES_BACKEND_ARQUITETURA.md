@@ -1,6 +1,6 @@
 # Diretrizes de Arquitetura e Desenvolvimento - Embu Express Backend
 
-ENVIRONMENT_STATUS: development
+ENVIRONMENT_STATUS: production
 
 ## 🎯 Objetivo
 Este documento serve como referência única de verdade para a arquitetura do projeto Backend da Embu Express (pasta embu-express-backend). Deve ser consultado por IAs e desenvolvedores antes de iniciar qualquer modificação no código.
