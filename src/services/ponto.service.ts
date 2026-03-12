@@ -188,7 +188,9 @@ async function calculateStatus(
                 // Vamos tentar deixar o km_trabalhado o mais preciso possível.
             }
 
-            const esperadoMinutos = turnoFimMinutos - turnoInicioMinutos;
+            let esperadoMinutos = turnoFimMinutos - turnoInicioMinutos;
+            if (esperadoMinutos < 0) esperadoMinutos += 1440; // Se terminar no dia seguinte (ex: 22h as 06h)
+
             saldo_minutos = liquidoMinutos - esperadoMinutos;
         }
     } else if (saida) {
@@ -502,10 +504,9 @@ export const pontoService = {
             const dataRef = filtros.data_referencia || toLocalDateString(new Date());
             
             // 1. Buscar todos os usuários ativos que possuem vínculos (turnos)
-            // Filtramos apenas colaboradores que não tem data_fim ou data_fim >= dataRef
             let userQuery = supabaseAdmin
                 .from("usuarios")
-                .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(nome_fantasia))")
+                .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*))")
                 .eq("status", "ATIVO");
 
             if (filtros.cliente_id && filtros.cliente_id !== 'todos') {
@@ -519,15 +520,29 @@ export const pontoService = {
             const { data: users, error: userError } = await userQuery;
             if (userError) throw userError;
 
-            // Filtragem manual para data_fim (Supabase can't do complex join filters easily in one go)
-            const activeUsers = users?.filter(u => 
-                u.links?.some((l: any) => !l.data_fim || l.data_fim >= dataRef)
-            ) || [];
+            // Determinar o dia da semana para o filtro de escala (1=Seg, ..., 7=Dom)
+            // Usamos a data_referencia (YYYY-MM-DD)
+            const dateObj = new Date(dataRef + "T12:00:00Z"); // Meio-dia para evitar problemas de fuso
+            let dayOfWeek = dateObj.getUTCDay(); // 0=Dom, 1=Seg...
+            const scaleDay = dayOfWeek === 0 ? 7 : dayOfWeek;
 
-            if (activeUsers.length === 0) return [];
+            // 2. Explodir os links em registros base (Um colaborador pode aparecer 2x se tiver 2 turnos)
+            const activeLinks: any[] = [];
+            users?.forEach(u => {
+                u.links?.forEach((link: any) => {
+                    const isVigente = !link.data_fim || link.data_fim >= dataRef;
+                    const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
+                    
+                    if (isVigente && naEscala) {
+                        activeLinks.push({ ...link, usuario: u });
+                    }
+                });
+            });
 
-            // 2. Buscar registros de ponto para esses usuários na data
-            const userIds = activeUsers.map(u => u.id);
+            if (activeLinks.length === 0) return [];
+
+            // 3. Buscar registros de ponto existentes na data
+            const userIds = users.map(u => u.id);
             let pontoQuery = supabaseAdmin
                 .from("registros_ponto")
                 .select("*, cliente:clientes(nome_fantasia), pausas:registros_pausas(*)")
@@ -541,24 +556,27 @@ export const pontoService = {
             const { data: pontos, error: pontoError } = await pontoQuery;
             if (pontoError) throw pontoError;
 
-            // 3. Montar o "Left Join"
-            return activeUsers.map(u => {
-                const ponto = pontos?.find(p => p.usuario_id === u.id);
+            // 4. Montar o "Left Join" baseado nos Links
+            return activeLinks.map(link => {
+                // Tenta encontrar um ponto que bata com o usuario e o cliente (turno)
+                const ponto = pontos?.find(p => p.usuario_id === link.colaborador_id && p.cliente_id === link.cliente_id);
+                
                 if (ponto) {
-                    return { ...ponto, usuario: u };
+                    return { ...ponto, usuario: link.usuario };
                 }
-                // Retornar um "mock" de registro de ponto vazio para o usuário ausente
+
+                // Retornar um "mock" de registro de ponto vazio para o turno ausente
                 return {
-                    id: `ausente-${u.id}`,
-                    usuario_id: u.id,
+                    id: `ausente-${link.colaborador_id}-${link.cliente_id}`,
+                    usuario_id: link.colaborador_id,
                     data_referencia: dataRef,
-                    usuario: u,
+                    usuario: link.usuario,
                     entrada_hora: null,
                     saida_hora: null,
                     status_entrada: 'AUSENTE',
                     status_saida: 'AUSENTE',
-                    cliente_id: u.links?.[0]?.cliente_id,
-                    cliente: u.links?.[0]?.cliente,
+                    cliente_id: link.cliente_id,
+                    cliente: link.cliente,
                     ausente: true
                 };
             });
