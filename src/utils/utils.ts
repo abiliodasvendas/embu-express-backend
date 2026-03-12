@@ -25,12 +25,18 @@ export const moneyToNumber = (value: string): number => {
   return parseFloat(numericString) || 0;
 };
 
-export const toLocalDateString = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
+export const toLocalDateString = (date: Date = new Date()): string => {
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  
+  const parts = formatter.formatToParts(date);
+  const find = (type: string) => parts.find(p => p.type === type)?.value;
+  
+  return `${find('year')}-${find('month')}-${find('day')}`;
 };
 
 export const onlyDigits = (value: string): string => {
