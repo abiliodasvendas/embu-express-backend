@@ -268,8 +268,10 @@ export const pontoService = {
         const { lat: eLat, lng: eLng, metadata: eMeta } = processLocationData(data.entrada_loc);
         const { lat: sLat, lng: sLng, metadata: sMeta } = processLocationData(data.saida_loc);
 
+        const { silent, id, created_at, updated_at, ...rest } = data;
+
         const payload = {
-            ...data,
+            ...rest,
             entrada_hora,
             saida_hora,
             entrada_km: data.entrada_km ?? null,
@@ -361,7 +363,8 @@ export const pontoService = {
 
     async updatePonto(id: number, data: Partial<any>): Promise<any> {
         // If updating times, recalculate status and details
-        let payload = { ...data };
+        const { silent, id: _, created_at, updated_at, ...rest } = data;
+        let payload = { ...rest };
 
         if (data.entrada_hora || data.saida_hora) {
             // We need to fetch the existing record if one of the times is missing to calculate correctly? 

@@ -32,9 +32,11 @@ export const ocorrenciaService = {
             }
         }
 
+        const { id, created_at, updated_at, silent, ...rest } = data;
+
         const { data: inserted, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
-            .insert([data])
+            .insert([rest])
             .select()
             .single();
 
@@ -59,9 +61,11 @@ export const ocorrenciaService = {
             }
         }
 
+        const { id: _, created_at, updated_at, silent, ...rest } = data;
+
         const { data: updated, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
-            .update(data)
+            .update(rest)
             .eq("id", id)
             .select()
             .single();
@@ -135,9 +139,11 @@ export const ocorrenciaService = {
     async createOcorrencia(data: any): Promise<any> {
         logger.info({ data }, "[ocorrenciaService] Criando ocorrência");
 
+        const { id, created_at, updated_at, silent, ...rest } = data;
+
         const { data: inserted, error } = await supabaseAdmin
             .from("ocorrencias")
-            .insert([data])
+            .insert([rest])
             .select()
             .single();
 
@@ -150,9 +156,11 @@ export const ocorrenciaService = {
      */
     async updateOcorrencia(id: number, data: any): Promise<any> {
         logger.info({ id, data }, "[ocorrenciaService] Atualizando ocorrência");
+        const { id: _, created_at, updated_at, silent, ...rest } = data;
+
         const { data: updated, error } = await supabaseAdmin
             .from("ocorrencias")
-            .update(data)
+            .update(rest)
             .eq("id", id)
             .select()
             .single();

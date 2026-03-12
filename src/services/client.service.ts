@@ -7,8 +7,11 @@ export const clientService = {
     async createClient(data: any): Promise<any> {
         if (!data.nome_fantasia) throw new Error(messages.cliente.erro.nomeObrigatorio);
 
+        // Remover campos que não existem no banco ou não devem ser inseridos manualmente
+        const { silent, id, created_at, updated_at, ...rest } = data;
+
         const clientData: any = {
-            ...data,
+            ...rest,
             nome_fantasia: cleanString(data.nome_fantasia),
             razao_social: data.razao_social ? cleanString(data.razao_social) : null,
             ativo: data.ativo !== undefined ? data.ativo : true,
@@ -35,7 +38,10 @@ export const clientService = {
     async updateClient(id: number, data: Partial<any>): Promise<any> {
         if (!id) throw new Error(messages.cliente.erro.idObrigatorio);
 
-        const clientData: any = { ...data };
+        // Remover campos que não devem ser atualizados diretamente ou que vêm do frontend mas não existem no banco
+        const { id: _, created_at, updated_at, silent, ...rest } = data;
+
+        const clientData: any = { ...rest };
         if (data.nome_fantasia) clientData.nome_fantasia = cleanString(data.nome_fantasia);
         if (data.razao_social) clientData.razao_social = cleanString(data.razao_social);
         if (data.cnpj) clientData.cnpj = data.cnpj.replace(/\D/g, "");

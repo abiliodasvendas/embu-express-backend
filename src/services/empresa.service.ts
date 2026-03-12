@@ -7,8 +7,11 @@ export const empresaService = {
     async createEmpresa(data: any): Promise<any> {
         if (!data.nome_fantasia) throw new Error(messages.empresa.erro.nomeObrigatorio);
 
+        // Remover campos que não existem no banco ou não devem ser inseridos manualmente
+        const { silent, id, created_at, updated_at, ...rest } = data;
+
         const empresaData: any = {
-            ...data,
+            ...rest,
             nome_fantasia: cleanString(data.nome_fantasia),
             razao_social: data.razao_social ? cleanString(data.razao_social) : null,
             codigo: data.codigo ? data.codigo.trim().toUpperCase() : null,
@@ -35,7 +38,10 @@ export const empresaService = {
     async updateEmpresa(id: number, data: Partial<any>): Promise<any> {
         if (!id) throw new Error(messages.empresa.erro.idObrigatorio);
 
-        const empresaData: any = { ...data };
+        // Remover campos que não devem ser atualizados diretamente ou que vêm do frontend mas não existem no banco
+        const { id: _, created_at, updated_at, silent, ...rest } = data;
+
+        const empresaData: any = { ...rest };
         if (data.nome_fantasia) empresaData.nome_fantasia = cleanString(data.nome_fantasia);
         if (data.razao_social) empresaData.razao_social = cleanString(data.razao_social);
         if (data.codigo) empresaData.codigo = data.codigo.trim().toUpperCase();

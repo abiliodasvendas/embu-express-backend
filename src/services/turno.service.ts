@@ -12,9 +12,10 @@ export const turnoService = {
     },
 
     async createTurno(data: any): Promise<any> {
+        const { silent, id, created_at, updated_at, ...rest } = data;
         const { data: inserted, error } = await supabaseAdmin
             .from("usuario_turnos")
-            .insert([data])
+            .insert([rest])
             .select()
             .single();
         if (error) throw error;

@@ -34,7 +34,7 @@ export const usuarioService = {
         }
 
         // Extract fields that don't belong to the 'usuarios' table
-        const { links, turnos, ...rest } = data;
+        const { links, turnos, silent, created_at, updated_at, ...rest } = data;
 
         // Prepare Usuario Data
         const usuarioData: any = {
@@ -84,7 +84,7 @@ export const usuarioService = {
         if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
 
         // Extract fields that don't belong to the 'usuarios' table or are handled separately
-        const { links, turnos, cliente_id, empresa_id, ativo, ...rest } = data;
+        const { links, turnos, cliente_id, empresa_id, ativo, silent, id: _, created_at, updated_at, ...rest } = data;
 
         const usuarioData: any = { ...rest };
         if (ativo !== undefined) {
