@@ -77,11 +77,6 @@ export const usuarioService = {
             throw error;
         }
 
-        // Sync Links (Colaborador x Cliente x Empresa x Turno)
-        if (links && Array.isArray(links)) {
-            await colaboradorClienteService.syncLinks(inserted.id, links);
-        }
-
         return this.getUsuario(inserted.id);
     },
 
@@ -131,11 +126,6 @@ export const usuarioService = {
                 }
             }
             throw error;
-        }
-
-        // Sync Links
-        if (links && Array.isArray(links)) {
-            await colaboradorClienteService.syncLinks(id, links);
         }
 
         return this.getUsuario(id);
