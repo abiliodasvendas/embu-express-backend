@@ -7,7 +7,7 @@ import { fecharMesSchema, getExtratoSchema } from "../types/dtos/financeiro.dto.
 const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Obter extrato mensal do colaborador
     app.get("/extrato-mensal/:usuarioId", {
-        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.EXTRATO)]
+        preHandler: [verifyPermissao([PERMISSIONS.FINANCEIRO.EXTRATO, PERMISSIONS.FINANCEIRO.VER_MEU])]
     }, async (request, reply) => {
         const { params, query } = getExtratoSchema.parse(request);
 

@@ -162,8 +162,8 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             return reply.status(400).send({ error: err.message });
         }
     });
-    // ADMIN: Relatório Mensal (Espelho de Ponto)
-    app.get("/relatorio-mensal/:usuario_id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, async (request: any, reply) => {
+    // ADMIN / PESSOAL: Relatório Mensal (Espelho de Ponto)
+    app.get("/relatorio-mensal/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, async (request: any, reply) => {
         const usuario_id = request.params["usuario_id"] as string;
         const { mes, ano } = request.query as any;
 

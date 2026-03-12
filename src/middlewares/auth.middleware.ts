@@ -54,7 +54,9 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             }
 
             // 4. Self-Access Bypass (Allow user to view/edit their own data)
-            const targetedId = (request.params as any)?.id;
+            const params = request.params as any;
+            const targetedId = params?.id || params?.usuarioId || params?.usuario_id;
+            
             if (targetedId && targetedId === user.id) {
                 return; // Allowed self-access bypass
             }
