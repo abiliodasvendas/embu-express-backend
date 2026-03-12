@@ -58,7 +58,7 @@ export const usuarioService = {
         const { data: inserted, error } = await supabaseAdmin
             .from("usuarios")
             .insert([usuarioData])
-            .select("*, perfil:perfis(*)")
+            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
             .single();
 
         if (error) {
@@ -111,7 +111,7 @@ export const usuarioService = {
             .from("usuarios")
             .update(usuarioData)
             .eq("id", id)
-            .select("*, perfil:perfis(*)")
+            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
             .single();
 
         if (error) {
@@ -134,7 +134,7 @@ export const usuarioService = {
     async getUsuario(id: string): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*)")
+            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
             .eq("id", id)
             .single();
         if (error) throw error;
@@ -155,7 +155,7 @@ export const usuarioService = {
     }): Promise<any[]> {
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia))")
+            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia))")
             .order("nome_completo", { ascending: true });
 
         if (filtros?.searchTerm) {
