@@ -714,12 +714,14 @@ export const pontoService = {
     },
 
     async getRelatorioMensal(usuarioId: string, mes: number, ano: number): Promise<any[]> {
+        const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+        
         const { data, error } = await supabaseAdmin
             .from("v_relatorio_mensal_ponto")
             .select("*")
             .eq("usuario_id", usuarioId)
             .filter("data_referencia", "gte", `${ano}-${String(mes).padStart(2, '0')}-01`)
-            .filter("data_referencia", "lte", `${ano}-${String(mes).padStart(2, '0')}-31`)
+            .filter("data_referencia", "lte", `${ano}-${String(mes).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`)
             .order("data_referencia", { ascending: true });
 
         if (error) throw error;
