@@ -494,10 +494,76 @@ export const pontoService = {
     },
 
     async listPontos(filtros?: any): Promise<any[]> {
+        // Se solicitado incluir ausentes, mudamos a base da query para 'usuarios'
+        if (filtros?.incluir_todos) {
+            const dataRef = filtros.data_referencia || toLocalDateString(new Date());
+            
+            // 1. Buscar todos os usuários ativos que possuem vínculos (turnos)
+            // Filtramos apenas colaboradores que não tem data_fim ou data_fim >= dataRef
+            let userQuery = supabaseAdmin
+                .from("usuarios")
+                .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(nome_fantasia))")
+                .eq("status", "ATIVO");
+
+            if (filtros.cliente_id && filtros.cliente_id !== 'todos') {
+                userQuery = userQuery.eq("links.cliente_id", filtros.cliente_id);
+            }
+
+            if (filtros.searchTerm) {
+                userQuery = userQuery.or(`nome_completo.ilike.%${filtros.searchTerm}%,cpf.ilike.%${filtros.searchTerm}%`);
+            }
+
+            const { data: users, error: userError } = await userQuery;
+            if (userError) throw userError;
+
+            // Filtragem manual para data_fim (Supabase can't do complex join filters easily in one go)
+            const activeUsers = users?.filter(u => 
+                u.links?.some((l: any) => !l.data_fim || l.data_fim >= dataRef)
+            ) || [];
+
+            if (activeUsers.length === 0) return [];
+
+            // 2. Buscar registros de ponto para esses usuários na data
+            const userIds = activeUsers.map(u => u.id);
+            let pontoQuery = supabaseAdmin
+                .from("registros_ponto")
+                .select("*, cliente:clientes(nome_fantasia), pausas:registros_pausas(*)")
+                .in("usuario_id", userIds)
+                .eq("data_referencia", dataRef);
+
+            if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
+                pontoQuery = pontoQuery.eq("status_entrada", filtros.status_entrada);
+            }
+
+            const { data: pontos, error: pontoError } = await pontoQuery;
+            if (pontoError) throw pontoError;
+
+            // 3. Montar o "Left Join"
+            return activeUsers.map(u => {
+                const ponto = pontos?.find(p => p.usuario_id === u.id);
+                if (ponto) {
+                    return { ...ponto, usuario: u };
+                }
+                // Retornar um "mock" de registro de ponto vazio para o usuário ausente
+                return {
+                    id: `ausente-${u.id}`,
+                    usuario_id: u.id,
+                    data_referencia: dataRef,
+                    usuario: u,
+                    entrada_hora: null,
+                    saida_hora: null,
+                    status_entrada: 'AUSENTE',
+                    status_saida: 'AUSENTE',
+                    cliente_id: u.links?.[0]?.cliente_id,
+                    cliente: u.links?.[0]?.cliente,
+                    ausente: true
+                };
+            });
+        }
+
+        // Comportamento original (apenas quem registrou ponto)
         let query = supabaseAdmin
             .from("registros_ponto")
-            // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
-            // Fetch embedded links to get client info and also the direct client linked to the record
             .select("*, cliente:clientes(nome_fantasia), usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
             .order("data_referencia", { ascending: false });
 
@@ -523,14 +589,7 @@ export const pontoService = {
         }
 
         if (filtros?.searchTerm) {
-            // Busca agora é focada no Cliente (Nome Fantasia)
-            // Precisamos garantir que o join de cliente também seja !inner para filtrar
-            // A sintaxe aninhada as vezes é chata no Supabase/Postgrest JS
-            // Tentativa com filtro no join aninhado:
-            // Search by User Name or CPF (Client search via deep relation is complex here, keeping robust)
             query = query.or(`usuario.nome_completo.ilike.%${filtros.searchTerm}%,usuario.cpf.ilike.%${filtros.searchTerm}%`);
-            // Nota: Isso depende do PostgREST suportar filtro profundo na versão atual do Supabase.
-            // Se falhar, teremos que ajustar. Mas é a tentativa correta.
         }
 
         const { data, error } = await query;
