@@ -91,7 +91,8 @@ async function calculateStatus(
     pausasKmTrabalhado: number = 0,
     pausasKmPausa: number = 0,
     clienteId?: number,
-    snapshotTurno?: { hora_inicio: string; hora_fim: string }
+    snapshotTurno?: { hora_inicio: string; hora_fim: string },
+    colaboradorClienteId?: number
 ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
     // Default values
     let status_entrada = PONTO_STATUS.CINZA;
@@ -142,11 +143,17 @@ async function calculateStatus(
             const [hEntrada, mEntrada] = parseTime(entrada);
             const entradaMinutosTotal = hEntrada * 60 + mEntrada;
 
-            // Se o clienteId foi passado, prioriza ele. Caso contrário, busca o mais próximo.
-            if (clienteId) {
+            // Se o colaboradorClienteId foi passado, ele é a PRIORIDADE ABSOLUTA (travamento de turno)
+            if (colaboradorClienteId) {
+                melhorTurno = turnos.find(t => String(t.id) === String(colaboradorClienteId));
+            }
+
+            // Se não encontrou pelo vínculo direto, tenta pelo clienteId (legado ou fallback)
+            if (!melhorTurno && clienteId) {
                 melhorTurno = turnos.find(t => t.cliente_id === clienteId);
             }
 
+            // Fallback: busca o mais próximo por horário
             if (!melhorTurno) {
                 let menorDiff = Infinity;
                 turnos.forEach(turno => {
@@ -178,6 +185,9 @@ async function calculateStatus(
         else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
         else status_entrada = PONTO_STATUS.VERMELHO;
 
+        // Sempre expõe o turno_base de saída se o turno for identificado (mesmo sem saída registrada)
+        detalhes.saida.turno_base = melhorTurno.hora_fim;
+
         // 4. Cálculos de Saída
         if (saida) {
             const [hS, mS] = parseTime(saida);
@@ -186,7 +196,6 @@ async function calculateStatus(
             const turnoFimMinutos = hTF * 60 + mTF;
 
             const diffSaida = saidaMinutos - turnoFimMinutos;
-            detalhes.saida.turno_base = melhorTurno.hora_fim;
             detalhes.saida.diff_minutos = diffSaida;
 
             if (diffSaida < -toleranciaSaida) status_saida = PONTO_STATUS.ANTECIPADA;
@@ -276,7 +285,9 @@ export const pontoService = {
             0, // pausasMinutos
             0, // pausasKmTrabalhado
             0, // pausasKmPausa
-            data.cliente_id
+            data.cliente_id,
+            undefined,
+            data.colaborador_cliente_id
         );
 
         // SMART LINKING: If no client provided, use the one from Best Shift
@@ -465,12 +476,16 @@ export const pontoService = {
                 Number(kmTrabalhadoFinal.toFixed(3)),
                 Number(totalKmPausa.toFixed(3)),
                 clienteIdAtualValue,
-                snapshot
+                snapshot,
+                existing.colaborador_cliente_id
             );
 
             if (melhorTurno) {
-                payload.colaborador_cliente_id = melhorTurno.id;
-                payload.empresa_id = melhorTurno.empresa_id;
+                // Só atualiza o vínculo se ele não estivesse definido ou se o cliente mudou drasticamente
+                if (!existing.colaborador_cliente_id || clienteMudou) {
+                    payload.colaborador_cliente_id = melhorTurno.id;
+                    payload.empresa_id = melhorTurno.empresa_id;
+                }
             }
 
             // --- RELATIVE KM LOGIC (2.3) FOR EXIT ---
