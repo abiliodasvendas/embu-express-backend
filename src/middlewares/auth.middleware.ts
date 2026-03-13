@@ -74,6 +74,10 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
                 return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
             }
 
+            // Attach profile and permissions to request for further checks in handlers
+            (request as any).user_profile = usuario;
+            (request as any).user_perms = permissoesArray;
+
             // If everything is fine, proceed
             return;
         } catch (error) {

@@ -72,11 +72,22 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         }
     });
 
-    // ADMIN: Ver detalhes de um ponto específico
-    app.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, async (request: any, reply) => {
+    // ADMIN / PESSOAL: Ver detalhes de um ponto específico
+    app.get("/:id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, async (request: any, reply) => {
         const id = parseInt(request.params["id"]);
+        const user = request.user;
+        const perms = request.user_perms || [];
+
         try {
             const result = await pontoService.getPonto(id);
+            if (!result) return reply.status(404).send({ error: "Registro não encontrado" });
+
+            // REGRA: Admin vê tudo. Motoboy/Pessoal só vê se for o dono.
+            const isAdmin = perms.includes(PERMISSIONS.PONTO.ADMIN_VER);
+            if (!isAdmin && result.usuario_id !== user.id) {
+                return reply.status(403).send({ error: "Não autorizado." });
+            }
+
             return reply.status(200).send(result);
         } catch (err: any) {
             return reply.status(404).send({ error: err.message });
