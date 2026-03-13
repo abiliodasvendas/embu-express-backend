@@ -634,6 +634,19 @@ export const pontoService = {
                     status_saida: 'AUSENTE',
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
+                    colaborador_cliente_id: link.id,
+                    detalhes_calculo: {
+                        entrada: {
+                            turno_base: link.hora_inicio,
+                            tolerancia: 15, // Default tolerance
+                            diff_minutos: 0
+                        },
+                        saida: {
+                            turno_base: link.hora_fim,
+                            tolerancia: 10, // Default tolerance
+                            diff_minutos: 0
+                        }
+                    },
                     ausente: true
                 });
             });
