@@ -10,6 +10,7 @@ export interface AuthSession {
 
 import { messages } from "../constants/messages.js";
 import { ROLES } from "../constants/permissions.enum.js";
+import { PIX_TYPES } from "../constants/financeiro.enum.js";
 
 export const authService = {
     async login(cpf: string, password: string): Promise<AuthSession> {
@@ -141,7 +142,7 @@ export const authService = {
             user_metadata: {
                 nome_completo: nomeLimpo,
                 cpf: cpfDigits,
-                role: "motoboy"
+                role: ROLES.MOTOBOY
             }
         });
 
@@ -183,7 +184,7 @@ export const authService = {
                 cnh_vencimento: profileData.cnh_vencimento || null,
                 cnh_categoria: profileData.cnh_categoria?.trim() === "" ? null : profileData.cnh_categoria.toUpperCase(),
                 chave_pix: profileData.chave_pix?.trim() === "" ? null : profileData.chave_pix,
-                tipo_chave_pix: profileData.tipo_chave_pix || "CPF",
+                tipo_chave_pix: profileData.tipo_chave_pix || PIX_TYPES.CPF,
                 status: STATUS.PENDENTE,
                 perfil_id: perfilMotoboyId
             };
