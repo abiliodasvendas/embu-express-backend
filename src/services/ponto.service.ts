@@ -437,7 +437,7 @@ export const pontoService = {
                     if (p.inicio_hora && p.fim_hora) {
                         const start = new Date(p.inicio_hora).getTime();
                         const end = new Date(p.fim_hora).getTime();
-                        totalPausasMin += (end - start) / 60000;
+                        totalPausasMin += Math.round((end - start) / 60000);
                     }
                     totalKmTrab += Number(p.distancia_trabalho || 0);
                     totalKmPausa += Number(p.distancia_pausa || 0);
