@@ -597,10 +597,6 @@ export const pontoService = {
                 .in("usuario_id", userIds)
                 .eq("data_referencia", dataRef);
 
-            if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
-                pontoQuery = pontoQuery.eq("status_entrada", filtros.status_entrada);
-            }
-
             const { data: pontos, error: pontoError } = await pontoQuery;
             if (pontoError) throw pontoError;
 
@@ -630,8 +626,8 @@ export const pontoService = {
                     usuario: link.usuario,
                     entrada_hora: null,
                     saida_hora: null,
-                    status_entrada: 'AUSENTE',
-                    status_saida: 'AUSENTE',
+                    status_entrada: PONTO_STATUS.AUSENTE,
+                    status_saida: PONTO_STATUS.AUSENTE,
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
                     colaborador_cliente_id: link.id,
@@ -658,8 +654,23 @@ export const pontoService = {
                 mappedResults.push({ ...p, usuario: user || p.usuario });
             });
 
+            // 6. Aplicar filtros de status pós-merge (para evitar poluição com AUSENTES indesejados)
+            let finalResults = mappedResults;
+
+            if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
+                finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
+            }
+
+            if (filtros.status_saida && filtros.status_saida !== 'todos') {
+                if (filtros.status_saida === 'trabalhando') {
+                    finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente);
+                } else {
+                    finalResults = finalResults.filter(p => p.status_saida === filtros.status_saida);
+                }
+            }
+
             // Ordenar alfabeticamente pelo nome do colaborador
-            return mappedResults.sort((a, b) => {
+            return finalResults.sort((a, b) => {
                 const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
                 const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
                 return nomeA.localeCompare(nomeB);
