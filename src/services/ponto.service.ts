@@ -746,6 +746,12 @@ export const pontoService = {
             if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
                 if (filtros.status_entrada === 'iniciou') {
                     finalResults = finalResults.filter(p => !p.ausente && p.entrada_hora);
+                } else if (filtros.status_entrada === 'nao_iniciou') {
+                    finalResults = finalResults.filter(p => p.ausente); // Todos que não bateram ponto
+                } else if (filtros.status_entrada === 'em_atraso') {
+                    finalResults = finalResults.filter(p => p.ausente && (p.status_entrada === PONTO_STATUS.AMARELO || p.status_entrada === PONTO_STATUS.VERMELHO));
+                } else if (filtros.status_entrada === 'aguardando') {
+                    finalResults = finalResults.filter(p => p.ausente && p.status_entrada === PONTO_STATUS.CINZA);
                 } else {
                     finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
                 }
