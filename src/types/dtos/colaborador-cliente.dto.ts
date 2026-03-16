@@ -10,7 +10,6 @@ export const createVinculoSchema = z.object({
     valor_aluguel: z.number().optional().default(0),
     valor_bonus: z.number().optional().default(0),
     ajuda_custo: z.number().optional().default(0),
-    valor_mei: z.number().optional().default(0),
     valor_adiantamento: z.number().optional().default(0),
     data_inicio: z.string().nullable().optional(),
     data_fim: z.string().nullable().optional(),

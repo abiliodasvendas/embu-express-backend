@@ -6,7 +6,8 @@ import { toBRTime } from "../utils/utils.js";
 function formatOcorrencia(o: any) {
     if (!o) return o;
     const result = { ...o };
-    if (result.data_ocorrencia) result.data_ocorrencia = toBRTime(result.data_ocorrencia);
+    // data_ocorrencia é um campo DATE (sem hora). Deve ser mantido como string pura (YYYY-MM-DD)
+    // para evitar que conversões de fuso horário alterem o dia.
     if (result.created_at) result.created_at = toBRTime(result.created_at);
     if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
     return result;
@@ -117,10 +118,11 @@ export const ocorrenciaService = {
                 vinculo:colaborador_clientes(id, hora_inicio, hora_fim, cliente:clientes(id, nome_fantasia))
             `);
 
-        const orderField = filtros?.order || "data_ocorrencia";
-        const isAscending = filtros?.ascending === true || (typeof filtros?.ascending === "string" && filtros.ascending === "true");
-
-        query = query.order(orderField, { ascending: isAscending });
+        // Ordenação padrão: data da ocorrência (desc) e depois data de criação (desc)
+        // Isso garante que lançamentos do mesmo dia fiquem na ordem correta de inserção
+        query = query
+            .order("data_ocorrencia", { ascending: false })
+            .order("created_at", { ascending: false });
 
         if (filtros?.usuario_id) {
             query = query.eq("colaborador_id", filtros.usuario_id);

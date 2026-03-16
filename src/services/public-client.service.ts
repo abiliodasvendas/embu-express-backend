@@ -1,5 +1,46 @@
 import { supabaseAdmin } from "../config/supabase.js";
-import { toLocalDateString } from "../utils/utils.js";
+import { PONTO_STATUS } from "../constants/ponto.enum.js";
+import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { configuracaoService } from "./configuracao.service.js";
+
+// Helper para extrair HH e MM de string (ISO ou HH:mm)
+function parseTime(timeStr: string): [number, number] {
+    if (!timeStr) return [0, 0];
+    if (timeStr.includes("T")) {
+        const date = new Date(timeStr);
+        const options: Intl.DateTimeFormatOptions = {
+            timeZone: 'America/Sao_Paulo',
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12: false
+        };
+        const formatter = new Intl.DateTimeFormat('pt-BR', options);
+        const parts = formatter.format(date).split(':');
+        return [Number(parts[0]), Number(parts[1])];
+    } else if (timeStr.includes(":")) {
+        const [h, m] = timeStr.split(":").map(Number);
+        return [h, m];
+    }
+    return [0, 0];
+}
+
+// Helper para formatar retorno (mesmo padrão do ponto.service.ts)
+function formatPoint(p: any) {
+    if (!p) return p;
+    const result = { ...p };
+    if (result.entrada_hora) result.entrada_hora = toBRTime(result.entrada_hora);
+    if (result.saida_hora) result.saida_hora = toBRTime(result.saida_hora);
+    if (result.created_at) result.created_at = toBRTime(result.created_at);
+    if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
+    if (result.pausas && Array.isArray(result.pausas)) {
+        result.pausas = result.pausas.map((pa: any) => ({
+            ...pa,
+            inicio_hora: pa.inicio_hora ? toBRTime(pa.inicio_hora) : null,
+            fim_hora: pa.fim_hora ? toBRTime(pa.fim_hora) : null,
+        }));
+    }
+    return result;
+}
 
 export const publicClientService = {
     /**
@@ -75,6 +116,7 @@ export const publicClientService = {
                 // Importante: No link, o cliente já vem populado pelo !inner join acima
                 const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
                 
+                // REVERSÃO: Só mostramos se estiver na escala (o mapeamento posterior cuida dos pontos fora da escala)
                 if (isVigente && naEscala) {
                     activeLinks.push({ ...link, usuario: u });
                 }
@@ -95,7 +137,22 @@ export const publicClientService = {
 
         if (pontoError) throw pontoError;
 
-        // 4. Montar o "Left Join" baseado nos Links (mesma lógica do ponto.service.ts)
+        // 4. Buscar configurações globais para o cálculo dinâmico
+        const [limiteAmarelo] = await Promise.all([
+            configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15))
+        ]);
+
+        const hoje = toLocalDateString();
+        const isHoje = dataReferencia === hoje;
+        const isFuturo = dataReferencia > hoje;
+        let nowTotalMin = 0;
+        if (isHoje) {
+            const nowStr = getNowBR();
+            const [h, m] = parseTime(nowStr);
+            nowTotalMin = h * 60 + m;
+        }
+
+        // 5. Montar o "Left Join" baseado nos Links
         const usedPointIds = new Set<string>();
         const mappedResults = activeLinks.map(link => {
             const ponto = pontos?.find(p => 
@@ -108,11 +165,64 @@ export const publicClientService = {
             
             if (ponto) {
                 usedPointIds.add(ponto.id.toString());
-                return { ...ponto, usuario: link.usuario, cliente: link.cliente };
+
+                // Lógica de Aging para Ponto Aberto
+                if (!ponto.saida_hora) {
+                    const [hFim, mFim] = parseTime(link.hora_fim);
+                    const [hIni, mIni] = parseTime(link.hora_inicio);
+                    let fimMin = hFim * 60 + mFim;
+                    const iniMin = hIni * 60 + mIni;
+
+                    if (fimMin < iniMin) fimMin += 1440; // Ajuste noturno
+
+                    const isOpenTooLong = (!isHoje && !isFuturo) || (isHoje && nowTotalMin > (fimMin + 240));
+
+                    if (isOpenTooLong) {
+                        ponto.status_saida = PONTO_STATUS.PENDENTE;
+                    }
+                }
+
+                return formatPoint({ ...ponto, usuario: link.usuario, cliente: link.cliente });
             }
 
-            // Mock de ausente
-            return {
+            // --- CÁLCULO DE STATUS VIVO PARA QUEM NÃO BATEU PONTO ---
+            let statusEntradaMock = PONTO_STATUS.AUSENTE;
+            let statusSaidaMock = PONTO_STATUS.AUSENTE;
+
+            const [hBase, mBase] = parseTime(link.hora_inicio);
+            const inicioMinBase = hBase * 60 + mBase;
+
+            if (isFuturo) {
+                statusEntradaMock = PONTO_STATUS.CINZA; // Aguardando
+                statusSaidaMock = PONTO_STATUS.CINZA;
+            } else if (isHoje) {
+                const [hInicio, mInicio] = parseTime(link.hora_inicio);
+                const [hFim, mFim] = parseTime(link.hora_fim);
+                const inicioMin = hInicio * 60 + mInicio;
+                let fimMin = hFim * 60 + mFim;
+
+                // Lógica para turno noturno
+                if (fimMin < inicioMin) {
+                    fimMin += 1440;
+                }
+
+                if (nowTotalMin < inicioMin) {
+                    statusEntradaMock = PONTO_STATUS.CINZA; // Aguardando
+                } else if (nowTotalMin === inicioMin) {
+                    statusEntradaMock = PONTO_STATUS.VERDE; // No Horário
+                } else if (nowTotalMin > fimMin) {
+                    statusEntradaMock = PONTO_STATUS.AUSENTE; // Terminou o dia sem entrada
+                } else if (nowTotalMin <= inicioMin + limiteAmarelo) {
+                    statusEntradaMock = PONTO_STATUS.AMARELO; // Atrasado
+                } else {
+                    statusEntradaMock = PONTO_STATUS.VERMELHO; // Atraso Crítico
+                }
+                
+                statusSaidaMock = nowTotalMin > fimMin ? PONTO_STATUS.AUSENTE : PONTO_STATUS.CINZA;
+            }
+
+            // Mock de ausente/aguardando
+            return formatPoint({
                 id: `ausente-${link.id}`,
                 usuario_id: link.colaborador_id,
                 data_referencia: dataReferencia,
@@ -122,27 +232,35 @@ export const publicClientService = {
                 },
                 entrada_hora: null,
                 saida_hora: null,
-                status_entrada: 'AUSENTE',
-                status_saida: 'AUSENTE',
+                status_entrada: statusEntradaMock,
+                status_saida: statusSaidaMock,
                 cliente_id: clienteId,
                 cliente: link.cliente,
                 colaborador_cliente_id: link.id,
                 detalhes_calculo: {
-                    entrada: { turno_base: link.hora_inicio, tolerancia: 15, diff_minutos: 0 },
-                    saida: { turno_base: link.hora_fim, tolerancia: 10, diff_minutos: 0 }
+                    entrada: { 
+                        turno_base: link.hora_inicio, 
+                        tolerancia: limiteAmarelo, 
+                        diff_minutos: isHoje && nowTotalMin > inicioMinBase ? nowTotalMin - inicioMinBase : 0 
+                    },
+                    saida: { 
+                        turno_base: link.hora_fim, 
+                        tolerancia: 0, 
+                        diff_minutos: 0 
+                    }
                 },
                 ausente: true
-            };
+            });
         });
 
-        // 5. Adicionar pontos "sobrantes" que não bateram com links de turno
+        // 5. Adicionar pontos "sobrantes" que não bateram com links de turno (extra)
         const leftoverPontos = pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [];
         leftoverPontos.forEach(p => {
             const user = users?.find(u => u.id === p.usuario_id);
-            mappedResults.push({ 
+            mappedResults.push(formatPoint({ 
                 ...p, 
                 usuario: user ? { id: user.id, nome_completo: user.nome_completo } : p.usuario 
-            });
+            }));
         });
 
         // Ordenar alfabeticamente

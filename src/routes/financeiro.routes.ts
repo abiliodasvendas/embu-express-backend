@@ -33,6 +33,49 @@ const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             return reply.status(400).send({ error: err.message });
         }
     });
+
+    // Confirmar Adiantamento
+    app.post("/confirmar-adiantamento/:usuarioId", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
+    }, async (request, reply) => {
+        const { params, body } = fecharMesSchema.parse(request);
+        const confirmadoPor = (request as any).user.id;
+
+        try {
+            const result = await financeiroService.confirmarAdiantamento(params.usuarioId, body.mes, body.ano, confirmadoPor);
+            return reply.send(result);
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // Remover Confirmação de Adiantamento
+    app.delete("/desconfirmar-adiantamento/:usuarioId", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
+    }, async (request, reply) => {
+        const { params, query } = getExtratoSchema.parse(request);
+
+        try {
+            await financeiroService.desconfirmarAdiantamento(params.usuarioId, query.mes, query.ano);
+            return reply.status(204).send();
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
+
+    // Desfazer Pagamento (Excluir Snapshot)
+    app.delete("/desfazer-pagamento/:usuarioId", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
+    }, async (request, reply) => {
+        const { params, query } = getExtratoSchema.parse(request);
+
+        try {
+            await financeiroService.desfazerPagamento(params.usuarioId, query.mes, query.ano);
+            return reply.status(204).send();
+        } catch (err: any) {
+            return reply.status(400).send({ error: err.message });
+        }
+    });
 };
 
 export default financeiroRoutes;

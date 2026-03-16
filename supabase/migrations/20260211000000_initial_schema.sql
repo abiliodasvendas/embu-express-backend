@@ -185,7 +185,9 @@ CREATE TABLE IF NOT EXISTS "public"."tipos_ocorrencia" (
     "descricao" character varying(100) NOT NULL,
     "impacto_financeiro" boolean DEFAULT false,
     "valor_padrao" numeric DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "tipo_lancamento" character varying(10) DEFAULT 'SAIDA'::character varying,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "tipos_ocorrencia_tipo_lancamento_check" CHECK (("tipo_lancamento" = ANY (ARRAY['ENTRADA'::"text", 'SAIDA'::"text"])))
 );
 
 

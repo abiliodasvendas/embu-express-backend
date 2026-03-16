@@ -91,7 +91,7 @@ async function calculateStatus(
     pausasKmTrabalhado: number = 0,
     pausasKmPausa: number = 0,
     clienteId?: number,
-    snapshotTurno?: { hora_inicio: string; hora_fim: string },
+    snapshotTurno?: { hora_inicio: string; hora_fim: string; tolerancia_pausa_min?: number },
     colaboradorClienteId?: number
 ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
     // Default values
@@ -105,6 +105,9 @@ async function calculateStatus(
         resumo: { 
             horas_trabalhadas: "--:--", 
             horas_pausa: `${Math.floor(pausasMinutos / 60)}h ${pausasMinutos % 60}min`,
+            pausa_total: pausasMinutos,
+            pausa_configurada: 0,
+            pausa_extra: 0,
             km_trabalhado: pausasKmTrabalhado,
             km_pausa: pausasKmPausa
         }
@@ -118,12 +121,12 @@ async function calculateStatus(
     if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
 
     // 1. Buscar configurações
-    const toleranciaVerde = await configuracaoService.getConfiguracao("tolerancia_verde_min").then(d => Number(d?.valor || 5));
     const limiteAmarelo = await configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15));
-    const toleranciaSaida = await configuracaoService.getConfiguracao("tolerancia_saida_min").then(d => Number(d?.valor || 10));
+    const limiteHEExcessiva = await configuracaoService.getConfiguracao("limite_he_excessiva_min").then(d => Number(d?.valor || 120));
 
     detalhes.entrada.tolerancia = limiteAmarelo;
-    detalhes.saida.tolerancia = toleranciaSaida;
+    detalhes.saida.tolerancia = 0;
+    detalhes.saida.limite_he_excessiva = limiteHEExcessiva;
 
     let melhorTurno: any = null;
 
@@ -180,8 +183,8 @@ async function calculateStatus(
         detalhes.entrada.turno_base = melhorTurno.hora_inicio;
         detalhes.entrada.diff_minutos = diffEntrada;
 
-        if (diffEntrada < -toleranciaVerde) status_entrada = PONTO_STATUS.ANTECIPADA;
-        else if (diffEntrada <= toleranciaVerde) status_entrada = PONTO_STATUS.VERDE;
+        if (diffEntrada < 0) status_entrada = PONTO_STATUS.ANTECIPADA;
+        else if (diffEntrada === 0) status_entrada = PONTO_STATUS.VERDE;
         else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
         else status_entrada = PONTO_STATUS.VERMELHO;
 
@@ -198,17 +201,23 @@ async function calculateStatus(
             const diffSaida = saidaMinutos - turnoFimMinutos;
             detalhes.saida.diff_minutos = diffSaida;
 
-            if (diffSaida < -toleranciaSaida) status_saida = PONTO_STATUS.ANTECIPADA;
-            else if (Math.abs(diffSaida) <= toleranciaSaida) status_saida = PONTO_STATUS.VERDE;
-            else status_saida = PONTO_STATUS.AMARELO; // HE
+            if (diffSaida < 0) status_saida = PONTO_STATUS.ANTECIPADA;
+            else if (diffSaida === 0) status_saida = PONTO_STATUS.VERDE;
+            else if (diffSaida <= limiteHEExcessiva) status_saida = PONTO_STATUS.AMARELO; // HE
+            else status_saida = PONTO_STATUS.VERMELHO; // HE Excessiva
 
             // 5. Saldo e Tempo Trabalhado
             const start = new Date(entrada).getTime();
             const end = new Date(saida).getTime();
             const brutoMinutos = Math.round((end - start) / 60000);
-            const liquidoMinutos = brutoMinutos - pausasMinutos;
+            
+            const tolPausa = melhorTurno?.tolerancia_pausa_min || 0;
+            const liquidoMinutos = brutoMinutos - Math.max(pausasMinutos, tolPausa);
 
             detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
+            detalhes.resumo.pausa_total = pausasMinutos;
+            detalhes.resumo.pausa_configurada = tolPausa;
+            detalhes.resumo.pausa_extra = Math.max(0, pausasMinutos - tolPausa);
             
             // Adiciona o KM da saída ao KM trabalhado total (distância entre o último marcador e a saída)
             if (saida_km) {
@@ -218,10 +227,11 @@ async function calculateStatus(
                 // Vamos tentar deixar o km_trabalhado o mais preciso possível.
             }
 
-            let esperadoMinutos = turnoFimMinutos - turnoInicioMinutos;
-            if (esperadoMinutos < 0) esperadoMinutos += 1440; // Se terminar no dia seguinte (ex: 22h as 06h)
+            let esperadoMinutosBruto = turnoFimMinutos - turnoInicioMinutos;
+            if (esperadoMinutosBruto < 0) esperadoMinutosBruto += 1440; // Se terminar no dia seguinte (ex: 22h as 06h)
 
-            saldo_minutos = liquidoMinutos - esperadoMinutos;
+            const esperadoMinutosLiquido = esperadoMinutosBruto - tolPausa;
+            saldo_minutos = liquidoMinutos - esperadoMinutosLiquido;
         }
     } else if (saida) {
         // Cálculo básico sem turno
@@ -252,8 +262,6 @@ export const pontoService = {
         const durationCheck = TimeRecordRules.validateMinDuration(entrada_hora, saida_hora);
         if (!durationCheck.valid) throw new Error(durationCheck.message);
 
-        const maxDurationCheck = TimeRecordRules.validateMaxDuration(entrada_hora, saida_hora);
-        if (!maxDurationCheck.valid) throw new Error(maxDurationCheck.message);
 
         // 2. Validação de Sobreposição
         const { data: registrosDia, error: fetchError } = await supabaseAdmin
@@ -452,7 +460,8 @@ export const pontoService = {
             if (!clienteMudou && existing.detalhes_calculo?.entrada?.turno_base && existing.detalhes_calculo?.saida?.turno_base) {
                 snapshot = {
                     hora_inicio: existing.detalhes_calculo.entrada.turno_base,
-                    hora_fim: existing.detalhes_calculo.saida.turno_base
+                    hora_fim: existing.detalhes_calculo.saida.turno_base,
+                    tolerancia_pausa_min: existing.detalhes_calculo.resumo?.pausa_configurada || 0
                 };
             }
 
@@ -581,6 +590,7 @@ export const pontoService = {
                     const isVigente = !link.data_fim || link.data_fim >= dataRef;
                     const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
                     
+                    // REVERSÃO: Só mostramos se estiver na escala OU se bater ponto (o mapeamento posterior cuida dos pontos fora da escala)
                     if (isVigente && naEscala) {
                         activeLinks.push({ ...link, usuario: u });
                     }
@@ -600,11 +610,26 @@ export const pontoService = {
             const { data: pontos, error: pontoError } = await pontoQuery;
             if (pontoError) throw pontoError;
 
+            // 0. Buscar configurações globais para o cálculo dinâmico
+            const [limiteAmarelo, limiteHEExcessiva] = await Promise.all([
+                configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15)),
+                configuracaoService.getConfiguracao("limite_he_excessiva_min").then(d => Number(d?.valor || 120))
+            ]);
+
+            const hoje = toLocalDateString();
+            const isHoje = dataRef === hoje;
+            const isFuturo = dataRef > hoje;
+            let nowTotalMin = 0;
+            if (isHoje) {
+                const nowStr = getNowBR(); // Returns "YYYY-MM-DDTHH:mm:ss-03:00"
+                const [h, m] = parseTime(nowStr);
+                nowTotalMin = h * 60 + m;
+            }
+
             // 4. Montar o "Left Join" baseado nos Links
             const usedPointIds = new Set<string>();
             const mappedResults = activeLinks.map(link => {
                 // Tenta encontrar um ponto que bata com o usuario e o turno específico
-                // Usamos a nova coluna colaborador_cliente_id ou o fallback de horário para dados antigos
                 const ponto = pontos?.find(p => 
                     p.usuario_id === link.colaborador_id && 
                     (
@@ -615,31 +640,90 @@ export const pontoService = {
                 
                 if (ponto) {
                     usedPointIds.add(ponto.id.toString());
+                    
+                    // Lógica de Aging para Ponto Aberto
+                    if (!ponto.saida_hora) {
+                        const [hFim, mFim] = parseTime(link.hora_fim);
+                        const [hIni, mIni] = parseTime(link.hora_inicio);
+                        let fimMin = hFim * 60 + mFim;
+                        const iniMin = hIni * 60 + mIni;
+
+                        if (fimMin < iniMin) fimMin += 1440; // Ajuste noturno
+
+                        const isOpenTooLong = (!isHoje && !isFuturo) || (isHoje && nowTotalMin > (fimMin + 240));
+
+                        if (isOpenTooLong) {
+                            ponto.status_saida = PONTO_STATUS.PENDENTE;
+                        }
+                    }
+
                     return { ...ponto, usuario: link.usuario };
                 }
 
+                // --- CÁLCULO DE STATUS VIVO PARA QUEM NÃO BATEU PONTO ---
+                let statusEntradaMock = PONTO_STATUS.AUSENTE;
+                let statusSaidaMock = PONTO_STATUS.AUSENTE;
+
+                if (isFuturo) {
+                    statusEntradaMock = PONTO_STATUS.CINZA; // Aguardando
+                    statusSaidaMock = PONTO_STATUS.CINZA;
+                } else if (isHoje) {
+                    const [hInicio, mInicio] = parseTime(link.hora_inicio);
+                    const [hFim, mFim] = parseTime(link.hora_fim);
+                    const inicioMin = hInicio * 60 + mInicio;
+                    let fimMin = hFim * 60 + mFim;
+
+                    // Lógica para turno noturno (atravessa a meia-noite)
+                    const isNoturno = fimMin < inicioMin;
+                    if (isNoturno) {
+                        fimMin += 1440; // Adiciona 24h para facilitar a comparação linear
+                    }
+
+                    // Se for noturno, precisamos decidir se o 'now' refere-se ao início ou ao fim do turno
+                    // Em um sistema reativo por data_referencia, se é HOJE e o turno é das 22h às 06h:
+                    // Das 00h às 06h, 'now' é > fimMin (fake linear). Mas na verdade, esse 00-06 refere-se à data_referencia de ONTEM.
+                    // Para a data_referencia de HOJE, o turno só começa às 22h.
+                    
+                    if (nowTotalMin < inicioMin) {
+                        statusEntradaMock = PONTO_STATUS.CINZA; // Ainda não começou
+                    } else if (nowTotalMin === inicioMin) {
+                        statusEntradaMock = PONTO_STATUS.VERDE; // No Horário
+                    } else if (nowTotalMin > fimMin) {
+                        statusEntradaMock = PONTO_STATUS.AUSENTE; // Terminou o dia sem entrada
+                    } else if (nowTotalMin <= inicioMin + limiteAmarelo) {
+                        statusEntradaMock = PONTO_STATUS.AMARELO; // Atrasado
+                    } else {
+                        statusEntradaMock = PONTO_STATUS.VERMELHO; // Atraso Crítico
+                    }
+                    
+                    statusSaidaMock = nowTotalMin > fimMin ? PONTO_STATUS.AUSENTE : PONTO_STATUS.CINZA;
+                }
+
+                const [hBase, mBase] = parseTime(link.hora_inicio);
+                const inicioMinBase = hBase * 60 + mBase;
+
                 // Retornar um "mock" de registro de ponto vazio para o turno ausente
                 return formatPoint({
-                    id: `ausente-${link.id}`, // Usar o ID do vínculo para garantir unicidade absoluta
+                    id: `ausente-${link.id}`,
                     usuario_id: link.colaborador_id,
                     data_referencia: dataRef,
                     usuario: link.usuario,
                     entrada_hora: null,
                     saida_hora: null,
-                    status_entrada: PONTO_STATUS.AUSENTE,
-                    status_saida: PONTO_STATUS.AUSENTE,
+                    status_entrada: statusEntradaMock,
+                    status_saida: statusSaidaMock,
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
                     colaborador_cliente_id: link.id,
                     detalhes_calculo: {
                         entrada: {
                             turno_base: link.hora_inicio,
-                            tolerancia: 15, // Default tolerance
-                            diff_minutos: 0
+                            tolerancia: limiteAmarelo,
+                            diff_minutos: isHoje && nowTotalMin > inicioMinBase ? nowTotalMin - inicioMinBase : 0
                         },
                         saida: {
                             turno_base: link.hora_fim,
-                            tolerancia: 10, // Default tolerance
+                            tolerancia: 0,
                             diff_minutos: 0
                         }
                     },
@@ -658,12 +742,18 @@ export const pontoService = {
             let finalResults = mappedResults;
 
             if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
-                finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
+                if (filtros.status_entrada === 'iniciou') {
+                    finalResults = finalResults.filter(p => !p.ausente && p.entrada_hora);
+                } else {
+                    finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
+                }
             }
 
             if (filtros.status_saida && filtros.status_saida !== 'todos') {
                 if (filtros.status_saida === 'trabalhando') {
-                    finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente);
+                    finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente && p.entrada_hora);
+                } else if (filtros.status_saida === 'concluiu') {
+                    finalResults = finalResults.filter(p => p.saida_hora && !p.ausente);
                 } else {
                     finalResults = finalResults.filter(p => p.status_saida === filtros.status_saida);
                 }
@@ -689,12 +779,18 @@ export const pontoService = {
         }
 
         if (filtros?.status_entrada && filtros.status_entrada !== 'todos') {
-            query = query.eq("status_entrada", filtros.status_entrada);
+            if (filtros.status_entrada === 'iniciou') {
+                query = query.not("entrada_hora", "is", null);
+            } else {
+                query = query.eq("status_entrada", filtros.status_entrada);
+            }
         }
 
         if (filtros?.status_saida && filtros.status_saida !== 'todos') {
             if (filtros.status_saida === 'trabalhando') {
                 query = query.is("saida_hora", null);
+            } else if (filtros.status_saida === 'concluiu') {
+                query = query.not("saida_hora", "is", null);
             } else {
                 query = query.eq("status_saida", filtros.status_saida);
             }
