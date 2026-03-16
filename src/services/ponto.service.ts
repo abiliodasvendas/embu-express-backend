@@ -184,7 +184,7 @@ async function calculateStatus(
         detalhes.entrada.diff_minutos = diffEntrada;
 
         if (diffEntrada < 0) status_entrada = PONTO_STATUS.ANTECIPADA;
-        else if (diffEntrada === 0) status_entrada = PONTO_STATUS.VERDE;
+        else if (diffEntrada === 0 || entradaMinutos === turnoInicioMinutos) status_entrada = PONTO_STATUS.VERDE;
         else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
         else status_entrada = PONTO_STATUS.VERMELHO;
 
@@ -641,8 +641,10 @@ export const pontoService = {
                 if (ponto) {
                     usedPointIds.add(ponto.id.toString());
                     
+                    const formattedPonto = formatPoint(ponto);
+
                     // Lógica de Aging para Ponto Aberto
-                    if (!ponto.saida_hora) {
+                    if (!formattedPonto.saida_hora) {
                         const [hFim, mFim] = parseTime(link.hora_fim);
                         const [hIni, mIni] = parseTime(link.hora_inicio);
                         let fimMin = hFim * 60 + mFim;
@@ -653,11 +655,11 @@ export const pontoService = {
                         const isOpenTooLong = (!isHoje && !isFuturo) || (isHoje && nowTotalMin > (fimMin + 240));
 
                         if (isOpenTooLong) {
-                            ponto.status_saida = PONTO_STATUS.PENDENTE;
+                            formattedPonto.status_saida = PONTO_STATUS.PENDENTE;
                         }
                     }
 
-                    return { ...ponto, usuario: link.usuario };
+                    return { ...formattedPonto, usuario: link.usuario };
                 }
 
                 // --- CÁLCULO DE STATUS VIVO PARA QUEM NÃO BATEU PONTO ---
