@@ -77,7 +77,8 @@ export const publicClientService = {
                 )
             `)
             .eq("links.cliente_id", clienteId)
-            .eq("status", "ATIVO");
+            .eq("status", "ATIVO")
+            .order("nome_completo", { ascending: true });
 
         if (error) throw error;
         return data || [];
@@ -286,7 +287,7 @@ export const publicClientService = {
             .eq("usuario_id", usuarioId)
             .gte("data_referencia", startOfMonth)
             .lte("data_referencia", endOfMonth)
-            .order("data_referencia", { ascending: true });
+            .order("data_referencia", { ascending: false });
 
         if (error) throw error;
         return data || [];

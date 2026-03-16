@@ -53,7 +53,8 @@ export const colaboradorClienteService = {
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .select("*, cliente:clientes(*), empresa:empresas(*)")
-            .eq("colaborador_id", usuarioId);
+            .eq("colaborador_id", usuarioId)
+            .order("hora_inicio", { ascending: true });
 
         if (error) throw error;
         return data || [];
@@ -63,7 +64,8 @@ export const colaboradorClienteService = {
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .select("*, colaborador:usuarios(*)")
-            .eq("cliente_id", clienteId);
+            .eq("cliente_id", clienteId)
+            .order("nome_completo", { referencedTable: "usuarios", ascending: true });
 
         if (error) throw error;
         return data || [];

@@ -716,6 +716,7 @@ export const pontoService = {
                     status_saida: statusSaidaMock,
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
+                    empresa_id: link.empresa_id,
                     colaborador_cliente_id: link.id,
                     detalhes_calculo: {
                         entrada: {
@@ -767,11 +768,14 @@ export const pontoService = {
                 }
             }
 
-            // Ordenar alfabeticamente pelo nome do colaborador
+            // Ordenar alfabeticamente pelo nome do colaborador + data decrescente
             return finalResults.sort((a, b) => {
                 const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
                 const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
-                return nomeA.localeCompare(nomeB);
+                if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
+                
+                // Se for o mesmo colaborador, ordena pela data decrescente
+                return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
             });
         }
 
@@ -817,11 +821,14 @@ export const pontoService = {
         
         const results = (data || []).map(formatPoint);
         
-        // Ordenar alfabeticamente pelo nome do colaborador
+        // Ordenar alfabeticamente pelo nome do colaborador + data decrescente
         return results.sort((a, b) => {
             const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
             const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
-            return nomeA.localeCompare(nomeB);
+            if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
+            
+            // Se for o mesmo colaborador, ordena pela data decrescente
+            return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
         });
     },
 
@@ -1059,7 +1066,7 @@ export const pontoService = {
             .eq("usuario_id", usuarioId)
             .filter("data_referencia", "gte", `${ano}-${String(mes).padStart(2, '0')}-01`)
             .filter("data_referencia", "lte", `${ano}-${String(mes).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`)
-            .order("data_referencia", { ascending: true });
+            .order("data_referencia", { ascending: false });
 
         if (error) throw error;
         return data || [];
