@@ -1,6 +1,7 @@
 import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { cleanString, onlyDigits } from "../utils/utils.js";
+import { AppError } from "../errors/AppError.js";
 
 export interface AuthSession {
     access_token: string;
@@ -16,7 +17,7 @@ export const authService = {
     async login(cpf: string, password: string): Promise<AuthSession> {
         // 1. Find user by CPF to get email
         const cpfDigits = onlyDigits(cpf);
-        if (!cpfDigits) throw new Error(messages.auth.erro.cpfSenhaObrigatorios);
+        if (!cpfDigits) throw new AppError(messages.auth.erro.cpfSenhaObrigatorios, 400);
 
         const { data: user, error: userError } = await supabaseAdmin
             .from("usuarios")
@@ -33,14 +34,14 @@ export const authService = {
             .single();
 
         if (userError || !user) {
-            throw new Error(messages.auth.erro.usuarioNaoEncontrado);
+            throw new AppError(messages.auth.erro.usuarioNaoEncontrado, 404);
         }
 
         if (user.status !== STATUS.ATIVO) {
             if (user.status === STATUS.PENDENTE) {
-                throw new Error(messages.auth.erro.cadastroPendente);
+                throw new AppError(messages.auth.erro.cadastroPendente, 403);
             }
-            throw new Error(messages.auth.erro.acessoNegado);
+            throw new AppError(messages.auth.erro.acessoNegado, 403);
         }
 
         // 2. Sign in with Supabase Auth
@@ -50,7 +51,7 @@ export const authService = {
         });
 
         if (authError || !authData.session) {
-            throw new Error(messages.auth.erro.credenciaisInvalidas);
+            throw new AppError(messages.auth.erro.credenciaisInvalidas, 401);
         }
 
         // Formatar as permissões para um array de strings simples: ["usuarios:ver", "perfis:criar"]
@@ -75,7 +76,7 @@ export const authService = {
         const { data, error } = await supabaseAdmin.auth.refreshSession({ refresh_token: refreshToken });
 
         if (error || !data.session) {
-            throw new Error(messages.auth.erro.sessaoExpirada);
+            throw new AppError(messages.auth.erro.sessaoExpirada, 401);
         }
 
         return {
@@ -89,11 +90,20 @@ export const authService = {
         await supabaseAdmin.auth.admin.signOut(token);
     },
 
-    async updatePassword(token: string, newPassword: string): Promise<any> {
+    async updatePassword(token: string, newPassword: string, oldPassword?: string): Promise<any> {
         const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
         if (userError || !user) {
-            throw new Error(messages.auth.erro.tokenInvalido);
+            throw new AppError(messages.auth.erro.tokenInvalido, 401);
+        }
+
+        // Verify old password first if provided
+        if (oldPassword && user.email) {
+            const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+                email: user.email,
+                password: oldPassword
+            });
+            if (signInError) throw new AppError(messages.auth.erro.senhaIncorreta, 401);
         }
 
         const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
@@ -101,7 +111,7 @@ export const authService = {
         });
 
         if (error) {
-            throw new Error(`${messages.auth.erro.atualizarSenha}: ${error.message}`);
+            throw new AppError(`${messages.auth.erro.atualizarSenha}: ${error.message}`, 400);
         }
 
         // 3. Reset first access flag
@@ -117,7 +127,7 @@ export const authService = {
         });
 
         if (signInError || !sessionData.session) {
-            throw new Error("Senha atualizada, mas falha ao obter nova sessão. Faça o login novamente.");
+            throw new AppError("Senha atualizada, mas falha ao obter nova sessão. Faça o login novamente.", 500);
         }
 
         return {
@@ -147,7 +157,7 @@ export const authService = {
         });
 
         if (authError) throw authError;
-        if (!authUser?.user) throw new Error(messages.usuario.erro.criarAuth);
+        if (!authUser?.user) throw new AppError(messages.usuario.erro.criarAuth, 500);
 
         try {
             // 2. Create Profile
@@ -159,7 +169,7 @@ export const authService = {
                 .single();
 
             if (!perfilMotoboy) {
-                throw new Error("Perfil de motoboy não encontrado no sistema.");
+                throw new AppError("Perfil de motoboy não encontrado no sistema.", 500);
             }
 
             const perfilMotoboyId = perfilMotoboy.id;
@@ -211,7 +221,7 @@ export const authService = {
         });
 
         if (error) {
-            throw new Error(`${messages.auth.erro.redefinirSenha}: ${error.message}`);
+            throw new AppError(`${messages.auth.erro.redefinirSenha}: ${error.message}`, 400);
         }
     }
 };

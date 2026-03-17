@@ -2,10 +2,11 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { cleanString } from "../utils/utils.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
+import { AppError } from "../errors/AppError.js";
 
 export const clientService = {
     async createClient(data: any): Promise<any> {
-        if (!data.nome_fantasia) throw new Error(messages.cliente.erro.nomeObrigatorio);
+        if (!data.nome_fantasia) throw new AppError(messages.cliente.erro.nomeObrigatorio, 400);
 
         // Remover campos que não existem no banco ou não devem ser inseridos manualmente
         const { silent, id, created_at, updated_at, ...rest } = data;
@@ -27,7 +28,7 @@ export const clientService = {
 
         if (error) {
             if (error.code === '23505' && error.message?.toLowerCase().includes('cnpj')) {
-                throw new Error(messages.cliente.erro.cnpjJaExiste);
+                throw new AppError(messages.cliente.erro.cnpjJaExiste, 409);
             }
             throw error;
         }
@@ -36,7 +37,7 @@ export const clientService = {
     },
 
     async updateClient(id: number, data: Partial<any>): Promise<any> {
-        if (!id) throw new Error(messages.cliente.erro.idObrigatorio);
+        if (!id) throw new AppError(messages.cliente.erro.idObrigatorio, 400);
 
         // Remover campos que não devem ser atualizados diretamente ou que vêm do frontend mas não existem no banco
         const { id: _, created_at, updated_at, silent, ...rest } = data;
@@ -56,7 +57,7 @@ export const clientService = {
 
         if (error) {
             if (error.code === '23505' && error.message?.toLowerCase().includes('cnpj')) {
-                throw new Error(messages.cliente.erro.cnpjJaExiste);
+                throw new AppError(messages.cliente.erro.cnpjJaExiste, 409);
             }
             throw error;
         }
@@ -65,7 +66,7 @@ export const clientService = {
     },
 
     async deleteClient(id: number): Promise<void> {
-        if (!id) throw new Error(messages.cliente.erro.idObrigatorio);
+        if (!id) throw new AppError(messages.cliente.erro.idObrigatorio, 400);
 
         const { error } = await supabaseAdmin.from("clientes").delete().eq("id", id);
         if (error) throw error;
@@ -123,7 +124,7 @@ export const clientService = {
             .update({ ativo: novoStatus })
             .eq("id", id);
 
-        if (error) throw new Error(messages.cliente.erro.falhaAtivarDesativar.replace("{acao}", novoStatus ? "ativar" : "desativar"));
+        if (error) throw new AppError(messages.cliente.erro.falhaAtivarDesativar.replace("{acao}", novoStatus ? "ativar" : "desativar"), 500);
         return novoStatus;
     },
 };

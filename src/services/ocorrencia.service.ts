@@ -2,6 +2,37 @@ import { logger } from "../config/logger.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { toBRTime } from "../utils/utils.js";
+import { AppError } from "../errors/AppError.js";
+
+// Interfaces
+export interface TipoOcorrenciaPayload {
+    id?: number;
+    descricao: string;
+    impacto_financeiro?: boolean;
+    valor_padrao?: number | null;
+}
+
+export interface OcorrenciaPayload {
+    id?: number;
+    colaborador_id: string;
+    colaborador_cliente_id?: number | null;
+    tipo_id: number;
+    data_ocorrencia: string;
+    valor?: number | null;
+    impacto_financeiro?: boolean;
+    tipo_lancamento?: 'ENTRADA' | 'SAIDA';
+    observacao?: string | null;
+    criado_por?: string;
+}
+
+export interface FiltrosOcorrencia {
+    usuario_id?: string;
+    colaborador_cliente_id?: number;
+    data_inicio?: string;
+    data_fim?: string;
+    order?: string;
+    ascending?: boolean;
+}
 
 function formatOcorrencia(o: any) {
     if (!o) return o;
@@ -30,7 +61,7 @@ export const ocorrenciaService = {
     /**
      * Cria um novo tipo de ocorrência.
      */
-    async createTipoOcorrencia(data: any): Promise<any> {
+    async createTipoOcorrencia(data: TipoOcorrenciaPayload): Promise<any> {
         // Validation: Check for duplicate descriptions (case-insensitive)
         if (data.descricao) {
             const { data: existing } = await supabaseAdmin
@@ -39,11 +70,12 @@ export const ocorrenciaService = {
                 .ilike("descricao", data.descricao);
 
             if (existing && existing.length > 0) {
-                throw new Error(messages.ocorrencia.erro.descricaoJaExiste);
+                throw new AppError(messages.ocorrencia.erro.descricaoJaExiste, 409);
             }
         }
 
-        const { id, created_at, updated_at, silent, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id, created_at, updated_at, ...rest } = data as any;
 
         const { data: inserted, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
@@ -58,7 +90,7 @@ export const ocorrenciaService = {
     /**
      * Atualiza um tipo de ocorrência.
      */
-    async updateTipoOcorrencia(id: number, data: any): Promise<any> {
+    async updateTipoOcorrencia(id: number, data: Partial<TipoOcorrenciaPayload>): Promise<any> {
         // Validation: Check for duplicate descriptions (ignoring the current one)
         if (data.descricao) {
             const { data: existing } = await supabaseAdmin
@@ -68,11 +100,12 @@ export const ocorrenciaService = {
                 .neq("id", id);
 
             if (existing && existing.length > 0) {
-                throw new Error(messages.ocorrencia.erro.descricaoJaExiste);
+                throw new AppError(messages.ocorrencia.erro.descricaoJaExiste, 409);
             }
         }
 
-        const { id: _, created_at, updated_at, silent, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _, created_at, updated_at, ...rest } = data as any;
 
         const { data: updated, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
@@ -100,14 +133,7 @@ export const ocorrenciaService = {
     /**
      * Lista ocorrências com filtros.
      */
-    async listOcorrencias(filtros?: {
-        usuario_id?: string;
-        colaborador_cliente_id?: number;
-        data_inicio?: string;
-        data_fim?: string;
-        order?: string;
-        ascending?: boolean;
-    }): Promise<any[]> {
+    async listOcorrencias(filtros?: FiltrosOcorrencia): Promise<any[]> {
         let query = supabaseAdmin
             .from("ocorrencias")
             .select(`
@@ -119,7 +145,6 @@ export const ocorrenciaService = {
             `);
 
         // Ordenação padrão: data da ocorrência (desc) e depois data de criação (desc)
-        // Isso garante que lançamentos do mesmo dia fiquem na ordem correta de inserção
         query = query
             .order("data_ocorrencia", { ascending: false })
             .order("created_at", { ascending: false });
@@ -148,10 +173,11 @@ export const ocorrenciaService = {
     /**
      * Cria uma nova ocorrência.
      */
-    async createOcorrencia(data: any): Promise<any> {
+    async createOcorrencia(data: OcorrenciaPayload): Promise<any> {
         logger.info({ data }, "[ocorrenciaService] Criando ocorrência");
 
-        const { id, created_at, updated_at, silent, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id, created_at, updated_at, ...rest } = data as any;
 
         const { data: inserted, error } = await supabaseAdmin
             .from("ocorrencias")
@@ -166,9 +192,10 @@ export const ocorrenciaService = {
     /**
      * Atualiza uma ocorrência.
      */
-    async updateOcorrencia(id: number, data: any): Promise<any> {
+    async updateOcorrencia(id: number, data: Partial<OcorrenciaPayload>): Promise<any> {
         logger.info({ id, data }, "[ocorrenciaService] Atualizando ocorrência");
-        const { id: _, created_at, updated_at, silent, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _, created_at, updated_at, ...rest } = data as any;
 
         const { data: updated, error } = await supabaseAdmin
             .from("ocorrencias")

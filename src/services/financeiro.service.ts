@@ -2,6 +2,8 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO } from "../constants/financeiro.enum.js";
 import { getNowBR, toBRTime } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
+import { AppError } from "../errors/AppError.js";
+import { messages } from "../constants/messages.js";
 
 function formatFechamento(f: any) {
     if (!f) return f;
@@ -55,7 +57,6 @@ export const financeiroService = {
         if (linkError) throw linkError;
 
         // Buscar Ocorrências do período
-        const dataInicioMes = new Date(Date.UTC(ano, mes - 1, 1));
         const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
@@ -74,7 +75,7 @@ export const financeiroService = {
         const adiantamentoConfirmado = !!confirmacaoAdiantamento;
 
         // 3. Processar cada vínculo para calcular o Saldo Fixo Pro-Rata
-        const resumoClientes = links.map(link => {
+        const resumoClientes = (links || []).map(link => {
             const escalaSemanal = link.cliente?.escala_semanal || [1, 2, 3, 4, 5, 6]; // Padrão: Seg-Sáb
 
             const valorAdiantamentoConfig = link.valor_adiantamento || 0;
@@ -83,7 +84,7 @@ export const financeiroService = {
             // --- CALCULO PRO-RATA BASEADO EM ESCALA (AGENDA) ---
             const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio) : null;
             let diaInicioEfetivo = 1;
-            let diaFimEfetivo = ultimoDiaMes;
+            const diaFimEfetivo = ultimoDiaMes;
 
             // Ajuste Início
             if (dataInicioTurno) {
@@ -130,8 +131,8 @@ export const financeiroService = {
 
             // Ocorrências vinculadas a este turno
             const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
-            const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
-            const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
+            const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc: number, o: any) => acc + (o.valor || 0), 0);
+            const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc: number, o: any) => acc + (o.valor || 0), 0);
 
             // Fórmula Dinâmica: (Salário / DiasÚteisDoMês) * DiasAtivosNoPeríodo
             const proRataBase = diasUteisNoMesTotal > 0 ? (saldoFixoTurno / diasUteisNoMesTotal) * diasAtivosNoMes : 0;
@@ -163,7 +164,7 @@ export const financeiroService = {
         }).filter(Boolean); // Remove vínculos inativos no período
 
         // 4. Cálculo do MEI Consolidado (Baseado no turno de maior atuação)
-        const valorMeiTotal = usuario.valor_mei || 0;
+        const valorMeiTotal = usuario?.valor_mei || 0;
         let proRataMeiFinal = 0;
         let diasAtivosUnicos: string[] = [];
         let diasBaseReferencia = 0;
@@ -194,8 +195,8 @@ export const financeiroService = {
 
         // 5. Ocorrências Avulsas (não vinculadas a turno)
         const ocorrenciasAvulsas = ocorrencias.filter(o => !o.colaborador_cliente_id && o.impacto_financeiro);
-        const creditosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
-        const debitosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
+        const creditosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc: number, o: any) => acc + (o.valor || 0), 0);
+        const debitosAvulsos = ocorrenciasAvulsas.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc: number, o: any) => acc + (o.valor || 0), 0);
         const saldoAvulso = creditosAvulsos - debitosAvulsos;
 
         // 6. Consolidado Final

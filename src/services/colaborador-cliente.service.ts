@@ -1,6 +1,7 @@
 import { logger } from "../config/logger.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
+import { AppError } from "../errors/AppError.js";
 
 export const colaboradorClienteService = {
     /**
@@ -10,7 +11,7 @@ export const colaboradorClienteService = {
      * Pela simplicidade inicial pedida: Delete All + Insert All para o usuário.
      */
     async syncLinks(usuarioId: string, links: any[]): Promise<any[]> {
-        if (!usuarioId) throw new Error(messages.usuario.erro.idObrigatorio);
+        if (!usuarioId) throw new AppError(messages.usuario.erro.idObrigatorio, 400);
 
         // 1. Remove vínculos anteriores
         const { error: deleteError } = await supabaseAdmin

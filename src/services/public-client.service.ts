@@ -1,28 +1,10 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { AppError } from "../errors/AppError.js";
 import { configuracaoService } from "./configuracao.service.js";
+import { parseTime } from "./ponto-calculator.service.js";
 
-// Helper para extrair HH e MM de string (ISO ou HH:mm)
-function parseTime(timeStr: string): [number, number] {
-    if (!timeStr) return [0, 0];
-    if (timeStr.includes("T")) {
-        const date = new Date(timeStr);
-        const options: Intl.DateTimeFormatOptions = {
-            timeZone: 'America/Sao_Paulo',
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: false
-        };
-        const formatter = new Intl.DateTimeFormat('pt-BR', options);
-        const parts = formatter.format(date).split(':');
-        return [Number(parts[0]), Number(parts[1])];
-    } else if (timeStr.includes(":")) {
-        const [h, m] = timeStr.split(":").map(Number);
-        return [h, m];
-    }
-    return [0, 0];
-}
 
 // Helper para formatar retorno (mesmo padrão do ponto.service.ts)
 function formatPoint(p: any) {
@@ -54,8 +36,8 @@ export const publicClientService = {
             .maybeSingle();
 
         if (error) throw error;
-        if (!data) throw new Error("Link inválido ou cliente não encontrado.");
-        if (!data.ativo) throw new Error("A visualização está indisponível. Entre em contato com o administrativo.");
+        if (!data) throw new AppError("Link inválido ou cliente não encontrado.", 404);
+        if (!data.ativo) throw new AppError("A visualização está indisponível. Entre em contato com o administrativo.", 403);
 
         return data;
     },

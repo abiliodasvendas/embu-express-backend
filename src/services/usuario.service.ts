@@ -2,15 +2,16 @@ import { STATUS } from "../config/constants.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { cleanString, getNowBR, onlyDigits, toLocalDateString } from "../utils/utils.js";
+import { AppError } from "../errors/AppError.js";
 import { colaboradorClienteService } from "./colaborador-cliente.service.js";
 import { PIX_TYPES } from "../constants/financeiro.enum.js";
 
 export const usuarioService = {
     async createUsuario(data: any): Promise<any> {
         const emailNormalizado = data.email?.toLowerCase().trim();
-        if (!emailNormalizado) throw new Error(messages.usuario.erro.emailObrigatorio);
-        if (!data.nome_completo) throw new Error(messages.usuario.erro.nomeObrigatorio);
-        if (!data.perfil_id) throw new Error(messages.usuario.erro.perfilObrigatorio);
+        if (!emailNormalizado) throw new AppError(messages.usuario.erro.emailObrigatorio);
+        if (!data.nome_completo) throw new AppError(messages.usuario.erro.nomeObrigatorio);
+        if (!data.perfil_id) throw new AppError(messages.usuario.erro.perfilObrigatorio);
 
         // 1. Create Auth User
         const cpfDigits = onlyDigits(data.cpf);
@@ -31,7 +32,7 @@ export const usuarioService = {
         }
 
         if (!authUser?.user) {
-            throw new Error(messages.usuario.erro.criarAuth);
+            throw new AppError(messages.usuario.erro.criarAuth, 500);
         }
 
         // Extract fields that don't belong to the 'usuarios' table
@@ -69,10 +70,10 @@ export const usuarioService = {
             // Handle unique constraint violations
             if (error.code === '23505') {
                 if (error.message?.includes('cpf')) {
-                    throw new Error(messages.usuario.erro.cpfJaExiste);
+                    throw new AppError(messages.usuario.erro.cpfJaExiste, 409);
                 }
                 if (error.message?.includes('email')) {
-                    throw new Error(messages.usuario.erro.emailJaExiste);
+                    throw new AppError(messages.usuario.erro.emailJaExiste, 409);
                 }
             }
             throw error;
@@ -81,8 +82,15 @@ export const usuarioService = {
         return this.getUsuario(inserted.id);
     },
 
-    async updateUsuario(id: string, data: Partial<any>): Promise<any> {
-        if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
+    async updateUsuario(id: string, data: Partial<any>, executorId?: string): Promise<any> {
+        if (!id) throw new AppError(messages.usuario.erro.idObrigatorio);
+
+        // Security check: Prevent self-deactivation if setting to INATIVO
+        if (data.status === 'INATIVO' || data.ativo === false) {
+            if (executorId === id) {
+                throw new AppError(messages.usuario.erro.autoDesativacao);
+            }
+        }
 
         const { data: usuarioAtual, error: fetchError } = await supabaseAdmin
             .from("usuarios")
@@ -150,10 +158,10 @@ export const usuarioService = {
             // Handle unique constraint violations
             if (error.code === '23505') {
                 if (error.message?.includes('cpf')) {
-                    throw new Error(messages.usuario.erro.cpfJaExiste);
+                    throw new AppError(messages.usuario.erro.cpfJaExiste, 409);
                 }
                 if (error.message?.includes('email')) {
-                    throw new Error(messages.usuario.erro.emailJaExiste);
+                    throw new AppError(messages.usuario.erro.emailJaExiste, 409);
                 }
             }
             throw error;
@@ -201,10 +209,6 @@ export const usuarioService = {
                 query = query.eq("status", STATUS.ATIVO);
             } else if (filtros.status === 'inativo') {
                 query = query.eq("status", STATUS.INATIVO);
-                // Let's assume strict mapping for now, but usually 'inativo' in filter might mean everything not active.
-                // Given the specific new statuses, let's map commonly.
-                // But wait, the frontend might send 'PENDENTE' specifically.
-                // Let's stick to what the value actually is if it matches a known status.
             } else {
                 query = query.eq("status", filtros.status.toUpperCase());
             }
@@ -233,13 +237,17 @@ export const usuarioService = {
         return result;
     },
 
-    async deleteUsuario(id: string): Promise<void> {
-        if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
+    async deleteUsuario(id: string, executorId?: string): Promise<void> {
+        if (!id) throw new AppError(messages.usuario.erro.idObrigatorio);
+
+        // Security check: Prevent self-deletion
+        if (executorId === id) {
+            throw new AppError(messages.usuario.erro.autoExclusao);
+        }
 
         // Delete from Auth (Cascade should handle public.usuarios if configured, otherwise we delete manually too)
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
         if (authError) {
-            // If user not found in auth (already deleted or inconsistent), try deleting from DB directly to clean up
             console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
         }
 
@@ -255,13 +263,17 @@ export const usuarioService = {
         if (error) throw error;
     },
 
-    async updateStatus(id: string, novoStatus: string): Promise<string> {
+    async updateStatus(id: string, novoStatus: string, executorId?: string): Promise<string> {
+        if (novoStatus === 'INATIVO' && executorId === id) {
+            throw new AppError(messages.usuario.erro.autoDesativacao);
+        }
+
         const { error } = await supabaseAdmin
             .from("usuarios")
             .update({ status: novoStatus })
             .eq("id", id);
 
-        if (error) throw new Error(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`);
+        if (error) throw new AppError(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`, 500);
         return novoStatus;
     },
 };

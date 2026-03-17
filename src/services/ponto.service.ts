@@ -3,10 +3,59 @@ import { messages } from "../constants/messages.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { AppError } from "../errors/AppError.js";
 import { configuracaoService } from "./configuracao.service.js";
+import { pontoCalculatorService, parseTime } from "./ponto-calculator.service.js";
+
+// Interfaces
+export interface PontoLocation {
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracy?: number | null;
+    address?: string | null;
+    device?: string | null;
+}
+
+export interface PontoPayload {
+    usuario_id: string;
+    data_referencia: string;
+    entrada_hora?: string | null;
+    saida_hora?: string | null;
+    entrada_km?: number | null;
+    saida_km?: number | null;
+    cliente_id?: number | null;
+    empresa_id?: number | null;
+    colaborador_cliente_id?: number | null;
+    entrada_loc?: PontoLocation | null;
+    saida_loc?: PontoLocation | null;
+    observacao?: string | null;
+    criado_por?: string;
+    status_saida?: string;
+}
+
+export interface FiltrosPonto {
+    data_referencia?: string;
+    usuario_id?: string;
+    cliente_id?: string;
+    empresa_id?: number;
+    incluir_todos?: boolean;
+    searchTerm?: string;
+    status_entrada?: string;
+    status_saida?: string;
+}
+
+interface PausaPayload {
+    ponto_id: number;
+    inicio_hora?: string;
+    fim_hora?: string;
+    inicio_km?: number | null;
+    fim_km?: number | null;
+    inicio_loc?: PontoLocation | null;
+    fim_loc?: PontoLocation | null;
+}
 
 // Helper para processar dados de localização
-function processLocationData(loc: any) {
+function processLocationData(loc: PontoLocation | null | undefined) {
     if (!loc) return { lat: null, lng: null, metadata: {} };
     return {
         lat: loc.latitude || null,
@@ -40,233 +89,17 @@ function formatPoint(p: any) {
     return result;
 }
 
-// Interface para Pausa
-interface PausaPayload {
-    ponto_id: number;
-    inicio_hora?: string;
-    fim_hora?: string;
-    inicio_km?: number;
-    fim_km?: number;
-    inicio_loc?: any;
-    fim_loc?: any;
-}
-
-// Helper para calcular status
-// Helper para calcular status
-// Helper para extrair HH e MM de string (ISO ou HH:mm)
-function parseTime(timeStr: string): [number, number] {
-    if (!timeStr) return [0, 0];
-
-    if (timeStr.includes("T")) {
-        // Formato ISO: 2025-12-26T08:00:00-03:00
-        // Problema: Em ambiente UTC (Vercel), new Date().getHours() retorna UTC.
-        // Solução: Forçar extração no fuso horário America/Sao_Paulo.
-        const date = new Date(timeStr);
-        const options: Intl.DateTimeFormatOptions = {
-            timeZone: 'America/Sao_Paulo',
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: false
-        };
-        // Intl retorna "13:12" ou "01:12" dependendo do locale, mas pt-BR + hour12: false garante 24h
-        const formatter = new Intl.DateTimeFormat('pt-BR', options);
-        const parts = formatter.format(date).split(':');
-        return [Number(parts[0]), Number(parts[1])];
-    } else if (timeStr.includes(":")) {
-        // Formato HH:mm ou HH:mm:ss (vindo do Banco/Turno, assumimos que já é "Wall Time" correto)
-        const [h, m] = timeStr.split(":").map(Number);
-        return [h, m];
-    }
-    return [0, 0]; // Fallback
-}
-
-// Helper para calcular status e detalhes
-async function calculateStatus(
-    usuarioId: string,
-    entrada: string | null | undefined,
-    saida: string | null | undefined,
-    entrada_km?: number | null,
-    saida_km?: number | null,
-    pausasMinutos: number = 0,
-    pausasKmTrabalhado: number = 0,
-    pausasKmPausa: number = 0,
-    clienteId?: number,
-    snapshotTurno?: { hora_inicio: string; hora_fim: string; tolerancia_pausa_min?: number },
-    colaboradorClienteId?: number
-): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
-    // Default values
-    let status_entrada = PONTO_STATUS.CINZA;
-    let status_saida = PONTO_STATUS.CINZA;
-    let saldo_minutos: number | null = null;
-
-    const detalhes: any = {
-        entrada: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
-        saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
-        resumo: {
-            horas_trabalhadas: "--:--",
-            horas_pausa: `${Math.floor(pausasMinutos / 60)}h ${pausasMinutos % 60}min`,
-            pausa_total: pausasMinutos,
-            pausa_configurada: 0,
-            pausa_extra: 0,
-            km_trabalhado: pausasKmTrabalhado,
-            km_pausa: pausasKmPausa
-        }
-    };
-
-    if (entrada_km != null && saida_km != null) {
-        detalhes.resumo.diff_km = saida_km - entrada_km;
-    }
-
-    if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
-
-    // 1. Buscar configurações
-    const limiteAmarelo = await configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15));
-    const limiteHEExcessiva = await configuracaoService.getConfiguracao("limite_he_excessiva_min").then(d => Number(d?.valor || 120));
-
-    detalhes.entrada.tolerancia = limiteAmarelo;
-    detalhes.saida.tolerancia = 0;
-    detalhes.saida.limite_he_excessiva = limiteHEExcessiva;
-
-    let melhorTurno: any = null;
-
-    if (snapshotTurno) {
-        melhorTurno = snapshotTurno;
-    } else {
-        // 2. Buscar turnos (Links)
-        const { data: todosOsTurnos } = await supabaseAdmin
-            .from("colaborador_clientes")
-            .select("*")
-            .eq("colaborador_id", usuarioId);
-
-        const hoje = toLocalDateString();
-        const turnos = todosOsTurnos?.filter(t => !t.data_fim || t.data_fim >= hoje) || [];
-
-        if (turnos.length > 0) {
-            const [hEntrada, mEntrada] = parseTime(entrada);
-            const entradaMinutosTotal = hEntrada * 60 + mEntrada;
-
-            // Se o colaboradorClienteId foi passado, ele é a PRIORIDADE ABSOLUTA (travamento de turno)
-            if (colaboradorClienteId) {
-                melhorTurno = turnos.find(t => String(t.id) === String(colaboradorClienteId));
-            }
-
-            // Se não encontrou pelo vínculo direto, tenta pelo clienteId (legado ou fallback)
-            if (!melhorTurno && clienteId) {
-                melhorTurno = turnos.find(t => t.cliente_id === clienteId);
-            }
-
-            // Fallback: busca o mais próximo por horário
-            if (!melhorTurno) {
-                let menorDiff = Infinity;
-                turnos.forEach(turno => {
-                    const [hT, mT] = parseTime(turno.hora_inicio);
-                    const turnoInicioMinutos = hT * 60 + mT;
-                    const diff = Math.abs(entradaMinutosTotal - turnoInicioMinutos);
-                    if (diff < menorDiff) {
-                        menorDiff = diff;
-                        melhorTurno = turno;
-                    }
-                });
-            }
-        }
-    }
-
-    // 3. Cálculos de Entrada
-    if (melhorTurno) {
-        const [hE, mE] = parseTime(entrada);
-        const entradaMinutos = hE * 60 + mE;
-        const [hT, mT] = parseTime(melhorTurno.hora_inicio);
-        const turnoInicioMinutos = hT * 60 + mT;
-
-        const diffEntradaRaw = entradaMinutos - turnoInicioMinutos;
-        // Ajuste universal para virada de dia (threshold de 12h)
-        const diffEntrada = diffEntradaRaw > 720 ? diffEntradaRaw - 1440 : (diffEntradaRaw < -720 ? diffEntradaRaw + 1440 : diffEntradaRaw);
-
-        detalhes.entrada.turno_base = melhorTurno.hora_inicio;
-        detalhes.entrada.diff_minutos = diffEntrada;
-
-        if (diffEntrada < 0) status_entrada = PONTO_STATUS.ANTECIPADA;
-        else if (diffEntrada === 0 || entradaMinutos === turnoInicioMinutos) status_entrada = PONTO_STATUS.VERDE;
-        else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
-        else status_entrada = PONTO_STATUS.VERMELHO;
-
-        // Sempre expõe o turno_base de saída se o turno for identificado (mesmo sem saída registrada)
-        detalhes.saida.turno_base = melhorTurno.hora_fim;
-
-        // 4. Cálculos de Saída
-        if (saida) {
-            const [hS, mS] = parseTime(saida);
-            const saidaMinutos = hS * 60 + mS;
-            const [hTF, mTF] = parseTime(melhorTurno.hora_fim);
-            const turnoFimMinutos = hTF * 60 + mTF;
-
-            const diffSaidaRaw = saidaMinutos - turnoFimMinutos;
-            // Ajuste universal para virada de dia (threshold de 12h)
-            const diffSaida = diffSaidaRaw > 720 ? diffSaidaRaw - 1440 : (diffSaidaRaw < -720 ? diffSaidaRaw + 1440 : diffSaidaRaw);
-
-            detalhes.saida.diff_minutos = diffSaida;
-
-            if (diffSaida < 0) status_saida = PONTO_STATUS.ANTECIPADA;
-            else if (diffSaida === 0) status_saida = PONTO_STATUS.VERDE;
-            else if (diffSaida <= limiteHEExcessiva) status_saida = PONTO_STATUS.AMARELO; // HE
-            else status_saida = PONTO_STATUS.VERMELHO; // HE Excessiva
-
-            // 5. Saldo e Tempo Trabalhado
-            const start = new Date(entrada).getTime();
-            const end = new Date(saida).getTime();
-            const brutoMinutos = Math.round((end - start) / 60000);
-
-            const tolPausa = melhorTurno?.tolerancia_pausa_min || 0;
-            const liquidoMinutos = brutoMinutos - Math.max(pausasMinutos, tolPausa);
-
-            detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
-            detalhes.resumo.pausa_total = pausasMinutos;
-            detalhes.resumo.pausa_configurada = tolPausa;
-            detalhes.resumo.pausa_extra = Math.max(0, pausasMinutos - tolPausa);
-
-            // Adiciona o KM da saída ao KM trabalhado total (distância entre o último marcador e a saída)
-            if (saida_km) {
-                // Infelizmente aqui não temos acesso fácil ao último km de pausa sem injetar mais dados.
-                // Mas o backend já injeta detalhes.resumo.diff_km se entrada_km e saida_km existirem.
-                // O front terá que lidar com o split se o resumo não estiver 100% granular.
-                // Vamos tentar deixar o km_trabalhado o mais preciso possível.
-            }
-
-            let esperadoMinutosBruto = turnoFimMinutos - turnoInicioMinutos;
-            if (esperadoMinutosBruto < 0) esperadoMinutosBruto += 1440; // Se terminar no dia seguinte (ex: 22h as 06h)
-
-            const esperadoMinutosLiquido = esperadoMinutosBruto - tolPausa;
-            saldo_minutos = liquidoMinutos - esperadoMinutosLiquido;
-        }
-    } else if (saida) {
-        // Cálculo básico sem turno
-        const start = new Date(entrada).getTime();
-        const end = new Date(saida).getTime();
-        const liquidoMinutos = Math.round((end - start) / 60000) - pausasMinutos;
-        detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
-    }
-
-    return {
-        status_entrada,
-        status_saida,
-        detalhes_calculo: detalhes,
-        saldo_minutos,
-        melhorTurno
-    };
-}
-
 export const pontoService = {
-    async registrarPonto(data: any): Promise<any> {
-        const entrada_hora = data.entrada_hora ? toBRTime(data.entrada_hora) : getNowBR();
-        const saida_hora = data.saida_hora ? toBRTime(data.saida_hora) : null;
+    async registrarPonto(data: PontoPayload): Promise<any> {
+        const entrada_hora = (data.entrada_hora ? toBRTime(data.entrada_hora) : getNowBR()) as string;
+        const saida_hora = (data.saida_hora ? toBRTime(data.saida_hora) : null) as (string | null);
 
         // 1. Validações Básicas (Ordem e Duração)
         const orderCheck = TimeRecordRules.validateTimeOrder(entrada_hora, saida_hora);
-        if (!orderCheck.valid) throw new Error(orderCheck.message);
+        if (!orderCheck.valid) throw new AppError(orderCheck.message || "Erro de ordem");
 
         const durationCheck = TimeRecordRules.validateMinDuration(entrada_hora, saida_hora);
-        if (!durationCheck.valid) throw new Error(durationCheck.message);
-
+        if (!durationCheck.valid) throw new AppError(durationCheck.message || "Duração mínima");
 
         // 2. Validação de Sobreposição
         const { data: registrosDia, error: fetchError } = await supabaseAdmin
@@ -278,18 +111,17 @@ export const pontoService = {
         if (fetchError) throw fetchError;
 
         if (registrosDia && registrosDia.length > 0) {
-            const newStart = new Date(data.entrada_hora);
-            const newEnd = data.saida_hora ? new Date(data.saida_hora) : null;
-
+            const newStart = new Date(entrada_hora);
+            const newEnd = saida_hora ? new Date(saida_hora) : null;
             const overlapCheck = TimeRecordRules.checkOverlap(newStart, newEnd, registrosDia);
-
             if (overlapCheck.hasOverlap) {
-                // throw new Error("Conflito de horário: Já existe um registro neste turno.");
+                // Sobreposição detectada
+                throw new AppError("Já existe um registro de ponto que sobrepõe este horário.");
             }
         }
 
         // 3. Calcular status e detalhes antes de salvar
-        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await calculateStatus(
+        const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await pontoCalculatorService.calculateStatus(
             data.usuario_id,
             entrada_hora,
             saida_hora,
@@ -298,9 +130,9 @@ export const pontoService = {
             0, // pausasMinutos
             0, // pausasKmTrabalhado
             0, // pausasKmPausa
-            data.cliente_id,
+            data.cliente_id || undefined,
             undefined,
-            data.colaborador_cliente_id
+            data.colaborador_cliente_id || undefined
         );
 
         // SMART LINKING: If no client provided, use the one from Best Shift
@@ -317,7 +149,8 @@ export const pontoService = {
         const { lat: eLat, lng: eLng, metadata: eMeta } = processLocationData(data.entrada_loc);
         const { lat: sLat, lng: sLng, metadata: sMeta } = processLocationData(data.saida_loc);
 
-        const { silent, id, created_at, updated_at, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id, created_at, updated_at, ...rest } = data as any;
 
         const payload = {
             ...rest,
@@ -352,7 +185,6 @@ export const pontoService = {
         // --- LÓGICA DE BÔNUS DE FERIADO ---
         if (!saida_hora && melhorTurno && melhorTurno.id) {
             try {
-                // 1. Verifica se a data de referência é um feriado
                 const { data: feriados } = await supabaseAdmin
                     .from("feriados")
                     .select("id, descricao")
@@ -360,13 +192,10 @@ export const pontoService = {
 
                 if (feriados && feriados.length > 0) {
                     const feriado = feriados[0];
-
-                    // 2. Busca a configuração de valor para feriados
                     const configFeriado = await configuracaoService.getConfiguracao("valor_adicional_feriado");
                     const valorFeriado = configFeriado?.valor ? Number(configFeriado.valor) : 0;
 
                     if (valorFeriado > 0) {
-                        // 3. Busca o tipo de ocorrência 'Feriado Trabalhado'
                         let tipoOcorrenciaId = null;
                         const { data: tipos } = await supabaseAdmin
                             .from("tipos_ocorrencia")
@@ -376,7 +205,6 @@ export const pontoService = {
                         if (tipos && tipos.length > 0) {
                             tipoOcorrenciaId = tipos[0].id;
                         } else {
-                            // Criação fallback
                             const { data: novoTipo } = await supabaseAdmin
                                 .from("tipos_ocorrencia")
                                 .insert([{ descricao: "Feriado Trabalhado", impacto_financeiro: true }])
@@ -385,7 +213,6 @@ export const pontoService = {
                             tipoOcorrenciaId = novoTipo?.id;
                         }
 
-                        // 4. Cria a ocorrência financeira
                         if (tipoOcorrenciaId) {
                             await supabaseAdmin.from("ocorrencias").insert([{
                                 colaborador_id: data.usuario_id,
@@ -402,26 +229,24 @@ export const pontoService = {
                     }
                 }
             } catch (feriadoError) {
-                // Apenas logamos o erro, não impedimos o ponto de ser registrado
                 console.error("Erro ao processar bônus automático de feriado:", feriadoError);
             }
         }
-        // --- FIM LÓGICA DE BÔNUS DE FERIADO ---
 
         return formatPoint(inserted?.[0]);
     },
 
-    async updatePonto(id: number, data: Partial<any>): Promise<any> {
-        // If updating times, recalculate status and details
-        const { silent, id: _, created_at, updated_at, ...rest } = data;
-        let payload = { ...rest };
+    async updatePonto(id: number, data: Partial<PontoPayload>): Promise<any> {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _, created_at, updated_at, ...rest } = data as any;
+        const payload: any = { ...rest };
 
-        if (data.entrada_hora || data.saida_hora) {
-            // We need to fetch the existing record if one of the times is missing to calculate correctly? 
-            // For simplicity, we assume the frontend sends what is needed or we fetch inside (better).
+        if (data.entrada_hora || data.saida_hora !== undefined) {
             const existing = await this.getPonto(id);
-            const entrada = data.entrada_hora ? toBRTime(data.entrada_hora) : existing.entrada_hora;
-            const saida = data.saida_hora !== undefined ? (data.saida_hora ? toBRTime(data.saida_hora) : null) : existing.saida_hora; // Handle explicit null
+            if (!existing) throw new AppError("Registro de ponto não encontrado", 404);
+
+            const entrada = (data.entrada_hora ? toBRTime(data.entrada_hora) : existing.entrada_hora) as string;
+            const saida = (data.saida_hora !== undefined ? (data.saida_hora ? toBRTime(data.saida_hora) : null) : existing.saida_hora) as (string | null);
 
             const entradaKmRaw = data.entrada_km !== undefined ? String(data.entrada_km).replace(/\D/g, "") : String(existing.entrada_km || "");
             const saidaKmRaw = data.saida_km !== undefined ? String(data.saida_km).replace(/\D/g, "") : String(existing.saida_km || "");
@@ -429,16 +254,14 @@ export const pontoService = {
             const entradaKm = entradaKmRaw ? parseInt(entradaKmRaw, 10) : null;
             const saidaKm = saidaKmRaw ? parseInt(saidaKmRaw, 10) : null;
 
-            // Validate Rules before calculation
-            if (saida) {
+            if (entrada && saida) {
                 const orderCheck = TimeRecordRules.validateTimeOrder(entrada, saida);
-                if (!orderCheck.valid) throw new Error(orderCheck.message);
+                if (!orderCheck.valid) throw new AppError(orderCheck.message || "Erro de ordem");
 
                 const maxConfirm = TimeRecordRules.validateMaxDuration(entrada, saida);
-                if (!maxConfirm.valid) throw new Error(maxConfirm.message);
+                if (!maxConfirm.valid) throw new AppError(maxConfirm.message || "Duração excessiva");
             }
 
-            // Calculate Pauses Totals
             const { data: pausas_db } = await supabaseAdmin
                 .from("registros_pausas")
                 .select("inicio_hora, fim_hora, distancia_trabalho, distancia_pausa")
@@ -460,7 +283,6 @@ export const pontoService = {
                 });
             }
 
-            // Integridade histórica: Se não mudou o cliente, tenta reutilizar o turno que já estava salvo no ponto
             const clienteIdAtualValue = data.cliente_id !== undefined ? data.cliente_id : existing.cliente_id;
             const clienteMudou = data.cliente_id !== undefined && data.cliente_id !== existing.cliente_id;
 
@@ -473,17 +295,24 @@ export const pontoService = {
                 };
             }
 
-            // No final do turno, o trecho entre a última pausa (ou entrada) e a saída também é KM TRABALHADO.
-            // O backend calcula payload.saida_distancia_trabalho abaixo. Vamos somar aqui também para o resumo.
             let kmTrabalhadoFinal = totalKmTrab;
             if (saida && saidaKm) {
                 let lastKmForExit = 0;
-                const { data: lastPausaForExit } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
+                const { data: lastPausaForExit } = await supabaseAdmin
+                    .from("registros_pausas")
+                    .select("fim_km")
+                    .eq("ponto_id", id)
+                    .not("fim_hora", "is", null)
+                    .order("id", { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                
                 lastKmForExit = lastPausaForExit?.fim_km || existing.entrada_km || 0;
-                kmTrabalhadoFinal += Math.max(0, saidaKm - lastKmForExit);
+                payload.saida_distancia_trabalho = Math.max(0, saidaKm - lastKmForExit);
+                kmTrabalhadoFinal += payload.saida_distancia_trabalho;
             }
 
-            const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await calculateStatus(
+            const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await pontoCalculatorService.calculateStatus(
                 existing.usuario_id,
                 entrada,
                 saida,
@@ -492,25 +321,16 @@ export const pontoService = {
                 Math.round(totalPausasMin),
                 kmTrabalhadoFinal,
                 totalKmPausa,
-                clienteIdAtualValue,
+                clienteIdAtualValue || undefined,
                 snapshot,
                 existing.colaborador_cliente_id
             );
 
             if (melhorTurno) {
-                // Só atualiza o vínculo se ele não estivesse definido ou se o cliente mudou drasticamente
                 if (!existing.colaborador_cliente_id || clienteMudou) {
                     payload.colaborador_cliente_id = melhorTurno.id;
                     payload.empresa_id = melhorTurno.empresa_id;
                 }
-            }
-
-            if (saida && saidaKm) {
-                let lastKmForExit = 0;
-                const { data: lastPausaForExit } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
-                lastKmForExit = lastPausaForExit?.fim_km || existing.entrada_km || 0;
-
-                payload.saida_distancia_trabalho = Math.max(0, saidaKm - lastKmForExit);
             }
 
             payload.status_entrada = status_entrada;
@@ -519,7 +339,6 @@ export const pontoService = {
             payload.saldo_minutos = saldo_minutos;
         }
 
-        // Process location if provided
         if (data.entrada_loc) {
             const { lat, lng, metadata } = processLocationData(data.entrada_loc);
             payload.entrada_lat = lat;
@@ -547,7 +366,6 @@ export const pontoService = {
     async getPonto(id: number): Promise<any> {
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
-            // Explicitly specifying the FK constraint to avoid ambiguity with 'criado_por'
             .select("*, cliente:clientes(*), usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
             .eq("id", id)
             .limit(1);
@@ -555,12 +373,10 @@ export const pontoService = {
         return formatPoint(data?.[0]);
     },
 
-    async listPontos(filtros?: any): Promise<any[]> {
-        // Se solicitado incluir ausentes, mudamos a base da query para 'usuarios'
+    async listPontos(filtros?: FiltrosPonto): Promise<any[]> {
         if (filtros?.incluir_todos) {
             const dataRef = filtros.data_referencia || toLocalDateString(new Date());
 
-            // 1. Buscar todos os usuários ativos que possuem vínculos (turnos)
             let userQuery = supabaseAdmin
                 .from("usuarios")
                 .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*))")
@@ -581,20 +397,15 @@ export const pontoService = {
             const { data: users, error: userError } = await userQuery;
             if (userError) throw userError;
 
-            // Determinar o dia da semana para o filtro de escala (1=Seg, ..., 7=Dom)
-            // Usamos a data_referencia (YYYY-MM-DD)
-            const dateObj = new Date(dataRef + "T12:00:00Z"); // Meio-dia para evitar problemas de fuso
-            let dayOfWeek = dateObj.getUTCDay(); // 0=Dom, 1=Seg...
+            const dateObj = new Date(dataRef + "T12:00:00Z");
+            let dayOfWeek = dateObj.getUTCDay();
             const scaleDay = dayOfWeek === 0 ? 7 : dayOfWeek;
 
-            // 2. Explodir os links em registros base (Um colaborador pode aparecer 2x se tiver 2 turnos)
             const activeLinks: any[] = [];
             users?.forEach(u => {
                 u.links?.forEach((link: any) => {
                     const isVigente = !link.data_fim || link.data_fim >= dataRef;
                     const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
-
-                    // REVERSÃO: Só mostramos se estiver na escala OU se bater ponto (o mapeamento posterior cuida dos pontos fora da escala)
                     if (isVigente && naEscala) {
                         activeLinks.push({ ...link, usuario: u });
                     }
@@ -603,21 +414,17 @@ export const pontoService = {
 
             if (activeLinks.length === 0) return [];
 
-            // 3. Buscar registros de ponto existentes na data
             const userIds = users.map(u => u.id);
-            let pontoQuery = supabaseAdmin
+            const { data: pontos, error: pontoError } = await supabaseAdmin
                 .from("registros_ponto")
                 .select("*, cliente:clientes(nome_fantasia), pausas:registros_pausas(*)")
                 .in("usuario_id", userIds)
                 .eq("data_referencia", dataRef);
 
-            const { data: pontos, error: pontoError } = await pontoQuery;
             if (pontoError) throw pontoError;
 
-            // 0. Buscar configurações globais para o cálculo dinâmico
-            const [limiteAmarelo, limiteHEExcessiva] = await Promise.all([
-                configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15)),
-                configuracaoService.getConfiguracao("limite_he_excessiva_min").then(d => Number(d?.valor || 120))
+            const [limiteAmarelo] = await Promise.all([
+                configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15))
             ]);
 
             const hoje = toLocalDateString();
@@ -625,15 +432,13 @@ export const pontoService = {
             const isFuturo = dataRef > hoje;
             let nowTotalMin = 0;
             if (isHoje) {
-                const nowStr = getNowBR(); // Returns "YYYY-MM-DDTHH:mm:ss-03:00"
+                const nowStr = getNowBR();
                 const [h, m] = parseTime(nowStr);
                 nowTotalMin = h * 60 + m;
             }
 
-            // 4. Montar o "Left Join" baseado nos Links
             const usedPointIds = new Set<string>();
             const mappedResults = activeLinks.map(link => {
-                // Tenta encontrar um ponto que bata com o usuario e o turno específico
                 const ponto = pontos?.find(p =>
                     p.usuario_id === link.colaborador_id &&
                     (
@@ -644,63 +449,37 @@ export const pontoService = {
 
                 if (ponto) {
                     usedPointIds.add(ponto.id.toString());
-
                     const formattedPonto = formatPoint(ponto);
-
-                    // Lógica de Aging para Ponto Aberto
                     if (!formattedPonto.saida_hora) {
                         const [hFim, mFim] = parseTime(link.hora_fim);
                         const [hIni, mIni] = parseTime(link.hora_inicio);
                         let fimMin = hFim * 60 + mFim;
                         const iniMin = hIni * 60 + mIni;
-
-                        if (fimMin < iniMin) fimMin += 1440; // Ajuste noturno
-
+                        if (fimMin < iniMin) fimMin += 1440;
                         const isOpenTooLong = (!isHoje && !isFuturo) || (isHoje && nowTotalMin > (fimMin + 240));
-
-                        if (isOpenTooLong) {
-                            formattedPonto.status_saida = PONTO_STATUS.PENDENTE;
-                        }
+                        if (isOpenTooLong) formattedPonto.status_saida = PONTO_STATUS.PENDENTE;
                     }
-
                     return { ...formattedPonto, usuario: link.usuario };
                 }
 
-                // --- CÁLCULO DE STATUS VIVO PARA QUEM NÃO BATEU PONTO ---
                 let statusEntradaMock = PONTO_STATUS.AUSENTE;
                 let statusSaidaMock = PONTO_STATUS.AUSENTE;
 
                 if (isFuturo) {
-                    statusEntradaMock = PONTO_STATUS.CINZA; // Aguardando
+                    statusEntradaMock = PONTO_STATUS.CINZA;
                     statusSaidaMock = PONTO_STATUS.CINZA;
                 } else if (isHoje) {
                     const [hInicio, mInicio] = parseTime(link.hora_inicio);
                     const [hFim, mFim] = parseTime(link.hora_fim);
                     const inicioMin = hInicio * 60 + mInicio;
                     let fimMin = hFim * 60 + mFim;
+                    if (fimMin < inicioMin) fimMin += 1440;
 
-                    // Lógica para turno noturno (atravessa a meia-noite)
-                    const isNoturno = fimMin < inicioMin;
-                    if (isNoturno) {
-                        fimMin += 1440; // Adiciona 24h para facilitar a comparação linear
-                    }
-
-                    // Se for noturno, precisamos decidir se o 'now' refere-se ao início ou ao fim do turno
-                    // Em um sistema reativo por data_referencia, se é HOJE e o turno é das 22h às 06h:
-                    // Das 00h às 06h, 'now' é > fimMin (fake linear). Mas na verdade, esse 00-06 refere-se à data_referencia de ONTEM.
-                    // Para a data_referencia de HOJE, o turno só começa às 22h.
-
-                    if (nowTotalMin < inicioMin) {
-                        statusEntradaMock = PONTO_STATUS.CINZA; // Ainda não começou
-                    } else if (nowTotalMin === inicioMin) {
-                        statusEntradaMock = PONTO_STATUS.VERDE; // No Horário
-                    } else if (nowTotalMin > fimMin) {
-                        statusEntradaMock = PONTO_STATUS.AUSENTE; // Terminou o dia sem entrada
-                    } else if (nowTotalMin <= inicioMin + limiteAmarelo) {
-                        statusEntradaMock = PONTO_STATUS.AMARELO; // Atrasado
-                    } else {
-                        statusEntradaMock = PONTO_STATUS.VERMELHO; // Atraso Crítico
-                    }
+                    if (nowTotalMin < inicioMin) statusEntradaMock = PONTO_STATUS.CINZA;
+                    else if (nowTotalMin === inicioMin) statusEntradaMock = PONTO_STATUS.VERDE;
+                    else if (nowTotalMin > fimMin) statusEntradaMock = PONTO_STATUS.AUSENTE;
+                    else if (nowTotalMin <= inicioMin + limiteAmarelo) statusEntradaMock = PONTO_STATUS.AMARELO;
+                    else statusEntradaMock = PONTO_STATUS.VERMELHO;
 
                     statusSaidaMock = nowTotalMin > fimMin ? PONTO_STATUS.AUSENTE : PONTO_STATUS.CINZA;
                 }
@@ -708,7 +487,6 @@ export const pontoService = {
                 const [hBase, mBase] = parseTime(link.hora_inicio);
                 const inicioMinBase = hBase * 60 + mBase;
 
-                // Retornar um "mock" de registro de ponto vazio para o turno ausente
                 return formatPoint({
                     id: `ausente-${link.id}`,
                     usuario_id: link.colaborador_id,
@@ -738,83 +516,54 @@ export const pontoService = {
                 });
             });
 
-            // 5. Adicionar pontos que não foram mapeados a nenhum link (ex: trabalho extra ou erro de troca de turno)
             const leftoverPontos = pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [];
             leftoverPontos.forEach(p => {
                 const user = users.find(u => u.id === p.usuario_id);
                 mappedResults.push({ ...p, usuario: user || p.usuario });
             });
 
-            // 6. Aplicar filtros de status pós-merge (para evitar poluição com AUSENTES indesejados)
             let finalResults = mappedResults;
-
             if (filtros.status_entrada && filtros.status_entrada !== 'todos') {
-                if (filtros.status_entrada === 'iniciou') {
-                    finalResults = finalResults.filter(p => !p.ausente && p.entrada_hora);
-                } else if (filtros.status_entrada === 'nao_iniciou') {
-                    finalResults = finalResults.filter(p => p.ausente); // Todos que não bateram ponto
-                } else if (filtros.status_entrada === 'em_atraso') {
-                    finalResults = finalResults.filter(p => p.ausente && (p.status_entrada === PONTO_STATUS.AMARELO || p.status_entrada === PONTO_STATUS.VERMELHO));
-                } else if (filtros.status_entrada === 'aguardando') {
-                    finalResults = finalResults.filter(p => p.ausente && p.status_entrada === PONTO_STATUS.CINZA);
-                } else {
-                    finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
-                }
+                if (filtros.status_entrada === 'iniciou') finalResults = finalResults.filter(p => !p.ausente && p.entrada_hora);
+                else if (filtros.status_entrada === 'nao_iniciou') finalResults = finalResults.filter(p => p.ausente);
+                else if (filtros.status_entrada === 'em_atraso') finalResults = finalResults.filter(p => p.ausente && (p.status_entrada === PONTO_STATUS.AMARELO || p.status_entrada === PONTO_STATUS.VERMELHO));
+                else if (filtros.status_entrada === 'aguardando') finalResults = finalResults.filter(p => p.ausente && p.status_entrada === PONTO_STATUS.CINZA);
+                else finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
             }
 
             if (filtros.status_saida && filtros.status_saida !== 'todos') {
-                if (filtros.status_saida === 'trabalhando') {
-                    finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente && p.entrada_hora);
-                } else if (filtros.status_saida === 'concluiu') {
-                    finalResults = finalResults.filter(p => p.saida_hora && !p.ausente);
-                } else {
-                    finalResults = finalResults.filter(p => p.status_saida === filtros.status_saida);
-                }
+                if (filtros.status_saida === 'trabalhando') finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente && p.entrada_hora);
+                else if (filtros.status_saida === 'concluiu') finalResults = finalResults.filter(p => p.saida_hora && !p.ausente);
+                else finalResults = finalResults.filter(p => p.status_saida === filtros.status_saida);
             }
 
-            // Ordenar alfabeticamente pelo nome do colaborador + data decrescente
             return finalResults.sort((a, b) => {
                 const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
                 const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
                 if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
-
-                // Se for o mesmo colaborador, ordena pela data decrescente
                 return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
             });
         }
 
-        // Comportamento original (apenas quem registrou ponto)
         let query = supabaseAdmin
             .from("registros_ponto")
             .select("*, cliente:clientes(nome_fantasia), usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
             .order("data_referencia", { ascending: false });
 
-
-        if (filtros?.data_referencia) {
-            query = query.eq("data_referencia", filtros.data_referencia);
-        }
+        if (filtros?.data_referencia) query = query.eq("data_referencia", filtros.data_referencia);
 
         if (filtros?.status_entrada && filtros.status_entrada !== 'todos') {
-            if (filtros.status_entrada === 'iniciou') {
-                query = query.not("entrada_hora", "is", null);
-            } else {
-                query = query.eq("status_entrada", filtros.status_entrada);
-            }
+            if (filtros.status_entrada === 'iniciou') query = query.not("entrada_hora", "is", null);
+            else query = query.eq("status_entrada", filtros.status_entrada);
         }
 
         if (filtros?.status_saida && filtros.status_saida !== 'todos') {
-            if (filtros.status_saida === 'trabalhando') {
-                query = query.is("saida_hora", null);
-            } else if (filtros.status_saida === 'concluiu') {
-                query = query.not("saida_hora", "is", null);
-            } else {
-                query = query.eq("status_saida", filtros.status_saida);
-            }
+            if (filtros.status_saida === 'trabalhando') query = query.is("saida_hora", null);
+            else if (filtros.status_saida === 'concluiu') query = query.not("saida_hora", "is", null);
+            else query = query.eq("status_saida", filtros.status_saida);
         }
 
-        if (filtros?.usuario_id && filtros.usuario_id !== 'todos') {
-            query = query.eq("usuario_id", filtros.usuario_id);
-        }
+        if (filtros?.usuario_id && filtros.usuario_id !== 'todos') query = query.eq("usuario_id", filtros.usuario_id);
 
         if (filtros?.searchTerm) {
             query = query.or(`usuario.nome_completo.ilike.%${filtros.searchTerm}%,usuario.cpf.ilike.%${filtros.searchTerm}%`);
@@ -824,14 +573,10 @@ export const pontoService = {
         if (error) throw error;
 
         const results = (data || []).map(formatPoint);
-
-        // Ordenar alfabeticamente pelo nome do colaborador + data decrescente
         return results.sort((a, b) => {
             const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
             const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
             if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
-
-            // Se for o mesmo colaborador, ordena pela data decrescente
             return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
         });
     },
@@ -850,11 +595,8 @@ export const pontoService = {
         return formatPoint(data?.[0]) || null;
     },
 
-    async togglePonto(usuarioId: string, location?: any, km?: number, clienteId?: number, empresaId?: number, colaboradorClienteId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
+    async togglePonto(usuarioId: string, location?: PontoLocation, km?: number, clienteId?: number, empresaId?: number, colaboradorClienteId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: any }> {
         const now = getNowBR();
-        const todayStr = toLocalDateString(new Date(now));
-
-        // 1. Buscar último registro
         const { data: lastRecords, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*")
@@ -864,20 +606,16 @@ export const pontoService = {
 
         if (error) throw error;
         const lastRecord = lastRecords?.[0];
-
         const nowSEO = new Date(now);
-        const nowDesc = now;
 
-        // Cenário A: Turno Aberto e < 16h -> FECHAR
         if (lastRecord && !lastRecord.saida_hora) {
             const entryDate = new Date(lastRecord.entrada_hora);
             const diffMs = nowSEO.getTime() - entryDate.getTime();
             const diffHours = diffMs / (1000 * 60 * 60);
 
-            // Se for menor que 16h, considera o MESMO turno (saída)
             if (diffHours < 16) {
                 const updated = await this.updatePonto(lastRecord.id, {
-                    saida_hora: nowDesc,
+                    saida_hora: now,
                     saida_loc: location,
                     saida_km: km
                 });
@@ -885,12 +623,10 @@ export const pontoService = {
             }
         }
 
-        // Cenário B: Turno Fechado, Inexistente, ou Aberto > 16h -> ABRIR
-        const dataRef = todayStr;
         const newRecord = await this.registrarPonto({
             usuario_id: usuarioId,
-            data_referencia: dataRef,
-            entrada_hora: nowDesc,
+            data_referencia: toLocalDateString(nowSEO),
+            entrada_hora: now,
             saida_hora: null,
             criado_por: usuarioId,
             entrada_loc: location,
@@ -903,59 +639,45 @@ export const pontoService = {
     },
 
     async deletePonto(id: number): Promise<void> {
-        const { error } = await supabaseAdmin
-            .from("registros_ponto")
-            .delete()
-            .eq("id", id);
-
+        const { error } = await supabaseAdmin.from("registros_ponto").delete().eq("id", id);
         if (error) throw error;
     },
 
-    // --- PAUSAS ---
-
     async iniciarPausa(data: PausaPayload): Promise<any> {
-        if (!data.ponto_id) throw new Error(messages.ponto.erro.idPontoObrigatorio);
-        if (!data.inicio_hora) data.inicio_hora = getNowBR();
-        else data.inicio_hora = toBRTime(data.inicio_hora);
+        if (!data.ponto_id) throw new AppError(messages.ponto.erro.idPontoObrigatorio);
+        const inicio_hora = data.inicio_hora ? toBRTime(data.inicio_hora) : getNowBR();
 
-        // Check if there is already an open pause?
         const { data: openPausas } = await supabaseAdmin
             .from("registros_pausas")
-            .select("*")
+            .select("id")
             .eq("ponto_id", data.ponto_id)
             .is("fim_hora", null)
             .limit(1);
 
-        if (openPausas && openPausas.length > 0) throw new Error(messages.ponto.erro.pausaAberta);
+        if (openPausas && openPausas.length > 0) throw new AppError(messages.ponto.erro.pausaAberta);
 
-        // --- RELATIVE KM LOGIC (2.3) ---
-        // Calcula distancia_trabalho entre a última marcação (entrada ou fim da última pausa) e agora
-        let lastKm = 0;
         const { data: pointData } = await supabaseAdmin.from("registros_ponto").select("entrada_km").eq("id", data.ponto_id).single();
         const { data: lastPausa } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", data.ponto_id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
 
-        lastKm = lastPausa?.fim_km || pointData?.entrada_km || 0;
-
+        const lastKm = lastPausa?.fim_km || pointData?.entrada_km || 0;
         const distanciaTrabalho = data.inicio_km ? Math.max(0, data.inicio_km - lastKm) : 0;
-
         const { lat, lng, metadata } = processLocationData(data.inicio_loc);
 
         const { data: inserted, error } = await supabaseAdmin
             .from("registros_pausas")
             .insert([{
                 ponto_id: data.ponto_id,
-                inicio_hora: data.inicio_hora,
+                inicio_hora,
                 inicio_km: data.inicio_km,
                 inicio_loc: data.inicio_loc,
                 inicio_lat: lat,
                 inicio_lng: lng,
                 inicio_metadata: metadata,
-                distancia_trabalho: distanciaTrabalho // KM rodado em trabalho até esta pausa
+                distancia_trabalho: distanciaTrabalho
             }])
             .select();
 
         if (error) throw error;
-        // Formata o retorno da pausa (simulando que formatPoint trata pausas isoladas se necessário ou usando toBRTime manual)
         const insertedRec = inserted?.[0];
         if (insertedRec) {
             insertedRec.inicio_hora = toBRTime(insertedRec.inicio_hora);
@@ -965,90 +687,49 @@ export const pontoService = {
     },
 
     async finalizarPausa(id: number, data: Partial<PausaPayload>): Promise<any> {
-        if (!data.fim_hora) data.fim_hora = getNowBR();
-        else data.fim_hora = toBRTime(data.fim_hora);
+        const fim_hora = data.fim_hora ? toBRTime(data.fim_hora) : getNowBR();
+        const { data: currentPausa } = await supabaseAdmin.from("registros_pausas").select("inicio_km, ponto_id").eq("id", id).single();
+        if (!currentPausa) throw new AppError("Pausa não encontrada", 404);
 
-        const { data: currentPausa } = await supabaseAdmin.from("registros_pausas").select("inicio_km").eq("id", id).single();
-
-        const distanciaPausa = (data.fim_km && currentPausa?.inicio_km) ? Math.max(0, data.fim_km - currentPausa.inicio_km) : 0;
-
+        const distanciaPausa = (data.fim_km && currentPausa.inicio_km) ? Math.max(0, data.fim_km - currentPausa.inicio_km) : 0;
         const { lat, lng, metadata } = processLocationData(data.fim_loc);
 
         const { data: updated, error } = await supabaseAdmin
             .from("registros_pausas")
             .update({
-                fim_hora: data.fim_hora,
+                fim_hora,
                 fim_km: data.fim_km,
                 fim_loc: data.fim_loc,
                 fim_lat: lat,
                 fim_lng: lng,
                 fim_metadata: metadata,
-                distancia_pausa: distanciaPausa // KM rodado durante a pausa
+                distancia_pausa: distanciaPausa
             })
             .eq("id", id)
             .select();
 
         if (error) throw error;
-        if (!updated || updated.length === 0) throw new Error("Erro ao finalizar pausa: registro não encontrado.");
-
         const result = updated[0];
         if (result) {
             result.inicio_hora = toBRTime(result.inicio_hora);
             if (result.fim_hora) result.fim_hora = toBRTime(result.fim_hora);
+            if (result.ponto_id) await this.updatePonto(result.ponto_id, {});
         }
-
-        // Trigger generic update on Ponto to recalculate balance (saldo_minutos)
-        if (result?.ponto_id) {
-            await this.updatePonto(result.ponto_id, {});
-        }
-
         return result;
     },
 
     async getUltimoKm(usuarioId: string): Promise<number> {
-        // Busca o último KM da tabela de pontos
-        const { data: lastPontos } = await supabaseAdmin
-            .from("registros_ponto")
-            .select("id, entrada_km, saida_km")
-            .eq("usuario_id", usuarioId)
-            .order("id", { ascending: false })
-            .limit(1);
-
+        const { data: lastPontos } = await supabaseAdmin.from("registros_ponto").select("id, entrada_km, saida_km").eq("usuario_id", usuarioId).order("id", { ascending: false }).limit(1);
         const lastPonto = lastPontos?.[0] || null;
 
-        // Busca o último KM da tabela de pausas
-        const { data: lastPausas } = await supabaseAdmin
-            .from("registros_pausas")
-            .select("inicio_km, fim_km")
-            .eq("ponto_id", lastPonto?.id || 0) // Considera o ponto atual se existir
-            .order("id", { ascending: false })
-            .limit(1);
-
+        const { data: lastPausas } = await supabaseAdmin.from("registros_pausas").select("inicio_km, fim_km").eq("ponto_id", lastPonto?.id || 0).order("id", { ascending: false }).limit(1);
         const lastPausa = lastPausas?.[0] || null;
 
-        // Pega todos os valores de KM possíveis
-        const kmas = [
-            lastPonto?.entrada_km || 0,
-            lastPonto?.saida_km || 0,
-            lastPausa?.inicio_km || 0,
-            lastPausa?.fim_km || 0
-        ];
+        const kmas = [lastPonto?.entrada_km || 0, lastPonto?.saida_km || 0, lastPausa?.inicio_km || 0, lastPausa?.fim_km || 0];
 
-        // Se não houver nada, busca o último registro de ponto geral do usuário para garantir
         if (Math.max(...kmas) === 0) {
-            const { data: absoluteLasts } = await supabaseAdmin
-                .from("registros_ponto")
-                .select("saida_km, entrada_km")
-                .eq("usuario_id", usuarioId)
-                .not("entrada_km", "is", null)
-                .order("id", { ascending: false })
-                .limit(1);
-
-            const absoluteLast = absoluteLasts?.[0];
-
-            if (absoluteLast) {
-                return absoluteLast.saida_km || absoluteLast.entrada_km || 0;
-            }
+            const { data: absoluteLasts } = await supabaseAdmin.from("registros_ponto").select("saida_km, entrada_km").eq("usuario_id", usuarioId).not("entrada_km", "is", null).order("id", { ascending: false }).limit(1);
+            if (absoluteLasts?.[0]) return absoluteLasts[0].saida_km || absoluteLasts[0].entrada_km || 0;
         }
 
         return Math.max(...kmas);
@@ -1056,7 +737,6 @@ export const pontoService = {
 
     async getRelatorioMensal(usuarioId: string, mes: number, ano: number): Promise<any[]> {
         const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-
         const { data, error } = await supabaseAdmin
             .from("v_relatorio_mensal_ponto")
             .select("*")

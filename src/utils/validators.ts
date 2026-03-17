@@ -1,3 +1,5 @@
+import { AppError } from "../errors/AppError.js";
+
 interface Turno {
     hora_inicio: string;
     hora_fim: string;
@@ -29,7 +31,7 @@ export const validateShifts = (turnos: Turno[]) => {
         }
 
         if (duration < 60) {
-            throw new Error(`Duração inválida no turno ${formatTime(t.hora_inicio)}-${formatTime(t.hora_fim)}: O turno deve ter no mínimo 1 hora de duração.`);
+            throw new AppError(`Duração inválida no turno ${formatTime(t.hora_inicio)}-${formatTime(t.hora_fim)}: O turno deve ter no mínimo 1 hora de duração.`);
         }
     }
 
@@ -59,7 +61,7 @@ export const validateShifts = (turnos: Turno[]) => {
                     for (const [s2, e2] of intervals2) {
                         // Check intersection
                         if (s1 < e2 && s2 < e1) {
-                             throw new Error(`Conflito de horário detectado: ${formatTime(t1.hora_inicio)}-${formatTime(t1.hora_fim)} coincide com ${formatTime(t2.hora_inicio)}-${formatTime(t2.hora_fim)}`);
+                              throw new AppError(`Conflito de horário detectado: ${formatTime(t1.hora_inicio)}-${formatTime(t1.hora_fim)} coincide com ${formatTime(t2.hora_inicio)}-${formatTime(t2.hora_fim)}`);
                         }
                     }
                 }
