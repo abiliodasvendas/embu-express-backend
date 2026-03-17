@@ -27,7 +27,7 @@ function formatPoint(p: any) {
     if (result.saida_hora) result.saida_hora = toBRTime(result.saida_hora);
     if (result.created_at) result.created_at = toBRTime(result.created_at);
     if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
-    
+
     if (result.pausas && Array.isArray(result.pausas)) {
         result.pausas = result.pausas.map((pa: any) => ({
             ...pa,
@@ -102,8 +102,8 @@ async function calculateStatus(
     const detalhes: any = {
         entrada: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
         saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
-        resumo: { 
-            horas_trabalhadas: "--:--", 
+        resumo: {
+            horas_trabalhadas: "--:--",
             horas_pausa: `${Math.floor(pausasMinutos / 60)}h ${pausasMinutos % 60}min`,
             pausa_total: pausasMinutos,
             pausa_configurada: 0,
@@ -114,8 +114,7 @@ async function calculateStatus(
     };
 
     if (entrada_km != null && saida_km != null) {
-        // Preserva a precisão decimal no cálculo da diferença
-        detalhes.resumo.diff_km = Number((saida_km - entrada_km).toFixed(3));
+        detalhes.resumo.diff_km = saida_km - entrada_km;
     }
 
     if (!entrada) return { status_entrada, status_saida, detalhes_calculo: detalhes, saldo_minutos };
@@ -179,7 +178,10 @@ async function calculateStatus(
         const [hT, mT] = parseTime(melhorTurno.hora_inicio);
         const turnoInicioMinutos = hT * 60 + mT;
 
-        const diffEntrada = entradaMinutos - turnoInicioMinutos;
+        const diffEntradaRaw = entradaMinutos - turnoInicioMinutos;
+        // Ajuste universal para virada de dia (threshold de 12h)
+        const diffEntrada = diffEntradaRaw > 720 ? diffEntradaRaw - 1440 : (diffEntradaRaw < -720 ? diffEntradaRaw + 1440 : diffEntradaRaw);
+
         detalhes.entrada.turno_base = melhorTurno.hora_inicio;
         detalhes.entrada.diff_minutos = diffEntrada;
 
@@ -198,7 +200,10 @@ async function calculateStatus(
             const [hTF, mTF] = parseTime(melhorTurno.hora_fim);
             const turnoFimMinutos = hTF * 60 + mTF;
 
-            const diffSaida = saidaMinutos - turnoFimMinutos;
+            const diffSaidaRaw = saidaMinutos - turnoFimMinutos;
+            // Ajuste universal para virada de dia (threshold de 12h)
+            const diffSaida = diffSaidaRaw > 720 ? diffSaidaRaw - 1440 : (diffSaidaRaw < -720 ? diffSaidaRaw + 1440 : diffSaidaRaw);
+
             detalhes.saida.diff_minutos = diffSaida;
 
             if (diffSaida < 0) status_saida = PONTO_STATUS.ANTECIPADA;
@@ -210,7 +215,7 @@ async function calculateStatus(
             const start = new Date(entrada).getTime();
             const end = new Date(saida).getTime();
             const brutoMinutos = Math.round((end - start) / 60000);
-            
+
             const tolPausa = melhorTurno?.tolerancia_pausa_min || 0;
             const liquidoMinutos = brutoMinutos - Math.max(pausasMinutos, tolPausa);
 
@@ -218,7 +223,7 @@ async function calculateStatus(
             detalhes.resumo.pausa_total = pausasMinutos;
             detalhes.resumo.pausa_configurada = tolPausa;
             detalhes.resumo.pausa_extra = Math.max(0, pausasMinutos - tolPausa);
-            
+
             // Adiciona o KM da saída ao KM trabalhado total (distância entre o último marcador e a saída)
             if (saida_km) {
                 // Infelizmente aqui não temos acesso fácil ao último km de pausa sem injetar mais dados.
@@ -418,8 +423,11 @@ export const pontoService = {
             const entrada = data.entrada_hora ? toBRTime(data.entrada_hora) : existing.entrada_hora;
             const saida = data.saida_hora !== undefined ? (data.saida_hora ? toBRTime(data.saida_hora) : null) : existing.saida_hora; // Handle explicit null
 
-            const entradaKm = data.entrada_km !== undefined ? data.entrada_km : existing.entrada_km;
-            const saidaKm = data.saida_km !== undefined ? data.saida_km : existing.saida_km;
+            const entradaKmRaw = data.entrada_km !== undefined ? String(data.entrada_km).replace(/\D/g, "") : String(existing.entrada_km || "");
+            const saidaKmRaw = data.saida_km !== undefined ? String(data.saida_km).replace(/\D/g, "") : String(existing.saida_km || "");
+            
+            const entradaKm = entradaKmRaw ? parseInt(entradaKmRaw, 10) : null;
+            const saidaKm = saidaKmRaw ? parseInt(saidaKmRaw, 10) : null;
 
             // Validate Rules before calculation
             if (saida) {
@@ -482,8 +490,8 @@ export const pontoService = {
                 entradaKm,
                 saidaKm,
                 Math.round(totalPausasMin),
-                Number(kmTrabalhadoFinal.toFixed(3)),
-                Number(totalKmPausa.toFixed(3)),
+                kmTrabalhadoFinal,
+                totalKmPausa,
                 clienteIdAtualValue,
                 snapshot,
                 existing.colaborador_cliente_id
@@ -497,14 +505,10 @@ export const pontoService = {
                 }
             }
 
-            // --- RELATIVE KM LOGIC (2.3) FOR EXIT ---
             if (saida && saidaKm) {
                 let lastKmForExit = 0;
                 const { data: lastPausaForExit } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
                 lastKmForExit = lastPausaForExit?.fim_km || existing.entrada_km || 0;
-
-                const diffKm = Math.abs(saidaKm - lastKmForExit);
-                if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
 
                 payload.saida_distancia_trabalho = Math.max(0, saidaKm - lastKmForExit);
             }
@@ -555,7 +559,7 @@ export const pontoService = {
         // Se solicitado incluir ausentes, mudamos a base da query para 'usuarios'
         if (filtros?.incluir_todos) {
             const dataRef = filtros.data_referencia || toLocalDateString(new Date());
-            
+
             // 1. Buscar todos os usuários ativos que possuem vínculos (turnos)
             let userQuery = supabaseAdmin
                 .from("usuarios")
@@ -589,7 +593,7 @@ export const pontoService = {
                 u.links?.forEach((link: any) => {
                     const isVigente = !link.data_fim || link.data_fim >= dataRef;
                     const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
-                    
+
                     // REVERSÃO: Só mostramos se estiver na escala OU se bater ponto (o mapeamento posterior cuida dos pontos fora da escala)
                     if (isVigente && naEscala) {
                         activeLinks.push({ ...link, usuario: u });
@@ -630,17 +634,17 @@ export const pontoService = {
             const usedPointIds = new Set<string>();
             const mappedResults = activeLinks.map(link => {
                 // Tenta encontrar um ponto que bata com o usuario e o turno específico
-                const ponto = pontos?.find(p => 
-                    p.usuario_id === link.colaborador_id && 
+                const ponto = pontos?.find(p =>
+                    p.usuario_id === link.colaborador_id &&
                     (
                         (p.colaborador_cliente_id && String(p.colaborador_cliente_id) === String(link.id)) ||
                         (!p.colaborador_cliente_id && p.cliente_id === link.cliente_id && p.detalhes_calculo?.entrada?.turno_base === link.hora_inicio)
                     )
                 );
-                
+
                 if (ponto) {
                     usedPointIds.add(ponto.id.toString());
-                    
+
                     const formattedPonto = formatPoint(ponto);
 
                     // Lógica de Aging para Ponto Aberto
@@ -685,7 +689,7 @@ export const pontoService = {
                     // Em um sistema reativo por data_referencia, se é HOJE e o turno é das 22h às 06h:
                     // Das 00h às 06h, 'now' é > fimMin (fake linear). Mas na verdade, esse 00-06 refere-se à data_referencia de ONTEM.
                     // Para a data_referencia de HOJE, o turno só começa às 22h.
-                    
+
                     if (nowTotalMin < inicioMin) {
                         statusEntradaMock = PONTO_STATUS.CINZA; // Ainda não começou
                     } else if (nowTotalMin === inicioMin) {
@@ -697,7 +701,7 @@ export const pontoService = {
                     } else {
                         statusEntradaMock = PONTO_STATUS.VERMELHO; // Atraso Crítico
                     }
-                    
+
                     statusSaidaMock = nowTotalMin > fimMin ? PONTO_STATUS.AUSENTE : PONTO_STATUS.CINZA;
                 }
 
@@ -773,7 +777,7 @@ export const pontoService = {
                 const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
                 const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
                 if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
-                
+
                 // Se for o mesmo colaborador, ordena pela data decrescente
                 return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
             });
@@ -818,15 +822,15 @@ export const pontoService = {
 
         const { data, error } = await query;
         if (error) throw error;
-        
+
         const results = (data || []).map(formatPoint);
-        
+
         // Ordenar alfabeticamente pelo nome do colaborador + data decrescente
         return results.sort((a, b) => {
             const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
             const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
             if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
-            
+
             // Se for o mesmo colaborador, ordena pela data decrescente
             return new Date(b.data_referencia).getTime() - new Date(a.data_referencia).getTime();
         });
@@ -931,8 +935,6 @@ export const pontoService = {
         const { data: lastPausa } = await supabaseAdmin.from("registros_pausas").select("fim_km").eq("ponto_id", data.ponto_id).not("fim_hora", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
 
         lastKm = lastPausa?.fim_km || pointData?.entrada_km || 0;
-        const diffKm = data.inicio_km ? Math.abs(data.inicio_km - lastKm) : 0;
-        if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
 
         const distanciaTrabalho = data.inicio_km ? Math.max(0, data.inicio_km - lastKm) : 0;
 
@@ -967,11 +969,6 @@ export const pontoService = {
         else data.fim_hora = toBRTime(data.fim_hora);
 
         const { data: currentPausa } = await supabaseAdmin.from("registros_pausas").select("inicio_km").eq("id", id).single();
-
-        if (data.fim_km && currentPausa?.inicio_km) {
-            const diffKm = Math.abs(data.fim_km - currentPausa.inicio_km);
-            if (diffKm > 500) throw new Error(messages.ponto.erro.kmInvalido);
-        }
 
         const distanciaPausa = (data.fim_km && currentPausa?.inicio_km) ? Math.max(0, data.fim_km - currentPausa.inicio_km) : 0;
 
@@ -1059,7 +1056,7 @@ export const pontoService = {
 
     async getRelatorioMensal(usuarioId: string, mes: number, ano: number): Promise<any[]> {
         const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-        
+
         const { data, error } = await supabaseAdmin
             .from("v_relatorio_mensal_ponto")
             .select("*")

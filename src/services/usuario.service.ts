@@ -84,6 +84,17 @@ export const usuarioService = {
     async updateUsuario(id: string, data: Partial<any>): Promise<any> {
         if (!id) throw new Error(messages.usuario.erro.idObrigatorio);
 
+        const { data: usuarioAtual, error: fetchError } = await supabaseAdmin
+            .from("usuarios")
+            .select("cpf, senha_padrao")
+            .eq("id", id)
+            .single();
+
+        if (fetchError) {
+            console.error("[updateUsuario] Erro ao buscar usuário atual:", fetchError);
+            throw fetchError;
+        }
+
         // Extract fields that don't belong to the 'usuarios' table or are handled separately
         const { links, turnos, cliente_id, empresa_id, ativo, silent, id: _, created_at, updated_at, ...rest } = data;
 
@@ -92,7 +103,26 @@ export const usuarioService = {
             usuarioData.status = ativo ? STATUS.ATIVO : STATUS.INATIVO;
         }
         if (data.nome_completo !== undefined) usuarioData.nome_completo = cleanString(data.nome_completo);
-        if (data.cpf !== undefined) usuarioData.cpf = onlyDigits(data.cpf);
+        if (data.cpf !== undefined) {
+            const novoCpf = onlyDigits(data.cpf);
+            usuarioData.cpf = novoCpf;
+
+            // Lógica de inteligência: trocar senha se for padrão e CPF mudou
+            if (usuarioAtual.senha_padrao) {
+                const cpfAtual = onlyDigits(usuarioAtual.cpf);
+                if (novoCpf !== cpfAtual) {
+                    const novaSenha = novoCpf.substring(0, 6);
+                    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+                        password: novaSenha
+                    });
+                    
+                    if (authError) {
+                        console.error("[updateUsuario] Falha ao atualizar senha no Auth:", authError);
+                        throw authError;
+                    }
+                }
+            }
+        }
         if (data.telefone !== undefined) usuarioData.telefone = onlyDigits(data.telefone);
         if (data.telefone_recado !== undefined) {
             usuarioData.telefone_recado = data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado);
