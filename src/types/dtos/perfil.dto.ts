@@ -6,6 +6,7 @@ export interface PerfilDTO {
     descricao?: string;
     permissoes?: string[];
     detalhes_permissoes?: Permissao[];
+    total_colaboradores?: number;
 }
 
 export function toPerfilDTO(perfil: any): PerfilDTO {
@@ -21,6 +22,7 @@ export function toPerfilDTO(perfil: any): PerfilDTO {
         id: perfil.id,
         nome: perfil.nome,
         descricao: perfil.descricao,
+        total_colaboradores: perfil.total_colaboradores,
         permissoes: permissoesArray,
         detalhes_permissoes: detalhesPermissoes
     };

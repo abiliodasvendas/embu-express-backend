@@ -27,10 +27,16 @@ export const perfilService = {
         if (error) throw error;
 
         return (data || []).map(p => {
-            const rawUsuarios = p.usuarios as unknown as { count: number }[];
+            // Supabase can return usuarios as an array of one object { count: X } 
+            // depending on the PostgREST version/configuration.
+            const usuariosData = p.usuarios as any;
+            const count = Array.isArray(usuariosData) 
+                ? (usuariosData[0]?.count ?? 0) 
+                : (usuariosData?.count ?? 0);
+
             return {
                 ...p,
-                total_colaboradores: rawUsuarios?.[0]?.count || 0
+                total_colaboradores: count
             };
         }) as Perfil[];
     },
@@ -52,12 +58,23 @@ export const perfilService = {
                 perfil_permissoes(
                     permissao_id,
                     permissao:permissoes(nome_interno, modulo, descricao)
-                )
+                ),
+                usuarios:usuarios(count)
             `)
+            .eq("usuarios.status", CADASTRO_STATUS.ATIVO)
             .eq("id", id)
             .single();
         if (error) throw error;
-        return data as Perfil;
+
+        const usuariosData = data.usuarios as any;
+        const count = Array.isArray(usuariosData)
+            ? (usuariosData[0]?.count ?? 0)
+            : (usuariosData?.count ?? 0);
+
+        return {
+            ...data,
+            total_colaboradores: count
+        } as Perfil;
     },
 
     async createPerfil(data: CreatePerfilDTO): Promise<Perfil> {
