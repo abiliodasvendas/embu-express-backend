@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { Feriado } from "../types/database.js";
 
 export const feriadoService = {
     async listFeriados(ano?: number) {
@@ -37,5 +38,21 @@ export const feriadoService = {
 
         if (error) throw error;
         return true;
+    },
+
+    async updateFeriado(id: number, data?: string, descricao?: string) {
+        const updateData: Partial<Feriado> = {};
+        if (data) updateData.data = data;
+        if (descricao) updateData.descricao = descricao;
+
+        const { data: updated, error } = await supabaseAdmin
+            .from('feriados')
+            .update(updateData)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return updated;
     }
 };

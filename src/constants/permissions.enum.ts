@@ -50,6 +50,10 @@ export const PERMISSIONS = {
         PAGAR: 'financeiro:pagar',
         VER_MEU: 'financeiro:ver_meu', // App: Ver o próprio financeiro
     },
+    FERIADOS: {
+        VER: 'feriados:ver',
+        EDITAR: 'feriados:editar',
+    },
 } as const;
 
 export const ROLES = {

@@ -1,9 +1,17 @@
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { PROTECTED_ROLES_NAMES } from "../constants/permissions.enum.js";
 import { AppError } from "../errors/AppError.js";
+import { Perfil, Permissao } from "../types/database.js";
+import { slugify } from "../utils/utils.js";
+import { perfilSchema, updatePerfilSchema } from "../schemas/perfil.schema.js";
+import { z } from "zod";
+
+type CreatePerfilDTO = z.infer<typeof perfilSchema>;
+type UpdatePerfilDTO = z.infer<typeof updatePerfilSchema>;
 
 export const perfilService = {
-    async listPerfis(): Promise<any[]> {
+    async listPerfis(): Promise<Perfil[]> {
         const { data, error } = await supabaseAdmin
             .from("perfis")
             .select(`
@@ -14,17 +22,20 @@ export const perfilService = {
                 ),
                 usuarios:usuarios(count)
             `)
-            .eq("usuarios.status", "ATIVO")
+            .eq("usuarios.status", CADASTRO_STATUS.ATIVO)
             .order("nome", { ascending: true });
         if (error) throw error;
 
-        return (data || []).map(p => ({
-            ...p,
-            total_colaboradores: p.usuarios?.[0]?.count || 0
-        }));
+        return (data || []).map(p => {
+            const rawUsuarios = p.usuarios as unknown as { count: number }[];
+            return {
+                ...p,
+                total_colaboradores: rawUsuarios?.[0]?.count || 0
+            };
+        }) as Perfil[];
     },
 
-    async listPublicPerfis(): Promise<any[]> {
+    async listPublicPerfis(): Promise<Partial<Perfil>[]> {
         const { data, error } = await supabaseAdmin
             .from("perfis")
             .select("id, nome, descricao")
@@ -33,7 +44,7 @@ export const perfilService = {
         return data || [];
     },
 
-    async getPerfil(id: number): Promise<any> {
+    async getPerfil(id: number): Promise<Perfil> {
         const { data, error } = await supabaseAdmin
             .from("perfis")
             .select(`
@@ -46,12 +57,12 @@ export const perfilService = {
             .eq("id", id)
             .single();
         if (error) throw error;
-        return data;
+        return data as Perfil;
     },
 
-    async createPerfil(data: { nome: string, descricao?: string, permissoes?: number[] }): Promise<any> {
+    async createPerfil(data: CreatePerfilDTO): Promise<Perfil> {
         // Formatar o nome e verificar se já existe
-        const nomeFormatado = data.nome.toLowerCase().replace(/ /g, '_');
+        const nomeFormatado = slugify(data.nome);
 
         // Inserir perfil
         const { data: perfil, error: errorPerfil } = await supabaseAdmin
@@ -83,7 +94,7 @@ export const perfilService = {
         return this.getPerfil(perfil.id);
     },
 
-    async updatePerfil(id: number, data: { nome?: string, descricao?: string, permissoes?: number[] }): Promise<any> {
+    async updatePerfil(id: number, data: UpdatePerfilDTO): Promise<Perfil> {
         // Buscar o perfil atual para checar se é protegido pelo nome
         const { data: current } = await supabaseAdmin.from("perfis").select("nome").eq("id", id).single();
 
@@ -98,9 +109,9 @@ export const perfilService = {
             delete data.nome;
         }
 
-        const updateData: any = {};
-        if (data.nome) updateData.nome = data.nome.toLowerCase().replace(/ /g, '_');
-        if (data.descricao !== undefined) updateData.descricao = data.descricao;
+        const updateData: Partial<Perfil> = {};
+        if (data.nome) updateData.nome = slugify(data.nome);
+        if (data.descricao !== undefined) updateData.descricao = data.descricao ?? undefined;
 
         if (Object.keys(updateData).length > 0) {
             const { error: errorPerfil } = await supabaseAdmin
@@ -154,7 +165,7 @@ export const perfilService = {
         if (error) throw error;
     },
 
-    async listPermissoes(): Promise<any[]> {
+    async listPermissoes(): Promise<Permissao[]> {
         const { data, error } = await supabaseAdmin
             .from("permissoes")
             .select("*")

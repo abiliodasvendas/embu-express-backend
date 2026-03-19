@@ -1,34 +1,18 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
-import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString, formatPoint } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { parseTime } from "./ponto-calculator.service.js";
+import { Client, ColaboradorCliente, RegistroPonto, Usuario, Pausa } from "../types/database.js";
 
 
-// Helper para formatar retorno (mesmo padrão do ponto.service.ts)
-function formatPoint(p: any) {
-    if (!p) return p;
-    const result = { ...p };
-    if (result.entrada_hora) result.entrada_hora = toBRTime(result.entrada_hora);
-    if (result.saida_hora) result.saida_hora = toBRTime(result.saida_hora);
-    if (result.created_at) result.created_at = toBRTime(result.created_at);
-    if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
-    if (result.pausas && Array.isArray(result.pausas)) {
-        result.pausas = result.pausas.map((pa: any) => ({
-            ...pa,
-            inicio_hora: pa.inicio_hora ? toBRTime(pa.inicio_hora) : null,
-            fim_hora: pa.fim_hora ? toBRTime(pa.fim_hora) : null,
-        }));
-    }
-    return result;
-}
 
 export const publicClientService = {
     /**
      * Valida se um cliente existe e está ativo pelo public_id
      */
-    async getClientByPublicId(publicId: string): Promise<any> {
+    async getClientByPublicId(publicId: string): Promise<Partial<Client>> {
         const { data, error } = await supabaseAdmin
             .from("clientes")
             .select("id, nome_fantasia, ativo")
@@ -45,7 +29,15 @@ export const publicClientService = {
     /**
      * Lista colaboradores vinculados ao cliente
      */
-    async listCollaborators(clienteId: number): Promise<any[]> {
+    async listCollaborators(clienteId: number): Promise<{
+        id: string;
+        nome_completo: string;
+        links: {
+            id: number;
+            cliente_id: number;
+            horarios?: { dia_semana: number; hora_inicio: string; hora_fim: string; }[];
+        }[];
+    }[]> {
         const { data, error } = await supabaseAdmin
             .from("usuarios")
             .select(`
@@ -53,9 +45,12 @@ export const publicClientService = {
                 nome_completo, 
                 links:colaborador_clientes!inner(
                     id, 
-                    hora_inicio, 
-                    hora_fim, 
-                    cliente_id
+                    cliente_id,
+                    horarios:colaborador_cliente_horarios(
+                        dia_semana,
+                        hora_inicio,
+                        hora_fim
+                    )
                 )
             `)
             .eq("links.cliente_id", clienteId)
@@ -63,13 +58,13 @@ export const publicClientService = {
             .order("nome_completo", { ascending: true });
 
         if (error) throw error;
-        return data || [];
+        return (data || []) as { id: string; nome_completo: string; links: { id: number; cliente_id: number; horarios?: { dia_semana: number; hora_inicio: string; hora_fim: string; }[] }[] }[];
     },
 
     /**
      * Controle de Ponto Público (Scoped by client)
      */
-    async getControlePonto(clienteId: number, dataReferencia: string): Promise<any[]> {
+    async getControlePonto(clienteId: number, dataReferencia: string): Promise<RegistroPonto[]> {
         // 1. Buscar todos os usuários ativos vinculados a este cliente
         const { data: users, error: userError } = await supabaseAdmin
             .from("usuarios")
@@ -78,7 +73,8 @@ export const publicClientService = {
                 perfil:perfis(*),
                 links:colaborador_clientes!inner(
                     *, 
-                    cliente:clientes(*)
+                    cliente:clientes(*),
+                    horarios:colaborador_cliente_horarios(*)
                 )
             `)
             .eq("status", "ATIVO")
@@ -92,16 +88,18 @@ export const publicClientService = {
         const scaleDay = dayOfWeek === 0 ? 7 : dayOfWeek;
 
         // 2. Explodir os links em registros base
-        const activeLinks: any[] = [];
-        users?.forEach(u => {
-            u.links?.forEach((link: any) => {
+        const activeLinks: (ColaboradorCliente & { usuario: Usuario })[] = [];
+        users?.forEach((u) => {
+            const userLinks = u.links as (ColaboradorCliente & { cliente: Client })[];
+            userLinks?.forEach((link) => {
                 const isVigente = !link.data_fim || link.data_fim >= dataReferencia;
-                // Importante: No link, o cliente já vem populado pelo !inner join acima
-                const naEscala = link.cliente?.escala_semanal?.includes(scaleDay);
+                // O horário do dia no vínculo agora define a obrigação
+                const hConfig = link.horarios?.find(h => h.dia_semana === scaleDay);
+                const naEscala = !!hConfig;
                 
                 // REVERSÃO: Só mostramos se estiver na escala (o mapeamento posterior cuida dos pontos fora da escala)
                 if (isVigente && naEscala) {
-                    activeLinks.push({ ...link, usuario: u });
+                    activeLinks.push({ ...link, usuario: u as unknown as Usuario });
                 }
             });
         });
@@ -137,12 +135,16 @@ export const publicClientService = {
 
         // 5. Montar o "Left Join" baseado nos Links
         const usedPointIds = new Set<string>();
-        const mappedResults = activeLinks.map(link => {
-            const ponto = pontos?.find(p => 
+        const mappedResults = activeLinks.map((link) => {
+            const hConfig = link.horarios?.find(h => h.dia_semana === scaleDay);
+            const hIniMock = hConfig?.hora_inicio || '00:00';
+            const hFimMock = hConfig?.hora_fim || '00:00';
+
+            const ponto = pontos?.find((p) => 
                 p.usuario_id === link.colaborador_id && 
                 (
                     (p.colaborador_cliente_id && String(p.colaborador_cliente_id) === String(link.id)) ||
-                    (!p.colaborador_cliente_id && p.detalhes_calculo?.entrada?.turno_base === link.hora_inicio)
+                    (!p.colaborador_cliente_id && p.detalhes_calculo?.entrada?.turno_base === hIniMock)
                 )
             );
             
@@ -151,8 +153,8 @@ export const publicClientService = {
 
                 // Lógica de Aging para Ponto Aberto
                 if (!ponto.saida_hora) {
-                    const [hFim, mFim] = parseTime(link.hora_fim);
-                    const [hIni, mIni] = parseTime(link.hora_inicio);
+                    const [hFim, mFim] = parseTime(hFimMock);
+                    const [hIni, mIni] = parseTime(hIniMock);
                     let fimMin = hFim * 60 + mFim;
                     const iniMin = hIni * 60 + mIni;
 
@@ -172,15 +174,15 @@ export const publicClientService = {
             let statusEntradaMock = PONTO_STATUS.AUSENTE;
             let statusSaidaMock = PONTO_STATUS.AUSENTE;
 
-            const [hBase, mBase] = parseTime(link.hora_inicio);
+            const [hBase, mBase] = parseTime(hIniMock);
             const inicioMinBase = hBase * 60 + mBase;
 
             if (isFuturo) {
                 statusEntradaMock = PONTO_STATUS.CINZA; // Aguardando
                 statusSaidaMock = PONTO_STATUS.CINZA;
             } else if (isHoje) {
-                const [hInicio, mInicio] = parseTime(link.hora_inicio);
-                const [hFim, mFim] = parseTime(link.hora_fim);
+                const [hInicio, mInicio] = parseTime(hIniMock);
+                const [hFim, mFim] = parseTime(hFimMock);
                 const inicioMin = hInicio * 60 + mInicio;
                 let fimMin = hFim * 60 + mFim;
 
@@ -212,7 +214,7 @@ export const publicClientService = {
                 usuario: {
                     id: link.usuario.id,
                     nome_completo: link.usuario.nome_completo
-                },
+                } as Usuario,
                 entrada_hora: null,
                 saida_hora: null,
                 status_entrada: statusEntradaMock,
@@ -222,27 +224,36 @@ export const publicClientService = {
                 colaborador_cliente_id: link.id,
                 detalhes_calculo: {
                     entrada: { 
-                        turno_base: link.hora_inicio, 
+                        turno_base: hIniMock, 
                         tolerancia: limiteAmarelo, 
                         diff_minutos: isHoje && nowTotalMin > inicioMinBase ? nowTotalMin - inicioMinBase : 0 
                     },
                     saida: { 
-                        turno_base: link.hora_fim, 
+                        turno_base: hFimMock, 
                         tolerancia: 0, 
                         diff_minutos: 0 
+                    },
+                    resumo: {
+                        horas_trabalhadas: "00:00",
+                        horas_pausa: "00:00",
+                        pausa_total: 0,
+                        pausa_configurada: 0,
+                        pausa_extra: 0,
+                        km_trabalhado: 0,
+                        km_pausa: 0
                     }
                 },
                 ausente: true
-            });
+            } as unknown as RegistroPonto);
         });
 
         // 5. Adicionar pontos "sobrantes" que não bateram com links de turno (extra)
-        const leftoverPontos = pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [];
-        leftoverPontos.forEach(p => {
-            const user = users?.find(u => u.id === p.usuario_id);
+        const leftoverPontos = pontos?.filter((p) => !usedPointIds.has(p.id.toString())) || [];
+        leftoverPontos.forEach((p) => {
+            const user = users?.find((u) => u.id === p.usuario_id);
             mappedResults.push(formatPoint({ 
                 ...p, 
-                usuario: user ? { id: user.id, nome_completo: user.nome_completo } : p.usuario 
+                usuario: user ? { id: user.id, nome_completo: user.nome_completo } as unknown as Usuario : p.usuario 
             }));
         });
 
@@ -257,7 +268,7 @@ export const publicClientService = {
     /**
      * Espelho de Ponto Público (Scoped by client and user)
      */
-    async getEspelhoPonto(clienteId: number, usuarioId: string, mes: number, ano: number): Promise<any[]> {
+    async getEspelhoPonto(clienteId: number, usuarioId: string, mes: number, ano: number): Promise<RegistroPonto[]> {
         const startOfMonth = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const endOfMonth = `${ano}-${String(mes).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -272,6 +283,6 @@ export const publicClientService = {
             .order("data_referencia", { ascending: false });
 
         if (error) throw error;
-        return data || [];
+        return (data || []) as RegistroPonto[];
     }
 };

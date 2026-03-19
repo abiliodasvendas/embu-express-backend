@@ -1,10 +1,11 @@
 export const messages = {
   auth: {
     erro: {
-      usuarioNaoEncontrado: "Usuário não encontrado.",
-      cadastroPendente: "Cadastro em análise. Aguarde a aprovação.",
-      acessoNegado: "Acesso negado. Entre em contato com o suporte.",
-      credenciaisInvalidas: "Credenciais inválidas.",
+      usuarioNaoEncontrado: "CPF não encontrado.",
+      cadastroPendente: "Seu cadastro ainda não foi aprovado.",
+      contaInativa: "Sua conta está inativa. Entre em contato com o suporte.",
+      acessoNegado: "Acesso negado.",
+      credenciaisInvalidas: "Senha inválida.",
       sessaoExpirada: "Sessão expirada.",
       tokenInvalido: "Token inválido ou expirado.",
       senhaIncorreta: "Senha atual incorreta.",
@@ -14,6 +15,8 @@ export const messages = {
       senhaObrigatoria: "Nova senha é obrigatória.",
       cpfSenhaObrigatorios: "CPF e senha são obrigatórios.",
       redefinirSenha: "Erro ao enviar e-mail de redefinição.",
+      perfilNaoEncontrado: "Perfil não encontrado no sistema.",
+      sessaoFalha: "Senha atualizada, mas falha ao obter nova sessão. Faça o login novamente.",
     },
     sucesso: {
       senhaAtualizada: "Senha atualizada com sucesso.",
@@ -55,6 +58,9 @@ export const messages = {
       duracaoMaxima: "O registro excede o limite máximo de {max} horas.",
       sobreposicao: "O horário informado conflita com outro registro existente.",
       kmInvalido: "O KM informado parece incorreto (diferença muito grande). Verifique o valor.",
+      naoEncontrado: "Registro de ponto não encontrado.",
+      pausaNaoEncontrada: "Pausa não encontrada.",
+      detalhesCalcNecessario: "Aguardando registro para calcular os detalhes.",
     }
   },
   cliente: {

@@ -3,42 +3,23 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { toBRTime } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
+import { Ocorrencia, TipoOcorrencia } from "../types/database.js";
+import {
+    ocorrenciaSchema,
+    updateOcorrenciaSchema,
+    tipoOcorrenciaSchema,
+    updateTipoOcorrenciaSchema,
+    listOcorrenciaSchema
+} from "../schemas/ocorrencia.schema.js";
+import { z } from "zod";
 
-// Interfaces
-export interface TipoOcorrenciaPayload {
-    id?: number;
-    descricao: string;
-    impacto_financeiro?: boolean;
-    valor_padrao?: number | null;
-}
+type TipoOcorrenciaPayload = z.infer<typeof tipoOcorrenciaSchema>;
+type OcorrenciaPayload = z.infer<typeof ocorrenciaSchema>;
+type FiltrosOcorrencia = z.infer<typeof listOcorrenciaSchema>;
 
-export interface OcorrenciaPayload {
-    id?: number;
-    colaborador_id: string;
-    colaborador_cliente_id?: number | null;
-    tipo_id: number;
-    data_ocorrencia: string;
-    valor?: number | null;
-    impacto_financeiro?: boolean;
-    tipo_lancamento?: 'ENTRADA' | 'SAIDA';
-    observacao?: string | null;
-    criado_por?: string;
-}
-
-export interface FiltrosOcorrencia {
-    usuario_id?: string;
-    colaborador_cliente_id?: number;
-    data_inicio?: string;
-    data_fim?: string;
-    order?: string;
-    ascending?: boolean;
-}
-
-function formatOcorrencia(o: any) {
+function formatOcorrencia<T extends { created_at?: string; updated_at?: string }>(o: T): T {
     if (!o) return o;
     const result = { ...o };
-    // data_ocorrencia é um campo DATE (sem hora). Deve ser mantido como string pura (YYYY-MM-DD)
-    // para evitar que conversões de fuso horário alterem o dia.
     if (result.created_at) result.created_at = toBRTime(result.created_at);
     if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
     return result;
@@ -48,7 +29,7 @@ export const ocorrenciaService = {
     /**
      * Lista todos os tipos de ocorrência disponíveis.
      */
-    async listTiposOcorrencia(): Promise<any[]> {
+    async listTiposOcorrencia(): Promise<TipoOcorrencia[]> {
         const { data, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
             .select("*")
@@ -61,8 +42,7 @@ export const ocorrenciaService = {
     /**
      * Cria um novo tipo de ocorrência.
      */
-    async createTipoOcorrencia(data: TipoOcorrenciaPayload): Promise<any> {
-        // Validation: Check for duplicate descriptions (case-insensitive)
+    async createTipoOcorrencia(data: TipoOcorrenciaPayload): Promise<TipoOcorrencia> {
         if (data.descricao) {
             const { data: existing } = await supabaseAdmin
                 .from("tipos_ocorrencia")
@@ -74,12 +54,9 @@ export const ocorrenciaService = {
             }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id, created_at, updated_at, ...rest } = data as any;
-
         const { data: inserted, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
-            .insert([rest])
+            .insert([data])
             .select()
             .single();
 
@@ -90,8 +67,7 @@ export const ocorrenciaService = {
     /**
      * Atualiza um tipo de ocorrência.
      */
-    async updateTipoOcorrencia(id: number, data: Partial<TipoOcorrenciaPayload>): Promise<any> {
-        // Validation: Check for duplicate descriptions (ignoring the current one)
+    async updateTipoOcorrencia(id: number, data: Partial<TipoOcorrenciaPayload>): Promise<TipoOcorrencia> {
         if (data.descricao) {
             const { data: existing } = await supabaseAdmin
                 .from("tipos_ocorrencia")
@@ -104,12 +80,9 @@ export const ocorrenciaService = {
             }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _, created_at, updated_at, ...rest } = data as any;
-
         const { data: updated, error } = await supabaseAdmin
             .from("tipos_ocorrencia")
-            .update(rest)
+            .update(data)
             .eq("id", id)
             .select()
             .single();
@@ -133,7 +106,7 @@ export const ocorrenciaService = {
     /**
      * Lista ocorrências com filtros.
      */
-    async listOcorrencias(filtros?: FiltrosOcorrencia): Promise<any[]> {
+    async listOcorrencias(filtros?: FiltrosOcorrencia): Promise<Ocorrencia[]> {
         let query = supabaseAdmin
             .from("ocorrencias")
             .select(`
@@ -141,10 +114,9 @@ export const ocorrenciaService = {
                 tipo:tipos_ocorrencia(id, descricao),
                 colaborador:usuarios!fk_ocorrencia_colaborador(id, nome_completo),
                 criado_por_usuario:usuarios!fk_ocorrencia_criado_por(id, nome_completo),
-                vinculo:colaborador_clientes(id, hora_inicio, hora_fim, cliente:clientes(id, nome_fantasia))
+                vinculo:colaborador_clientes(id, cliente:clientes(id, nome_fantasia))
             `);
 
-        // Ordenação padrão: data da ocorrência (desc) e depois data de criação (desc)
         query = query
             .order("data_ocorrencia", { ascending: false })
             .order("created_at", { ascending: false });
@@ -165,6 +137,10 @@ export const ocorrenciaService = {
             query = query.lte("data_ocorrencia", filtros.data_fim);
         }
 
+        if (filtros?.tipo_id) {
+            query = query.eq("tipo_id", filtros.tipo_id);
+        }
+
         const { data, error } = await query;
         if (error) throw error;
         return (data || []).map(formatOcorrencia);
@@ -173,15 +149,12 @@ export const ocorrenciaService = {
     /**
      * Cria uma nova ocorrência.
      */
-    async createOcorrencia(data: OcorrenciaPayload): Promise<any> {
+    async createOcorrencia(data: OcorrenciaPayload): Promise<Ocorrencia> {
         logger.info({ data }, "[ocorrenciaService] Criando ocorrência");
-
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id, created_at, updated_at, ...rest } = data as any;
 
         const { data: inserted, error } = await supabaseAdmin
             .from("ocorrencias")
-            .insert([rest])
+            .insert([data])
             .select()
             .single();
 
@@ -192,14 +165,11 @@ export const ocorrenciaService = {
     /**
      * Atualiza uma ocorrência.
      */
-    async updateOcorrencia(id: number, data: Partial<OcorrenciaPayload>): Promise<any> {
+    async updateOcorrencia(id: number, data: Partial<OcorrenciaPayload>): Promise<Ocorrencia> {
         logger.info({ id, data }, "[ocorrenciaService] Atualizando ocorrência");
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _, created_at, updated_at, ...rest } = data as any;
-
         const { data: updated, error } = await supabaseAdmin
             .from("ocorrencias")
-            .update(rest)
+            .update(data)
             .eq("id", id)
             .select()
             .single();

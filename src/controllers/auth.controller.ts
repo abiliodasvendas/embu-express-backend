@@ -2,7 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { authService } from "../services/auth.service.js";
-import { loginSchema, refreshSchema, updatePasswordSchema, forgotPasswordSchema } from "../schemas/auth.schema.js";
+import { loginSchema, refreshSchema, updatePasswordSchema, forgotPasswordSchema, registerSchema } from "../schemas/auth.schema.js";
 import { AppError } from "../errors/AppError.js";
 
 export const AuthController = {
@@ -39,7 +39,8 @@ export const AuthController = {
     },
 
     async register(request: FastifyRequest, reply: FastifyReply) {
-        const result = await authService.selfRegister(request.body);
+        const data = registerSchema.parse(request.body);
+        const result = await authService.selfRegister(data);
         return reply.status(201).send(result);
     },
 

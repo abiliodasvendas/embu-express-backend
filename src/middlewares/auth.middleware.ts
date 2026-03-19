@@ -1,9 +1,11 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import { STATUS } from "../config/constants.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { PermissionKey, ROLES } from "../constants/permissions.enum.js";
-// In this case, we could query the permissions based on the token.
+import { AuthenticatedRequest } from "../types/request.type.js";
+import { AuthUser } from "../services/auth.service.js";
+import { Usuario } from "../types/database.js";
 
 export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionKey[]) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -20,7 +22,7 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             }
 
             // Attach user to request for use in routes
-            (request as any).user = user;
+            (request as AuthenticatedRequest).user = user as AuthUser;
 
             // 2. Fetch User Profile and Permissions
             // Note: Since auth logic bypasses RLS using service_role, we query public.usuarios
@@ -42,11 +44,12 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
                 return reply.status(403).send({ error: messages.auth.erro.usuarioNaoEncontrado });
             }
 
-            if (usuario.status !== STATUS.ATIVO) {
+            if (usuario.status !== CADASTRO_STATUS.ATIVO) {
                 return reply.status(403).send({ error: messages.auth.erro.acessoNegado });
             }
 
-            const nomePerfil = (usuario.perfil as any)?.nome;
+            const perfilData = usuario.perfil as unknown as { nome: string, perfil_permissoes: { permissao: { nome_interno: string } }[] };
+            const nomePerfil = perfilData?.nome;
 
             // 3. Super Admin Bypass
             if (nomePerfil === ROLES.SUPER_ADMIN) {
@@ -54,7 +57,7 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             }
 
             // 4. Self-Access Bypass (Allow user to view/edit their own data)
-            const params = request.params as any;
+            const params = request.params as { id?: string; usuarioId?: string; usuario_id?: string };
             const targetedId = params?.id || params?.usuarioId || params?.usuario_id;
             
             if (targetedId && targetedId === user.id) {
@@ -64,8 +67,8 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             const requiredPerms = Array.isArray(permissaoNecessaria) ? permissaoNecessaria : [permissaoNecessaria];
 
             // 5. Check permissions
-            const permissoesArray = (usuario.perfil as any)?.perfil_permissoes?.map(
-                (pp: any) => pp.permissao.nome_interno
+            const permissoesArray = perfilData?.perfil_permissoes?.map(
+                (pp) => pp.permissao.nome_interno
             ) || [];
 
             const hasPermission = requiredPerms.some((p) => permissoesArray.includes(p));
@@ -75,8 +78,8 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             }
 
             // Attach profile and permissions to request for further checks in handlers
-            (request as any).user_profile = usuario;
-            (request as any).user_perms = permissoesArray;
+            (request as AuthenticatedRequest).user_profile = usuario as unknown as Usuario;
+            (request as AuthenticatedRequest).user_perms = permissoesArray;
 
             // If everything is fine, proceed
             return;
@@ -112,11 +115,11 @@ export function verifyOperacional() {
                 return reply.status(403).send({ error: messages.auth.erro.usuarioNaoEncontrado });
             }
 
-            if (usuario.status !== STATUS.ATIVO) {
+            if (usuario.status !== CADASTRO_STATUS.ATIVO) {
                 return reply.status(403).send({ error: messages.auth.erro.acessoNegado });
             }
 
-            const nomePerfil = (usuario.perfil as any)?.nome;
+            const nomePerfil = (usuario.perfil as unknown as { nome: string })?.nome;
 
             if (nomePerfil === ROLES.SUPER_ADMIN || nomePerfil !== ROLES.CLIENTE) {
                 return; // Todos exceto CLIENTE têm acesso operacional.

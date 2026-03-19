@@ -1,20 +1,25 @@
-import { STATUS } from "../config/constants.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { cleanString, getNowBR, onlyDigits, toLocalDateString } from "../utils/utils.js";
+import { cleanString, onlyNumbers } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { colaboradorClienteService } from "./colaborador-cliente.service.js";
 import { PIX_TYPES } from "../constants/financeiro.enum.js";
+import { Usuario } from "../types/database.js";
+import { createUsuarioSchema, updateUsuarioSchema } from "../schemas/usuario.schema.js";
+import { z } from "zod";
+
+type CreateUsuarioDTO = z.infer<typeof createUsuarioSchema>;
+type UpdateUsuarioDTO = z.infer<typeof updateUsuarioSchema>;
 
 export const usuarioService = {
-    async createUsuario(data: any): Promise<any> {
+    async createUsuario(data: CreateUsuarioDTO): Promise<Usuario> {
         const emailNormalizado = data.email?.toLowerCase().trim();
         if (!emailNormalizado) throw new AppError(messages.usuario.erro.emailObrigatorio);
         if (!data.nome_completo) throw new AppError(messages.usuario.erro.nomeObrigatorio);
         if (!data.perfil_id) throw new AppError(messages.usuario.erro.perfilObrigatorio);
 
-        // 1. Create Auth User
-        const cpfDigits = onlyDigits(data.cpf);
+        const cpfDigits = onlyNumbers(data.cpf);
         const tempPassword = cpfDigits.substring(0, 6);
 
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -35,39 +40,34 @@ export const usuarioService = {
             throw new AppError(messages.usuario.erro.criarAuth, 500);
         }
 
-        // Extract fields that don't belong to the 'usuarios' table
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { links, turnos, silent, created_at, updated_at, ...rest } = data;
 
-        // Prepare Usuario Data
-        const usuarioData: any = {
+        const usuarioData: Partial<Usuario> = {
             ...rest,
             id: authUser.user.id,
             email: emailNormalizado,
-            nome_completo: cleanString(data.nome_completo),
-            perfil_id: data.perfil_id,
-            cpf: onlyDigits(data.cpf),
-            cnpj: (data.cnpj === undefined || data.cnpj === null || data.cnpj.trim() === "") ? null : data.cnpj,
-            telefone: onlyDigits(data.telefone),
-            telefone_recado: data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado),
-            status: data.status || STATUS.ATIVO,
+            nome_completo: cleanString(data.nome_completo || ""),
+            perfil_id: Number(data.perfil_id),
+            cpf: onlyNumbers(data.cpf || ""),
+            cnpj: data.cnpj ? onlyNumbers(data.cnpj) : null,
+            telefone: data.telefone ? onlyNumbers(data.telefone) : null,
+            telefone_recado: onlyNumbers(data.telefone_recado) || null,
+            status: (data.status as "PENDENTE" | "ATIVO" | "INATIVO") || CADASTRO_STATUS.ATIVO,
             tipo_chave_pix: data.tipo_chave_pix || PIX_TYPES.CPF,
             chave_pix: data.chave_pix || null,
-            senha_padrao: data.status === STATUS.PENDENTE ? false : true
-        };
+            senha_padrao: data.status === CADASTRO_STATUS.PENDENTE ? false : true
+        } as Partial<Usuario>;
 
-        if (usuarioData.perfil_id) usuarioData.perfil_id = parseInt(usuarioData.perfil_id);
 
-        const { data: inserted, error } = await supabaseAdmin
+        const { error } = await supabaseAdmin
             .from("usuarios")
-            .insert([usuarioData])
-            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
-            .single();
+            .insert([usuarioData]);
 
         if (error) {
             console.error("[createUsuario] Erro no Banco:", error);
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
 
-            // Handle unique constraint violations
             if (error.code === '23505') {
                 if (error.message?.includes('cpf')) {
                     throw new AppError(messages.usuario.erro.cpfJaExiste, 409);
@@ -79,14 +79,13 @@ export const usuarioService = {
             throw error;
         }
 
-        return this.getUsuario(inserted.id);
+        return this.getUsuario(authUser.user.id);
     },
 
-    async updateUsuario(id: string, data: Partial<any>, executorId?: string): Promise<any> {
+    async updateUsuario(id: string, data: UpdateUsuarioDTO, executorId?: string): Promise<Usuario> {
         if (!id) throw new AppError(messages.usuario.erro.idObrigatorio);
 
-        // Security check: Prevent self-deactivation if setting to INATIVO
-        if (data.status === 'INATIVO' || data.ativo === false) {
+        if (data.status === CADASTRO_STATUS.INATIVO) {
             if (executorId === id) {
                 throw new AppError(messages.usuario.erro.autoDesativacao);
             }
@@ -103,27 +102,24 @@ export const usuarioService = {
             throw fetchError;
         }
 
-        // Extract fields that don't belong to the 'usuarios' table or are handled separately
-        const { links, turnos, cliente_id, empresa_id, ativo, silent, id: _, created_at, updated_at, ...rest } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { links, turnos, cliente_id, empresa_id, ativo, silent, created_at, updated_at, ...rest } = data;
 
-        const usuarioData: any = { ...rest };
-        if (ativo !== undefined) {
-            usuarioData.status = ativo ? STATUS.ATIVO : STATUS.INATIVO;
-        }
-        if (data.nome_completo !== undefined) usuarioData.nome_completo = cleanString(data.nome_completo);
+        const usuarioData: Partial<Usuario> = { ...rest } as Partial<Usuario>;
+
+        if (data.nome_completo !== undefined) usuarioData.nome_completo = cleanString(data.nome_completo || "");
         if (data.cpf !== undefined) {
-            const novoCpf = onlyDigits(data.cpf);
+            const novoCpf = onlyNumbers(data.cpf || "");
             usuarioData.cpf = novoCpf;
 
-            // Lógica de inteligência: trocar senha se for padrão e CPF mudou
             if (usuarioAtual.senha_padrao) {
-                const cpfAtual = onlyDigits(usuarioAtual.cpf);
+                const cpfAtual = onlyNumbers(usuarioAtual.cpf || "");
                 if (novoCpf !== cpfAtual) {
                     const novaSenha = novoCpf.substring(0, 6);
                     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
                         password: novaSenha
                     });
-                    
+
                     if (authError) {
                         console.error("[updateUsuario] Falha ao atualizar senha no Auth:", authError);
                         throw authError;
@@ -131,31 +127,30 @@ export const usuarioService = {
                 }
             }
         }
-        if (data.telefone !== undefined) usuarioData.telefone = onlyDigits(data.telefone);
+        if (data.telefone !== undefined) usuarioData.telefone = data.telefone ? onlyNumbers(data.telefone) : null;
         if (data.telefone_recado !== undefined) {
-            usuarioData.telefone_recado = data.telefone_recado?.trim() === "" ? null : onlyDigits(data.telefone_recado);
+            usuarioData.telefone_recado = onlyNumbers(data.telefone_recado) || null;
         }
         if (data.cnpj !== undefined) {
-            usuarioData.cnpj = data.cnpj?.trim() === "" ? null : data.cnpj;
+            usuarioData.cnpj = data.cnpj ? onlyNumbers(data.cnpj) : null;
         }
         if (data.tipo_chave_pix !== undefined) {
             usuarioData.tipo_chave_pix = data.tipo_chave_pix || PIX_TYPES.CPF;
+        }
+        if (data.status !== undefined) {
+            usuarioData.status = data.status as "PENDENTE" | "ATIVO" | "INATIVO";
         }
         if (data.chave_pix !== undefined) {
             usuarioData.chave_pix = data.chave_pix || null;
         }
 
-
-        const { data: updated, error } = await supabaseAdmin
+        const { error } = await supabaseAdmin
             .from("usuarios")
             .update(usuarioData)
-            .eq("id", id)
-            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
-            .single();
+            .eq("id", id);
 
         if (error) {
             console.error("[updateUsuario] Erro no Banco:", error);
-            // Handle unique constraint violations
             if (error.code === '23505') {
                 if (error.message?.includes('cpf')) {
                     throw new AppError(messages.usuario.erro.cpfJaExiste, 409);
@@ -170,7 +165,7 @@ export const usuarioService = {
         return this.getUsuario(id);
     },
 
-    async getUsuario(id: string): Promise<any> {
+    async getUsuario(id: string): Promise<Usuario> {
         const { data, error } = await supabaseAdmin
             .from("usuarios")
             .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*)))")
@@ -178,10 +173,9 @@ export const usuarioService = {
             .single();
         if (error) throw error;
 
-        // Fetch Links separately (or could use join if configured)
         const links = await colaboradorClienteService.listLinks(id);
 
-        return { ...data, links }; // Return nested links
+        return { ...data, links } as Usuario;
     },
 
     async listUsuarios(filtros?: {
@@ -190,7 +184,7 @@ export const usuarioService = {
         cliente_id?: number;
         empresa_id?: number;
         status?: string;
-    }): Promise<any[]> {
+    }): Promise<Usuario[]> {
         let query = supabaseAdmin
             .from("usuarios")
             .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia))")
@@ -206,9 +200,11 @@ export const usuarioService = {
 
         if (filtros?.status && filtros.status !== "todos") {
             if (filtros.status === 'ativo') {
-                query = query.eq("status", STATUS.ATIVO);
+                query = query.eq("status", CADASTRO_STATUS.ATIVO);
             } else if (filtros.status === 'inativo') {
-                query = query.eq("status", STATUS.INATIVO);
+                query = query.eq("status", CADASTRO_STATUS.INATIVO);
+            } else if (filtros.status === 'pendente') {
+                query = query.eq("status", CADASTRO_STATUS.PENDENTE);
             } else {
                 query = query.eq("status", filtros.status.toUpperCase());
             }
@@ -219,42 +215,35 @@ export const usuarioService = {
 
         let result = users || [];
 
-
-        // Apply Link Filters (Client/Company)
         if (filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos') {
-            result = result.filter((u: any) =>
-                u.links?.some((l: any) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
+            result = result.filter((u: Usuario) =>
+                u.links?.some((l) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
             );
         }
 
         if (filtros?.empresa_id && filtros.empresa_id.toString() !== 'todos') {
-            result = result.filter((u: any) =>
-                u.links?.some((l: any) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
+            result = result.filter((u: Usuario) =>
+                u.links?.some((l) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
             );
         }
 
-
-        return result;
+        return (result || []) as Usuario[];
     },
 
     async deleteUsuario(id: string, executorId?: string): Promise<void> {
         if (!id) throw new AppError(messages.usuario.erro.idObrigatorio);
 
-        // Security check: Prevent self-deletion
         if (executorId === id) {
             throw new AppError(messages.usuario.erro.autoExclusao);
         }
 
-        // Delete from Auth (Cascade should handle public.usuarios if configured, otherwise we delete manually too)
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
         if (authError) {
             console.warn("User not found in Auth during delete, attempting DB delete:", authError.message);
         }
 
-        // Explicitly delete links first to ensure no FK constraint issues
         await supabaseAdmin.from("colaborador_clientes").delete().eq("colaborador_id", id);
 
-        // Always try to delete from public DB to ensure consistency (idempotent if cascade worked)
         const { error } = await supabaseAdmin
             .from("usuarios")
             .delete()
@@ -264,7 +253,7 @@ export const usuarioService = {
     },
 
     async updateStatus(id: string, novoStatus: string, executorId?: string): Promise<string> {
-        if (novoStatus === 'INATIVO' && executorId === id) {
+        if (novoStatus === CADASTRO_STATUS.INATIVO && executorId === id) {
             throw new AppError(messages.usuario.erro.autoDesativacao);
         }
 
@@ -275,5 +264,46 @@ export const usuarioService = {
 
         if (error) throw new AppError(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`, 500);
         return novoStatus;
+    },
+
+    async resetPassword(id: string, executorId?: string): Promise<void> {
+        if (!id) throw new AppError(messages.usuario.erro.idObrigatorio);
+
+        const { data: usuarioAtual, error: fetchError } = await supabaseAdmin
+            .from("usuarios")
+            .select("cpf")
+            .eq("id", id)
+            .single();
+
+        if (fetchError || !usuarioAtual?.cpf) {
+            console.error("[resetPassword] Erro ao buscar usuário atual ou CPF não encontrado:", fetchError);
+            throw new AppError("Usuário ou CPF não encontrado para redefinição de senha.", 404);
+        }
+
+        const cpfDigits = onlyNumbers(usuarioAtual.cpf);
+        if (cpfDigits.length < 6) {
+             throw new AppError("CPF inválido curto demais para gerar a senha.");
+        }
+
+        const novaSenha = cpfDigits.substring(0, 6);
+
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+            password: novaSenha
+        });
+
+        if (authError) {
+            console.error("[resetPassword] Falha ao atualizar senha no Auth:", authError);
+            throw new AppError("Erro ao redefinir a senha no provedor de autenticação.", 500);
+        }
+
+        const { error: dbError } = await supabaseAdmin
+            .from("usuarios")
+            .update({ senha_padrao: true })
+            .eq("id", id);
+
+        if (dbError) {
+             console.error("[resetPassword] Falha ao atualizar flag: ", dbError);
+             throw new AppError("Senha alterada, mas falhou ao atualizar a flag no banco.", 500);
+        }
     },
 };

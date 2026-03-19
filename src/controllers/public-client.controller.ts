@@ -12,7 +12,7 @@ export const PublicClientController = {
   async listCollaborators(request: FastifyRequest, reply: FastifyReply) {
     const { uuid } = publicIdSchema.parse(request.params);
     const client = await publicClientService.getClientByPublicId(uuid);
-    const result = await publicClientService.listCollaborators(client.id);
+    const result = await publicClientService.listCollaborators(client.id!);
     return reply.send(result);
   },
 
@@ -20,7 +20,7 @@ export const PublicClientController = {
     const { uuid } = publicIdSchema.parse(request.params);
     const { date } = controlePontoPublicSchema.parse(request.query);
     const client = await publicClientService.getClientByPublicId(uuid);
-    const result = await publicClientService.getControlePonto(client.id, date);
+    const result = await publicClientService.getControlePonto(client.id!, date);
     return reply.send(result);
   },
 
@@ -30,7 +30,7 @@ export const PublicClientController = {
     const { mes, ano } = espelhoPontoPublicSchema.parse(request.query);
     
     const client = await publicClientService.getClientByPublicId(uuid);
-    const result = await publicClientService.getEspelhoPonto(client.id, usuario_id, mes, ano);
+    const result = await publicClientService.getEspelhoPonto(client.id!, usuario_id, mes, ano);
     return reply.send(result);
   }
 };

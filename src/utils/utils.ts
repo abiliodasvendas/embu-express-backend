@@ -1,3 +1,5 @@
+import { Pausa, RegistroPonto } from "../types/database.js";
+
 export function cleanString(str: string, capitalize = false) {
   if (!str) return "";
 
@@ -12,6 +14,19 @@ export function cleanString(str: string, capitalize = false) {
   }
 
   return cleaned;
+}
+
+/**
+ * Converte uma string para um formato de slug/nome interno (lowercase, sem espaços, sem acentos)
+ */
+export function slugify(value: string): string {
+  if (!value) return "";
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 export const moneyToNumber = (value: string): number => {
@@ -32,15 +47,20 @@ export const toLocalDateString = (date: Date = new Date()): string => {
     month: '2-digit',
     day: '2-digit',
   });
-  
+
   const parts = formatter.formatToParts(date);
   const find = (type: string) => parts.find(p => p.type === type)?.value;
-  
+
   return `${find('year')}-${find('month')}-${find('day')}`;
 };
 
-export const onlyDigits = (value: string): string => {
-  return value.replace(/\D/g, '');
+/**
+ * Remove todos os caracteres que não são dígitos de uma string.
+ * Útil para limpar CPFs, CNPJs, CEPs, etc antes de enviar para o banco.
+ */
+export function onlyNumbers(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  return value.toString().replace(/\D/g, "");
 }
 
 /**
@@ -71,3 +91,27 @@ export const toBRTime = (dateInput: string | Date): string => {
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   return getNowBR(date);
 };
+
+export function formatPausa(pa: Pausa): Pausa {
+  if (!pa) return pa;
+  return {
+    ...pa,
+    inicio_hora: pa.inicio_hora ? toBRTime(pa.inicio_hora) : "",
+    fim_hora: pa.fim_hora ? toBRTime(pa.fim_hora) : null,
+    created_at: pa.created_at ? toBRTime(pa.created_at) : undefined,
+    updated_at: pa.updated_at ? toBRTime(pa.updated_at) : undefined
+  };
+}
+
+export function formatPoint(p: Partial<RegistroPonto> | RegistroPonto): RegistroPonto {
+  if (!p) return p as RegistroPonto;
+  const result = { ...p } as RegistroPonto;
+  if (result.entrada_hora) result.entrada_hora = toBRTime(result.entrada_hora);
+  if (result.saida_hora) result.saida_hora = toBRTime(result.saida_hora);
+  if (result.created_at) result.created_at = toBRTime(result.created_at);
+  if (result.updated_at) result.updated_at = toBRTime(result.updated_at);
+  if (result.pausas && Array.isArray(result.pausas)) {
+    result.pausas = result.pausas.map(formatPausa);
+  }
+  return result;
+}

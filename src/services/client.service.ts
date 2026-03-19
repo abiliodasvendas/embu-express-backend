@@ -1,23 +1,24 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { cleanString } from "../utils/utils.js";
-import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
+import { cleanString, onlyNumbers } from "../utils/utils.js";
+import { FilterOptions } from "../constants/filters.enum.js";
 import { AppError } from "../errors/AppError.js";
 
+import { clientSchema, updateClientSchema, listClientSchema } from "../schemas/client.schema.js";
+import { z } from "zod";
+import { Client } from "../types/database.js";
+
+type CreateClientDTO = z.infer<typeof clientSchema>;
+type UpdateClientDTO = z.infer<typeof updateClientSchema>;
+type ListClientDTO = z.infer<typeof listClientSchema>;
+
 export const clientService = {
-    async createClient(data: any): Promise<any> {
+    async createClient(data: CreateClientDTO): Promise<Client> {
         if (!data.nome_fantasia) throw new AppError(messages.cliente.erro.nomeObrigatorio, 400);
 
-        // Remover campos que não existem no banco ou não devem ser inseridos manualmente
-        const { silent, id, created_at, updated_at, ...rest } = data;
-
-        const clientData: any = {
-            ...rest,
+        const clientData = {
             nome_fantasia: cleanString(data.nome_fantasia),
-            razao_social: data.razao_social ? cleanString(data.razao_social) : null,
-            ativo: data.ativo !== undefined ? data.ativo : true,
-            cnpj: data.cnpj ? data.cnpj.replace(/\D/g, "") : null,
-            cep: data.cep ? data.cep.replace(/\D/g, "") : null,
+            ativo: data.ativo ?? true,
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -36,17 +37,11 @@ export const clientService = {
         return inserted;
     },
 
-    async updateClient(id: number, data: Partial<any>): Promise<any> {
+    async updateClient(id: number, data: UpdateClientDTO): Promise<Client> {
         if (!id) throw new AppError(messages.cliente.erro.idObrigatorio, 400);
 
-        // Remover campos que não devem ser atualizados diretamente ou que vêm do frontend mas não existem no banco
-        const { id: _, created_at, updated_at, silent, ...rest } = data;
-
-        const clientData: any = { ...rest };
+        const clientData: Partial<Client> = { ...data } as Partial<Client>;
         if (data.nome_fantasia) clientData.nome_fantasia = cleanString(data.nome_fantasia);
-        if (data.razao_social) clientData.razao_social = cleanString(data.razao_social);
-        if (data.cnpj) clientData.cnpj = data.cnpj.replace(/\D/g, "");
-        if (data.cep) clientData.cep = data.cep.replace(/\D/g, "");
 
         const { data: updated, error } = await supabaseAdmin
             .from("clientes")
@@ -62,7 +57,7 @@ export const clientService = {
             throw error;
         }
 
-        return updated;
+        return updated as Client;
     },
 
     async deleteClient(id: number): Promise<void> {
@@ -72,38 +67,29 @@ export const clientService = {
         if (error) throw error;
     },
 
-    async getClient(id: number): Promise<any> {
+    async getClient(id: number): Promise<Client> {
         const { data, error } = await supabaseAdmin
             .from("clientes")
-            .select("*")
+            .select("*, unidades:unidades_cliente(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
-        return data;
+        return data as Client & { unidades: any[] };
     },
 
-    async listClients(filtros?: {
-        searchTerm?: string;
-        ativo?: string;
-        includeId?: string;
-    }): Promise<any[]> {
+    async listClients(filtros?: ListClientDTO): Promise<Client[]> {
         let query = supabaseAdmin
             .from("clientes")
             .select("*")
             .order("nome_fantasia", { ascending: true });
 
         if (filtros?.searchTerm) {
-            const cleanSearch = filtros.searchTerm.replace(/\D/g, "");
-            let orClause = `nome_fantasia.ilike.%${filtros.searchTerm}%,razao_social.ilike.%${filtros.searchTerm}%`;
-
-            if (cleanSearch) {
-                orClause += `,cnpj.ilike.%${cleanSearch}%`;
-            }
+            let orClause = `nome_fantasia.ilike.%${filtros.searchTerm}%`;
 
             query = query.or(orClause);
         }
 
-        if (filtros?.ativo !== undefined && filtros.ativo !== CADASTRO_STATUS.TODOS) {
+        if (filtros?.ativo !== undefined && filtros.ativo !== FilterOptions.TODOS) {
             if (filtros.includeId) {
                 query = query.or(`ativo.eq.${filtros.ativo === "true"},id.eq.${filtros.includeId}`);
             } else {
@@ -116,7 +102,7 @@ export const clientService = {
         const { data, error } = await query;
         if (error) throw error;
 
-        return data || [];
+        return (data || []) as Client[];
     },
     async toggleAtivo(id: number, novoStatus: boolean): Promise<boolean> {
         const { error } = await supabaseAdmin

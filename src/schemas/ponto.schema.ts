@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FilterOptions } from "../constants/filters.enum.js";
 
 export const locationSchema = z.object({
   latitude: z.number().nullable().optional(),
@@ -36,8 +37,8 @@ export const togglePontoSchema = z.object({
 
 export const listPontoSchema = z.object({
   data_referencia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  usuario_id: z.string().uuid().optional().or(z.literal("todos")),
-  cliente_id: z.string().optional().or(z.literal("todos")),
+  usuario_id: z.string().uuid().optional().or(z.literal(FilterOptions.TODOS)),
+  cliente_id: z.string().optional().or(z.literal(FilterOptions.TODOS)),
   incluir_todos: z.string().transform(v => v === "true").optional(),
   searchTerm: z.string().optional(),
 });

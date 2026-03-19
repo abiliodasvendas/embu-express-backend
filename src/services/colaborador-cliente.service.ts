@@ -2,6 +2,7 @@ import { logger } from "../config/logger.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { AppError } from "../errors/AppError.js";
+import { ColaboradorCliente } from "../types/database.js";
 
 export const colaboradorClienteService = {
     /**
@@ -10,10 +11,10 @@ export const colaboradorClienteService = {
      * Remove tudo e cria de novo, ou Atualiza inteligentes.
      * Pela simplicidade inicial pedida: Delete All + Insert All para o usuário.
      */
-    async syncLinks(usuarioId: string, links: any[]): Promise<any[]> {
+    async syncLinks(usuarioId: string, links: ColaboradorCliente[]): Promise<ColaboradorCliente[]> {
         if (!usuarioId) throw new AppError(messages.usuario.erro.idObrigatorio, 400);
 
-        // 1. Remove vínculos anteriores
+        // 1. Remove vínculos anteriores (CASCADE delete no banco deve remover os horários)
         const { error: deleteError } = await supabaseAdmin
             .from("colaborador_clientes")
             .delete()
@@ -23,58 +24,75 @@ export const colaboradorClienteService = {
 
         if (!links || links.length === 0) return [];
 
-        // 2. Prepara novos vínculos
-        const linksToInsert = links.map(link => ({
-            colaborador_id: usuarioId,
-            cliente_id: link.cliente_id,
-            empresa_id: link.empresa_id,
-            hora_inicio: link.hora_inicio,
-            hora_fim: link.hora_fim,
-            valor_contrato: link.valor_contrato,
-            valor_aluguel: link.valor_aluguel,
-            valor_bonus: link.valor_bonus,
-            ajuda_custo: link.ajuda_custo,
-            data_inicio: link.data_inicio,
-            data_fim: link.data_fim,
-            valor_adiantamento: link.valor_adiantamento
-        }));
+        const results: ColaboradorCliente[] = [];
 
-        // 3. Insere novos
-        const { data: inserted, error: insertError } = await supabaseAdmin
-            .from("colaborador_clientes")
-            .insert(linksToInsert)
-            .select("*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia)");
+        // Por simplicidade e para garantir o ID de cada vínculo antes de inserir os horários,
+        // faremos a inserção um a um nesta fase de transição.
+        for (const link of links) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { horarios, id: _, created_at: __, updated_at: ___, ...linkData } = link;
+            
+            const payload = {
+                ...linkData,
+                colaborador_id: usuarioId
+            };
 
-        if (insertError) throw insertError;
+            const { data: insertedLink, error: insertLinkError } = await supabaseAdmin
+                .from("colaborador_clientes")
+                .insert(payload)
+                .select("*, cliente:clientes(nome_fantasia), unidade:unidades_cliente(nome_unidade), empresa:empresas(nome_fantasia)")
+                .single();
 
-        return inserted || [];
+            if (insertLinkError) throw insertLinkError;
+
+            if (horarios && horarios.length > 0) {
+                const horariosToInsert = (horarios as any[]).map(h => ({
+                    colaborador_cliente_id: (insertedLink as any).id,
+                    dia_semana: h.dia_semana,
+                    hora_inicio: h.hora_inicio,
+                    hora_fim: h.hora_fim,
+                    tolerancia_pausa_min: h.tolerancia_pausa_min || 0
+                }));
+
+                const { error: horariosError } = await supabaseAdmin
+                    .from("colaborador_cliente_horarios")
+                    .insert(horariosToInsert);
+
+                if (horariosError) throw horariosError;
+                (insertedLink as any).horarios = horarios;
+            }
+
+            results.push(insertedLink as unknown as ColaboradorCliente);
+        }
+
+        return results;
     },
 
-    async listLinks(usuarioId: string): Promise<any[]> {
+    async listLinks(usuarioId: string): Promise<ColaboradorCliente[]> {
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
-            .select("*, cliente:clientes(*), empresa:empresas(*)")
+            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), empresa:empresas(*), horarios:colaborador_cliente_horarios(*)")
             .eq("colaborador_id", usuarioId)
-            .order("hora_inicio", { ascending: true });
+            .order("created_at", { ascending: true });
 
         if (error) throw error;
-        return data || [];
+        return (data || []) as ColaboradorCliente[];
     },
 
-    async getAllLinksByCliente(clienteId: number): Promise<any[]> {
+    async getAllLinksByCliente(clienteId: number): Promise<ColaboradorCliente[]> {
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
-            .select("*, colaborador:usuarios(*)")
+            .select("*, colaborador:usuarios(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
             .eq("cliente_id", clienteId)
             .order("nome_completo", { referencedTable: "usuarios", ascending: true });
 
         if (error) throw error;
-        return data || [];
+        return (data || []) as ColaboradorCliente[];
     },
 
-    async createLink(linkData: any): Promise<any> {
+    async createLink(linkData: Partial<ColaboradorCliente>): Promise<ColaboradorCliente> {
         logger.info({ linkData }, "[colaboradorClienteService] Criando vínculo");
-        const { silent, id, created_at, updated_at, ...rest } = linkData;
+        const { id, created_at, updated_at, horarios, ...rest } = linkData;
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .insert(rest)
@@ -82,12 +100,25 @@ export const colaboradorClienteService = {
             .single();
 
         if (error) throw error;
-        return data;
+
+        if (horarios && horarios.length > 0) {
+            const horariosToInsert = horarios.map(h => ({
+                colaborador_cliente_id: data.id,
+                dia_semana: h.dia_semana,
+                hora_inicio: h.hora_inicio,
+                hora_fim: h.hora_fim,
+                tolerancia_pausa_min: h.tolerancia_pausa_min || 0
+            }));
+            await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+        }
+
+        return data as ColaboradorCliente;
     },
 
-    async updateLink(id: number, linkData: any): Promise<any> {
+    async updateLink(id: number, linkData: Partial<ColaboradorCliente>): Promise<ColaboradorCliente> {
         logger.info({ id, linkData }, "[colaboradorClienteService] Atualizando vínculo");
-        const { silent, id: _, created_at, updated_at, ...rest } = linkData;
+        const { id: _, created_at, updated_at, horarios, ...rest } = linkData;
+        
         const { data, error } = await supabaseAdmin
             .from("colaborador_clientes")
             .update(rest)
@@ -96,7 +127,24 @@ export const colaboradorClienteService = {
             .single();
 
         if (error) throw error;
-        return data;
+
+        if (horarios) {
+            // Remove antigos e insere novos para simplificar o sync dos horários do dia
+            await supabaseAdmin.from("colaborador_cliente_horarios").delete().eq("colaborador_cliente_id", id);
+            
+            if (horarios.length > 0) {
+                const horariosToInsert = horarios.map(h => ({
+                    colaborador_cliente_id: id,
+                    dia_semana: h.dia_semana,
+                    hora_inicio: h.hora_inicio,
+                    hora_fim: h.hora_fim,
+                    tolerancia_pausa_min: h.tolerancia_pausa_min || 0
+                }));
+                await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+            }
+        }
+
+        return data as ColaboradorCliente;
     },
 
     async deleteLink(id: number): Promise<void> {

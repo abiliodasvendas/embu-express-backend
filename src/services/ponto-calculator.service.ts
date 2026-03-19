@@ -2,6 +2,7 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
 import { getNowBR, toLocalDateString } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
+import { DetalhesCalculo, ColaboradorCliente } from "../types/database.js";
 
 // Helper para extrair HH e MM de string (ISO ou HH:mm)
 export function parseTime(timeStr: string): [number, number] {
@@ -36,15 +37,15 @@ export const pontoCalculatorService = {
         pausasKmTrabalhado: number = 0,
         pausasKmPausa: number = 0,
         clienteId?: number,
-        snapshotTurno?: { hora_inicio: string; hora_fim: string; tolerancia_pausa_min?: number },
+        snapshotTurno?: Partial<ColaboradorCliente>,
         colaboradorClienteId?: number
-    ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: any; saldo_minutos: number | null; melhorTurno?: any }> {
+    ): Promise<{ status_entrada: string; status_saida: string; detalhes_calculo: DetalhesCalculo; saldo_minutos: number | null; melhorTurno?: Partial<ColaboradorCliente> | null }> {
         // Default values
         let status_entrada = PONTO_STATUS.CINZA;
         let status_saida = PONTO_STATUS.CINZA;
         let saldo_minutos: number | null = null;
 
-        const detalhes: any = {
+        const detalhes: DetalhesCalculo = {
             entrada: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
             saida: { turno_base: null, diff_minutos: 0, tolerancia: 0 },
             resumo: {
@@ -71,8 +72,10 @@ export const pontoCalculatorService = {
         detalhes.entrada.tolerancia = limiteAmarelo;
         detalhes.saida.tolerancia = 0;
         detalhes.saida.limite_he_excessiva = limiteHEExcessiva;
-
-        let melhorTurno: any = null;
+        let melhorTurno: Partial<ColaboradorCliente> | null = null;
+        const dateObj = new Date(entrada);
+        let dayOfWeek = dateObj.getDay();
+        if (dayOfWeek === 0) dayOfWeek = 7; // Standard: 1=Mon, 7=Sun
 
         if (snapshotTurno) {
             melhorTurno = snapshotTurno;
@@ -80,28 +83,33 @@ export const pontoCalculatorService = {
             // 2. Buscar turnos (Links)
             const { data: todosOsTurnos } = await supabaseAdmin
                 .from("colaborador_clientes")
-                .select("*")
+                .select("*, horarios:colaborador_cliente_horarios(*)")
                 .eq("colaborador_id", usuarioId);
 
             const hoje = toLocalDateString();
-            const turnos = todosOsTurnos?.filter(t => !t.data_fim || t.data_fim >= hoje) || [];
+            const turnosValidos = (todosOsTurnos || [])
+                .filter(t => !t.data_fim || t.data_fim >= hoje)
+                // Filtra apenas turnos que possuem configuração para o dia da semana atual
+                .filter(t => t.horarios && t.horarios.length > 0 && t.horarios.some((h: any) => h.dia_semana === dayOfWeek));
 
-            if (turnos.length > 0) {
+            if (turnosValidos.length > 0) {
                 const [hEntrada, mEntrada] = parseTime(entrada);
                 const entradaMinutosTotal = hEntrada * 60 + mEntrada;
 
                 if (colaboradorClienteId) {
-                    melhorTurno = turnos.find(t => String(t.id) === String(colaboradorClienteId));
+                    melhorTurno = turnosValidos.find(t => String(t.id) === String(colaboradorClienteId)) || null;
                 }
 
                 if (!melhorTurno && clienteId) {
-                    melhorTurno = turnos.find(t => t.cliente_id === clienteId);
+                    melhorTurno = turnosValidos.find(t => t.cliente_id === clienteId) || null;
                 }
 
                 if (!melhorTurno) {
                     let menorDiff = Infinity;
-                    turnos.forEach(turno => {
-                        const [hT, mT] = parseTime(turno.hora_inicio);
+                    turnosValidos.forEach(turno => {
+                        const hConfig = turno.horarios?.find((h: any) => h.dia_semana === dayOfWeek);
+                        const expectedStart = hConfig?.hora_inicio;
+                        const [hT, mT] = parseTime(expectedStart);
                         const turnoInicioMinutos = hT * 60 + mT;
                         const diff = Math.abs(entradaMinutosTotal - turnoInicioMinutos);
                         if (diff < menorDiff) {
@@ -113,17 +121,22 @@ export const pontoCalculatorService = {
             }
         }
 
+        const hConfig = melhorTurno?.horarios?.find((h: any) => h.dia_semana === dayOfWeek);
+        const horaInicioBase = hConfig?.hora_inicio;
+        const horaFimBase = hConfig?.hora_fim;
+        const tolPausa = hConfig?.tolerancia_pausa_min ?? 0;
+
         // 3. Cálculos de Entrada
-        if (melhorTurno) {
+        if (horaInicioBase && horaFimBase) {
             const [hE, mE] = parseTime(entrada);
             const entradaMinutos = hE * 60 + mE;
-            const [hT, mT] = parseTime(melhorTurno.hora_inicio);
+            const [hT, mT] = parseTime(horaInicioBase);
             const turnoInicioMinutos = hT * 60 + mT;
 
             const diffEntradaRaw = entradaMinutos - turnoInicioMinutos;
             const diffEntrada = diffEntradaRaw > 720 ? diffEntradaRaw - 1440 : (diffEntradaRaw < -720 ? diffEntradaRaw + 1440 : diffEntradaRaw);
 
-            detalhes.entrada.turno_base = melhorTurno.hora_inicio;
+            detalhes.entrada.turno_base = horaInicioBase;
             detalhes.entrada.diff_minutos = diffEntrada;
 
             if (diffEntrada < 0) status_entrada = PONTO_STATUS.ANTECIPADA;
@@ -131,13 +144,13 @@ export const pontoCalculatorService = {
             else if (diffEntrada <= limiteAmarelo) status_entrada = PONTO_STATUS.AMARELO;
             else status_entrada = PONTO_STATUS.VERMELHO;
 
-            detalhes.saida.turno_base = melhorTurno.hora_fim;
+            detalhes.saida.turno_base = horaFimBase;
 
             // 4. Cálculos de Saída
             if (saida) {
                 const [hS, mS] = parseTime(saida);
                 const saidaMinutos = hS * 60 + mS;
-                const [hTF, mTF] = parseTime(melhorTurno.hora_fim);
+                const [hTF, mTF] = parseTime(horaFimBase);
                 const turnoFimMinutos = hTF * 60 + mTF;
 
                 const diffSaidaRaw = saidaMinutos - turnoFimMinutos;
@@ -154,7 +167,6 @@ export const pontoCalculatorService = {
                 const end = new Date(saida).getTime();
                 const brutoMinutos = Math.round((end - start) / 60000);
 
-                const tolPausa = melhorTurno?.tolerancia_pausa_min || 0;
                 const liquidoMinutos = brutoMinutos - Math.max(pausasMinutos, tolPausa);
 
                 detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;

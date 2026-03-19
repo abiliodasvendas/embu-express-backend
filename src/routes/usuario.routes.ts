@@ -10,6 +10,7 @@ const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.VER)] }, UsuarioController.list);
     app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.DELETAR)] }, UsuarioController.delete);
     app.patch("/:id/status", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.STATUS)] }, UsuarioController.updateStatus);
+    app.post("/:id/reset-password", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.EDITAR)] }, UsuarioController.resetPassword);
 
     // Rotas de Vínculos (Turnos) - Editam o usuário no final das contas
     app.post("/vinculos", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.EDITAR)] }, UsuarioController.createVinculo);

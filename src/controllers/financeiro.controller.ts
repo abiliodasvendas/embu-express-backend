@@ -2,6 +2,13 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { financeiroService } from "../services/financeiro.service.js";
 import { fecharMesSchema, getExtratoSchema } from "../types/dtos/financeiro.dto.js";
 
+interface AuthenticatedRequest extends FastifyRequest {
+    user?: {
+        id: string;
+        email: string;
+    };
+}
+
 export const FinanceiroController = {
   async getExtrato(request: FastifyRequest, reply: FastifyReply) {
     const { params, query } = getExtratoSchema.parse(request);
@@ -9,16 +16,18 @@ export const FinanceiroController = {
     return reply.send(result);
   },
 
-  async pagar(request: FastifyRequest, reply: FastifyReply) {
+  async pagar(request: AuthenticatedRequest, reply: FastifyReply) {
     const { params, body } = fecharMesSchema.parse(request);
-    const pagoPor = (request as any).user?.id;
+    const pagoPor = request.user?.id;
+    if (!pagoPor) return reply.status(401).send({ error: "Usuário não autenticado" });
     const result = await financeiroService.processarPagamento(params.usuarioId, body.mes, body.ano, pagoPor);
     return reply.send(result);
   },
 
-  async confirmarAdiantamento(request: FastifyRequest, reply: FastifyReply) {
+  async confirmarAdiantamento(request: AuthenticatedRequest, reply: FastifyReply) {
     const { params, body } = fecharMesSchema.parse(request);
-    const confirmadoPor = (request as any).user?.id;
+    const confirmadoPor = request.user?.id;
+    if (!confirmadoPor) return reply.status(401).send({ error: "Usuário não autenticado" });
     const result = await financeiroService.confirmarAdiantamento(params.usuarioId, body.mes, body.ano, confirmadoPor);
     return reply.send(result);
   },

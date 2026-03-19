@@ -1,23 +1,26 @@
+import { FilterOptions } from "../constants/filters.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { cleanString } from "../utils/utils.js";
-import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { AppError } from "../errors/AppError.js";
+import { cleanString, onlyNumbers } from "../utils/utils.js";
+import { Empresa } from "../types/database.js";
+import { empresaSchema, updateEmpresaSchema, listEmpresaSchema } from "../schemas/empresa.schema.js";
+import { z } from "zod";
+
+type CreateEmpresaDTO = z.infer<typeof empresaSchema>;
+type UpdateEmpresaDTO = z.infer<typeof updateEmpresaSchema>;
+type ListEmpresaDTO = z.infer<typeof listEmpresaSchema>;
 
 export const empresaService = {
-    async createEmpresa(data: any): Promise<any> {
+    async createEmpresa(data: CreateEmpresaDTO): Promise<Empresa> {
         if (!data.nome_fantasia) throw new AppError(messages.empresa.erro.nomeObrigatorio, 400);
 
-        // Remover campos que não existem no banco ou não devem ser inseridos manualmente
-        const { silent, id, created_at, updated_at, ...rest } = data;
-
-        const empresaData: any = {
-            ...rest,
+        const empresaData = {
+            ...data,
             nome_fantasia: cleanString(data.nome_fantasia),
             razao_social: data.razao_social ? cleanString(data.razao_social) : null,
-            codigo: data.codigo ? data.codigo.trim().toUpperCase() : null,
-            ativo: data.ativo !== undefined ? data.ativo : true,
-            cnpj: data.cnpj ? data.cnpj.replace(/\D/g, "") : null,
+            ativo: data.ativo ?? true,
+            cnpj: data.cnpj ? onlyNumbers(data.cnpj) : null,
         };
 
         const { data: inserted, error } = await supabaseAdmin
@@ -36,17 +39,13 @@ export const empresaService = {
         return inserted;
     },
 
-    async updateEmpresa(id: number, data: Partial<any>): Promise<any> {
+    async updateEmpresa(id: number, data: UpdateEmpresaDTO): Promise<Empresa> {
         if (!id) throw new AppError(messages.empresa.erro.idObrigatorio, 400);
 
-        // Remover campos que não devem ser atualizados diretamente ou que vêm do frontend mas não existem no banco
-        const { id: _, created_at, updated_at, silent, ...rest } = data;
-
-        const empresaData: any = { ...rest };
+        const empresaData: Partial<Empresa> = { ...data };
         if (data.nome_fantasia) empresaData.nome_fantasia = cleanString(data.nome_fantasia);
         if (data.razao_social) empresaData.razao_social = cleanString(data.razao_social);
-        if (data.codigo) empresaData.codigo = data.codigo.trim().toUpperCase();
-        if (data.cnpj) empresaData.cnpj = data.cnpj.replace(/\D/g, "");
+        if (data.cnpj) empresaData.cnpj = onlyNumbers(data.cnpj);
 
         const { data: updated, error } = await supabaseAdmin
             .from("empresas")
@@ -72,28 +71,24 @@ export const empresaService = {
         if (error) throw error;
     },
 
-    async getEmpresa(id: number): Promise<any> {
+    async getEmpresa(id: number): Promise<Empresa> {
         const { data, error } = await supabaseAdmin
             .from("empresas")
             .select("*")
             .eq("id", id)
             .single();
         if (error) throw error;
-        return data;
+        return data as Empresa;
     },
 
-    async listEmpresas(filtros?: {
-        searchTerm?: string;
-        ativo?: string;
-        includeId?: string;
-    }): Promise<any[]> {
+    async listEmpresas(filtros?: ListEmpresaDTO): Promise<Empresa[]> {
         let query = supabaseAdmin
             .from("empresas")
             .select("*")
             .order("nome_fantasia", { ascending: true });
 
         if (filtros?.searchTerm) {
-            const cleanSearch = filtros.searchTerm.replace(/\D/g, "");
+            const cleanSearch = onlyNumbers(filtros.searchTerm);
             let orClause = `nome_fantasia.ilike.%${filtros.searchTerm}%,razao_social.ilike.%${filtros.searchTerm}%`;
 
             if (cleanSearch) {
@@ -103,7 +98,7 @@ export const empresaService = {
             query = query.or(orClause);
         }
 
-        if (filtros?.ativo !== undefined && filtros.ativo !== CADASTRO_STATUS.TODOS) {
+        if (filtros?.ativo !== undefined && filtros.ativo !== FilterOptions.TODOS) {
             if (filtros.includeId) {
                 query = query.or(`ativo.eq.${filtros.ativo === "true"},id.eq.${filtros.includeId}`);
             } else {
@@ -116,7 +111,7 @@ export const empresaService = {
         const { data, error } = await query;
         if (error) throw error;
 
-        return data || [];
+        return (data || []) as Empresa[];
     },
 
     async toggleAtivo(id: number, novoStatus: boolean): Promise<boolean> {

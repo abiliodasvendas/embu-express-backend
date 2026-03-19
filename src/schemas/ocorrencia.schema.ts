@@ -28,4 +28,5 @@ export const listOcorrenciaSchema = z.object({
   data_inicio: z.string().optional(),
   data_fim: z.string().optional(),
   searchTerm: z.string().optional(),
+  tipo_id: z.string().transform(Number).optional(),
 });

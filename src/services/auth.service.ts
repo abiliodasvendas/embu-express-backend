@@ -1,22 +1,36 @@
-import { STATUS } from "../config/constants.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
-import { cleanString, onlyDigits } from "../utils/utils.js";
+import { cleanString, onlyNumbers } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
+
+export interface AuthUser {
+    id: string;
+    email?: string;
+    perfil_id?: number;
+    perfil_nome?: string;
+    senha_padrao?: boolean;
+    permissoes?: string[];
+}
 
 export interface AuthSession {
     access_token: string;
     refresh_token: string;
-    user: any;
+    user: AuthUser;
 }
 
 import { messages } from "../constants/messages.js";
 import { ROLES } from "../constants/permissions.enum.js";
 import { PIX_TYPES } from "../constants/financeiro.enum.js";
+import { loginSchema, registerSchema } from "../schemas/auth.schema.js";
+import { z } from "zod";
+import { Usuario } from "../types/database.js";
+
+type RegisterDTO = z.infer<typeof registerSchema>;
 
 export const authService = {
     async login(cpf: string, password: string): Promise<AuthSession> {
         // 1. Find user by CPF to get email
-        const cpfDigits = onlyDigits(cpf);
+        const cpfDigits = onlyNumbers(cpf);
         if (!cpfDigits) throw new AppError(messages.auth.erro.cpfSenhaObrigatorios, 400);
 
         const { data: user, error: userError } = await supabaseAdmin
@@ -37,9 +51,12 @@ export const authService = {
             throw new AppError(messages.auth.erro.usuarioNaoEncontrado, 404);
         }
 
-        if (user.status !== STATUS.ATIVO) {
-            if (user.status === STATUS.PENDENTE) {
+        if (user.status !== CADASTRO_STATUS.ATIVO) {
+            if (user.status === CADASTRO_STATUS.PENDENTE) {
                 throw new AppError(messages.auth.erro.cadastroPendente, 403);
+            }
+            if (user.status === CADASTRO_STATUS.INATIVO) {
+                throw new AppError(messages.auth.erro.contaInativa, 403);
             }
             throw new AppError(messages.auth.erro.acessoNegado, 403);
         }
@@ -55,9 +72,13 @@ export const authService = {
         }
 
         // Formatar as permissões para um array de strings simples: ["usuarios:ver", "perfis:criar"]
-        const permissoesArray = (user.perfil as any)?.perfil_permissoes?.map(
-            (pp: any) => pp.permissao.nome_interno
-        ) || [];
+        // Formatar as permissões para um array de strings simples: ["usuarios:ver", "perfis:criar"]
+        const rawPerfil = user.perfil as any;
+        const perfilData = Array.isArray(rawPerfil) ? rawPerfil[0] : rawPerfil;
+
+        const permissoesArray = (perfilData?.perfil_permissoes || []).map(
+            (pp: any) => pp.permissao?.[0]?.nome_interno || pp.permissao?.nome_interno
+        ).filter(Boolean);
 
         return {
             access_token: authData.session.access_token,
@@ -65,7 +86,7 @@ export const authService = {
             user: {
                 ...authData.user,
                 perfil_id: user.perfil_id,
-                perfil_nome: (user.perfil as any)?.nome,
+                perfil_nome: perfilData?.nome,
                 senha_padrao: user.senha_padrao,
                 permissoes: permissoesArray
             }
@@ -82,7 +103,7 @@ export const authService = {
         return {
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token,
-            user: data.user
+            user: data.user as AuthUser
         };
     },
 
@@ -90,7 +111,7 @@ export const authService = {
         await supabaseAdmin.auth.admin.signOut(token);
     },
 
-    async updatePassword(token: string, newPassword: string, oldPassword?: string): Promise<any> {
+    async updatePassword(token: string, newPassword: string, oldPassword?: string): Promise<AuthSession> {
         const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
         if (userError || !user) {
@@ -127,20 +148,20 @@ export const authService = {
         });
 
         if (signInError || !sessionData.session) {
-            throw new AppError("Senha atualizada, mas falha ao obter nova sessão. Faça o login novamente.", 500);
+            throw new AppError(messages.auth.erro.sessaoFalha, 500);
         }
 
         return {
             access_token: sessionData.session.access_token,
             refresh_token: sessionData.session.refresh_token,
-            user: sessionData.user
+            user: sessionData.user as AuthUser
         };
     },
 
-    async selfRegister(data: any): Promise<any> {
+    async selfRegister(data: RegisterDTO): Promise<Usuario> {
         const emailNormalizado = data.email?.toLowerCase().trim();
         const { password, ...profileData } = data;
-        const cpfDigits = onlyDigits(profileData.cpfcnpj || profileData.cpf);
+        const cpfDigits = onlyNumbers(profileData.cpf);
         const isCnpj = cpfDigits.length > 11;
         const nomeLimpo = cleanString(profileData.nome_completo, true);
 
@@ -169,7 +190,7 @@ export const authService = {
                 .single();
 
             if (!perfilMotoboy) {
-                throw new AppError("Perfil de motoboy não encontrado no sistema.", 500);
+                throw new AppError(messages.auth.erro.perfilNaoEncontrado, 500);
             }
 
             const perfilMotoboyId = perfilMotoboy.id;
@@ -179,23 +200,23 @@ export const authService = {
                 email: emailNormalizado,
                 nome_completo: nomeLimpo,
                 cpf: isCnpj ? null : cpfDigits,
-                cnpj: isCnpj ? cpfDigits : (profileData.cnpj?.trim() === "" ? null : profileData.cnpj),
+                cnpj: isCnpj ? cpfDigits : (onlyNumbers(profileData.cnpj) || null),
                 rg: profileData.rg || null,
-                telefone: onlyDigits(profileData.telefone),
-                telefone_recado: profileData.telefone_recado?.trim() === "" ? null : onlyDigits(profileData.telefone_recado),
+                telefone: onlyNumbers(profileData.telefone || ""),
+                telefone_recado: onlyNumbers(profileData.telefone_recado) || null,
                 data_nascimento: profileData.data_nascimento || null,
                 nome_mae: profileData.nome_mae || null,
                 endereco_completo: profileData.endereco_completo || null,
                 moto_modelo: profileData.moto_modelo?.trim() === "" ? null : profileData.moto_modelo,
                 moto_cor: profileData.moto_cor?.trim() === "" ? null : profileData.moto_cor,
                 moto_ano: profileData.moto_ano?.trim() === "" ? null : profileData.moto_ano,
-                moto_placa: profileData.moto_placa?.trim() === "" ? null : profileData.moto_placa.toUpperCase(),
+                moto_placa: profileData.moto_placa?.trim() === "" ? null : profileData.moto_placa?.toUpperCase(),
                 cnh_registro: profileData.cnh_registro?.trim() === "" ? null : profileData.cnh_registro,
                 cnh_vencimento: profileData.cnh_vencimento || null,
-                cnh_categoria: profileData.cnh_categoria?.trim() === "" ? null : profileData.cnh_categoria.toUpperCase(),
+                cnh_categoria: profileData.cnh_categoria?.trim() === "" ? null : profileData.cnh_categoria?.toUpperCase(),
                 chave_pix: profileData.chave_pix?.trim() === "" ? null : profileData.chave_pix,
                 tipo_chave_pix: profileData.tipo_chave_pix || PIX_TYPES.CPF,
-                status: STATUS.PENDENTE,
+                status: CADASTRO_STATUS.PENDENTE,
                 perfil_id: perfilMotoboyId
             };
 
