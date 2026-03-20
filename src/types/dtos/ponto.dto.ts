@@ -1,4 +1,4 @@
-import { Usuario, RegistroPonto, PontoLocation, DetalhesCalculo } from "../../types/database.js";
+import { Usuario, RegistroPonto, PontoLocation, DetalhesCalculo, Pausa } from "../../types/database.js";
 
 export interface PontoDTO {
   id: number;
@@ -15,6 +15,8 @@ export interface PontoDTO {
   cliente_id?: number | null;
   empresa_id?: number | null;
   detalhes_calculo?: DetalhesCalculo | null;
+  pausas?: Pausa[] | null;
+  usuario?: Usuario | null;
 }
 
 export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
@@ -32,7 +34,9 @@ export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
     location: ponto.entrada_loc,
     cliente_id: ponto.cliente_id,
     empresa_id: ponto.empresa_id,
-    detalhes_calculo: ponto.detalhes_calculo
+    detalhes_calculo: ponto.detalhes_calculo,
+    pausas: ponto.pausas || [],
+    usuario: ponto.usuario
   };
 }
 
