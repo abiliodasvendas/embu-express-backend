@@ -93,15 +93,29 @@ export const PontoController = {
   },
 
   async iniciarPausa(request: FastifyRequest, reply: FastifyReply) {
-    const data = iniciarPausaSchema.parse(request.body);
+    const { id } = request.params as any;
+    const data = iniciarPausaSchema.parse({
+        ...(request.body as object),
+        ponto_id: (request.body as any).ponto_id || (id ? Number(id) : undefined)
+    });
     const result = await pontoService.iniciarPausa(data);
     return reply.status(201).send(result);
   },
 
   async finalizarPausa(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().transform(Number) }).parse(request.params);
+    const { id: paramId } = (request.params as any) || {};
+    const { id: bodyId } = (request.body as any) || {};
+    const pausa_id = paramId ? Number(paramId) : bodyId;
+
+    if (!pausa_id) {
+        return reply.status(400).send({ 
+            status: "error", 
+            message: "ID da pausa é obrigatório." 
+        });
+    }
+
     const data = finalizarPausaSchema.parse(request.body);
-    const result = await pontoService.finalizarPausa(id, data);
+    const result = await pontoService.finalizarPausa(pausa_id, data);
     return reply.status(200).send(result);
   }
 };
