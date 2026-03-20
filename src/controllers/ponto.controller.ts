@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { pontoService } from "../services/ponto.service.js";
-import { createPontoSchema, updatePontoSchema, togglePontoSchema, listPontoSchema, relatorioMensalSchema, iniciarPausaSchema, finalizarPausaSchema } from "../schemas/ponto.schema.js";
+import { pontoRelatorioService } from "../services/ponto-relatorio.service.js";
+import { createPontoSchema, updatePontoSchema, togglePontoSchema, listPontoSchema, relatorioMensalSchema, iniciarPausaSchema, finalizarPausaSchema, espelhoPontoSchema } from "../schemas/ponto.schema.js";
 import { toPontoDTO, toPontoListDTO } from "../types/dtos/ponto.dto.js";
 import { z } from "zod";
 
@@ -56,7 +57,10 @@ export const PontoController = {
   },
 
   async getHoje(request: FastifyRequest, reply: FastifyReply) {
-    const { usuarioId } = z.object({ usuarioId: z.string().uuid() }).parse(request.params);
+    const { usuarioId } = z.object({ usuarioId: z.string().uuid() }).parse({
+        ...(request.params as object),
+        ...(request.query as object)
+    });
     const result = await pontoService.getPontoHoje(usuarioId);
     return reply.status(200).send(result ? toPontoDTO(result) : null);
   },
@@ -73,6 +77,18 @@ export const PontoController = {
         ...(request.query as object)
     });
     const result = await pontoService.getRelatorioMensal(usuario_id, mes, ano);
+    return reply.status(200).send(result);
+  },
+
+  async espelhoPonto(request: FastifyRequest, reply: FastifyReply) {
+    const { params, querystring } = espelhoPontoSchema.parse({
+        params: request.params,
+        querystring: request.query
+    });
+    const mes = querystring.mes || (new Date().getMonth() + 1);
+    const ano = querystring.ano || new Date().getFullYear();
+    
+    const result = await pontoRelatorioService.getEspelhoPonto(params.usuario_id, mes, ano);
     return reply.status(200).send(result);
   },
 

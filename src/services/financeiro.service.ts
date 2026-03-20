@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
-import { FINANCEIRO_STATUS, LANCAMENTO_TIPO } from "../constants/financeiro.enum.js";
+import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
 import { getNowBR, toBRTime } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
@@ -49,16 +49,23 @@ export const financeiroService = {
 
         const { data: links, error: linkError } = await supabaseAdmin
             .from("colaborador_clientes")
-            .select("*, cliente:clientes(*), unidade:unidades_cliente(*)")
+            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
             .eq("colaborador_id", usuarioId);
 
         if (linkError) throw linkError;
 
         const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-        const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
-        const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
+        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioStr, data_fim: dataFimStr });
+        // Buscar ocorrências e pontos do período
+        const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioMesStr, data_fim: dataFimMesStr });
+        const { data: pontos } = await supabaseAdmin
+            .from("pontos")
+            .select("*")
+            .eq("usuario_id", usuarioId)
+            .gte("data_referencia", dataInicioMesStr)
+            .lte("data_referencia", dataFimMesStr);
         
         const { data: confirmacaoAdiantamento } = await supabaseAdmin
             .from("confirmacoes_adiantamento")
@@ -71,59 +78,95 @@ export const financeiroService = {
         const adiantamentoConfirmado = !!confirmacaoAdiantamento;
 
         const resumoClientes = (links || []).map(link => {
-            const escalaSemanal = link.unidade?.escala_semanal || [1, 2, 3, 4, 5, 6]; 
+            const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
+            const dataFimTurno = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
+
+            let diasEscalaNoMesTotal = 0;   // Base (Divisor)
+            let diasEsperadosTurno = 0;     // Meta individual
+            const calendarioVisual: any[] = [];
+
+            // 1. Loop diário para análise de escala, vigência e status visual
+            const now = new Date();
+            const hojeLocalStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            const hojeFimDia = new Date(hojeLocalStr + 'T23:59:59');
+
+            for (let d = 1; d <= ultimoDiaMes; d++) {
+                const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
+                const dataReferenciaStr = dataAtual.toISOString().split('T')[0];
+                const diaSemana = dataAtual.getUTCDay();
+                
+                // O sistema agora é 100% dependente da escala flexível configurada.
+                // Dias não configurados na tabela de horários individuais não são considerados dias de escala.
+                const isDiaEscala = (link as any).horarios && (link as any).horarios.some((h: any) => h.dia_semana === diaSemana);
+
+                // Data para comparação de vigência
+                const dtComparacao = new Date(dataReferenciaStr + 'T12:00:00');
+                const isVigente = (!dataInicioTurno || dtComparacao >= dataInicioTurno) && (!dataFimTurno || dtComparacao <= dataFimTurno);
+                const isFuturo = dtComparacao > hojeFimDia;
+
+                if (isDiaEscala) {
+                    diasEscalaNoMesTotal++;
+                    if (isVigente) diasEsperadosTurno++;
+                }
+
+                // Status Visual
+                let status: string = CALENDARIO_STATUS.NAO_VIGENTE;
+                if (isVigente) {
+                    if (isFuturo) {
+                        status = CALENDARIO_STATUS.FUTURO;
+                    } else if (isDiaEscala) {
+                        const temPonto = (pontos || []).some(p => p.data_referencia === dataReferenciaStr && p.colaborador_cliente_id === link.id);
+                        status = temPonto ? CALENDARIO_STATUS.TRABALHADO : CALENDARIO_STATUS.FALTA;
+                    } else {
+                        status = CALENDARIO_STATUS.NAO_VIGENTE;
+                    }
+                }
+
+                // Só incluir se for dia de escala para visualização limpa
+                if (isDiaEscala) {
+                    const diasSemanaNomes = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
+                    const diasSemanaNomesLongos = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+                    
+                    calendarioVisual.push({
+                        data: dataReferenciaStr,
+                        data_br: dataReferenciaStr.split('-').reverse().join('/'),
+                        dia: d,
+                        dia_semana_curto: diasSemanaNomes[diaSemana],
+                        dia_semana_longo: diasSemanaNomesLongos[diaSemana],
+                        status,
+                        is_dia_escala: isDiaEscala
+                    });
+                }
+            }
+
+            if (diasEscalaNoMesTotal === 0) return null;
+
+            // 2. Contar Pontos Efetivos (Trabalhados)
+            const pontosDesteTurno = (pontos || []).filter(p => {
+                const dataPonto = new Date(p.data_referencia + 'T12:00:00');
+                if (p.colaborador_cliente_id !== link.id) return false;
+                if (dataInicioTurno && dataPonto < dataInicioTurno) return false;
+                if (dataFimTurno && dataPonto > dataFimTurno) return false;
+                return true;
+            });
+
+            const diasTrabalhados = pontosDesteTurno.length;
+
+            // 3. Regra de Bônus: Apenas se trabalhou 100% da escala MENSAL da unidade
+            const bonusEfetivo = diasTrabalhados >= diasEscalaNoMesTotal ? (link.valor_bonus || 0) : 0;
 
             const valorAdiantamentoConfig = link.valor_adiantamento || 0;
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
 
-            const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio) : null;
-            let diaInicioEfetivo = 1;
-            const diaFimEfetivo = ultimoDiaMes;
+            // 4. Cálculo do Pro-rata (Contrato + Ajuda + Aluguel - Adiantamento) + Bônus (Não pro-rata)
+            const baseFixaParaProRata = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0) - valorAdiantamentoEfetivo;
+            const valorCalculadoProRata = (baseFixaParaProRata / diasEscalaNoMesTotal) * diasTrabalhados;
+            const valorFinalComBonus = valorCalculadoProRata + bonusEfetivo;
 
-            if (dataInicioTurno) {
-                const mesInicio = dataInicioTurno.getUTCMonth() + 1;
-                const anoInicio = dataInicioTurno.getUTCFullYear();
-                if (anoInicio === ano && mesInicio === mes) {
-                    diaInicioEfetivo = dataInicioTurno.getUTCDate();
-                } else if (anoInicio > ano || (anoInicio === ano && mesInicio > mes)) {
-                    return null;
-                }
-            }
-
-            let diasUteisNoMesTotal = 0;
-            for (let d = 1; d <= ultimoDiaMes; d++) {
-                const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
-                const diaSemana = dataAtual.getUTCDay();
-                if (escalaSemanal.includes(diaSemana)) {
-                    diasUteisNoMesTotal++;
-                }
-            }
-
-            let diasAtivosNoMes = 0;
-            const datasAtivas: string[] = [];
-            for (let d = diaInicioEfetivo; d <= diaFimEfetivo; d++) {
-                const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
-                const diaSemana = dataAtual.getUTCDay();
-                if (escalaSemanal.includes(diaSemana)) {
-                    diasAtivosNoMes++;
-                    datasAtivas.push(dataAtual.toISOString().split('T')[0]);
-                }
-            }
-
-            const valorBonusEfetivo = (diasAtivosNoMes > 0 && diasAtivosNoMes === diasUteisNoMesTotal) 
-                ? (link.valor_bonus || 0) 
-                : 0;
-
-            const entradasFixas = (link.valor_contrato || 0) + valorBonusEfetivo + (link.ajuda_custo || 0) + (link.valor_aluguel || 0);
-            const saidasFixas = valorAdiantamentoEfetivo;
-            const saldoFixoTurno = entradasFixas - saidasFixas;
-
+            // Ocorrências vinculadas a este turno
             const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
             const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
             const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
-
-            const proRataBase = diasUteisNoMesTotal > 0 ? (saldoFixoTurno / diasUteisNoMesTotal) * diasAtivosNoMes : 0;
-            const valorFinalTurno = proRataBase + totalCreditosTurno - totalDebitosTurno;
 
             return {
                 cliente_id: link.cliente_id,
@@ -131,49 +174,46 @@ export const financeiroService = {
                 nome_fantasia: link.cliente?.nome_fantasia,
                 nome_unidade: link.unidade?.nome_unidade,
                 id_vinculo: link.id,
-                saldo_fixo_original: saldoFixoTurno,
+                saldo_fixo_original: baseFixaParaProRata + (link.valor_bonus || 0),
                 valores_fixos: {
                     contrato: link.valor_contrato || 0,
-                    bonus: valorBonusEfetivo,
+                    bonus: bonusEfetivo,
                     bonus_config: link.valor_bonus || 0,
                     ajuda_custo: link.ajuda_custo || 0,
                     aluguel: link.valor_aluguel || 0,
                     adiantamento: valorAdiantamentoEfetivo,
                     adiantamento_config: valorAdiantamentoConfig
                 },
-                dias_base_mes: diasUteisNoMesTotal,
-                dias_ativos_no_mes: diasAtivosNoMes,
-                datas_ativas: datasAtivas,
+                dias_base_mes: diasEscalaNoMesTotal,
+                dias_esperados_turno: diasEsperadosTurno,
+                dias_trabalhados: diasTrabalhados,
+                calendario_visual: calendarioVisual,
                 data_inicio: link.data_inicio || null,
                 data_fim: link.data_fim || null,
                 creditos_ocorrencia: totalCreditosTurno,
                 debitos_ocorrencia: totalDebitosTurno,
-                valor_calculado: parseFloat(valorFinalTurno.toFixed(2))
+                valor_calculado: parseFloat((valorFinalComBonus + totalCreditosTurno - totalDebitosTurno).toFixed(2))
             };
         }).filter((r): r is Exclude<typeof r, null> => r !== null);
 
+        // 5. Consolidação MEI
         const valorMeiTotal = usuario?.valor_mei || 0;
         let proRataMeiFinal = 0;
         let diasAtivosUnicos: string[] = [];
-        let diasBaseReferencia = 0;
+        let diasBaseReferencia = 26; // Padrão Seg-Sab caso não tenha turnos
 
-        if (valorMeiTotal > 0 && resumoClientes.length > 0) {
-            const todasDatasAtivas = resumoClientes.flatMap(r => r.datas_ativas);
-            diasAtivosUnicos = [...new Set(todasDatasAtivas)].sort();
+        if (valorMeiTotal > 0) {
+            // Dias únicos com presença em QUALQUER turno
+            const datasComPonto = [...new Set((pontos || []).map(p => p.data_referencia))].sort();
+            diasAtivosUnicos = datasComPonto;
 
-            const turnoPrincipal = resumoClientes.reduce((prev, current) => {
-                return (current.dias_ativos_no_mes > prev.dias_ativos_no_mes) ? current : prev;
-            }, resumoClientes[0]);
-
-            diasBaseReferencia = turnoPrincipal.dias_base_mes;
-            const diasAtivosTotais = diasAtivosUnicos.length;
-
-            if (diasBaseReferencia > 0) {
-                proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasAtivosTotais;
-                if (proRataMeiFinal > valorMeiTotal) {
-                    proRataMeiFinal = valorMeiTotal;
-                }
+            // Usamos a escala do primeiro turno como referência de base, ou 26 se vazio
+            if (resumoClientes.length > 0) {
+                diasBaseReferencia = resumoClientes[0].dias_base_mes;
             }
+
+            proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasAtivosUnicos.length;
+            if (proRataMeiFinal > valorMeiTotal) proRataMeiFinal = valorMeiTotal;
         }
 
         const ocorrenciasAvulsas = ocorrencias.filter(o => !o.colaborador_cliente_id && o.impacto_financeiro);
@@ -194,8 +234,8 @@ export const financeiroService = {
                 valor_original: valorMeiTotal,
                 valor_calculado: parseFloat(proRataMeiFinal.toFixed(2)),
                 dias_base: diasBaseReferencia,
-                dias_ativos: diasAtivosUnicos.length,
-                datas_ativas: diasAtivosUnicos
+                dias_trabalhados: diasAtivosUnicos.length,
+                datas_trabalhadas: diasAtivosUnicos
             },
             ocorrencias: ocorrencias,
             ocorrencias_avulsas: {

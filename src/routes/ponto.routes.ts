@@ -11,7 +11,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.post("/toggle", { preHandler: [verifyOperacional()] }, PontoController.toggle);
 
     // OPERACIONAL / ADMIN: Ver ponto de hoje (Usado pelo App para mostrar status)
-    app.get("/hoje", { preHandler: [verifyOperacional()] }, PontoController.list); // listPontos already handles query params for hoje? Wait, no.
+    app.get("/hoje", { preHandler: [verifyOperacional()] }, PontoController.getHoje); // listPontos already handles query params for hoje? Wait, no.
     
     // Actually the route /hoje was doing getPontoHoje(usuarioId) from query. 
     // And there is another /hoje/:usuarioId. 
@@ -34,6 +34,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // RELATÓRIOS
     app.get("/relatorio-mensal/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.relatorioMensal);
+    app.get("/espelho-ponto/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.espelhoPonto);
 
     // PAUSAS
     app.post("/pausa/inicio", { preHandler: [verifyOperacional()] }, PontoController.iniciarPausa);

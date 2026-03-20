@@ -61,3 +61,13 @@ export const finalizarPausaSchema = z.object({
   fim_km: z.number().optional().nullable(),
   fim_loc: locationSchema.optional().nullable(),
 });
+
+export const espelhoPontoSchema = z.object({
+    params: z.object({
+        usuario_id: z.string().uuid()
+    }),
+    querystring: z.object({
+        mes: z.string().transform(Number).optional(),
+        ano: z.string().transform(Number).optional()
+    })
+});
