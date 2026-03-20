@@ -187,7 +187,7 @@ export const usuarioService = {
     }): Promise<Usuario[]> {
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia))")
+            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia), horarios:colaborador_cliente_horarios(*))")
             .order("nome_completo", { ascending: true });
 
         if (filtros?.searchTerm) {

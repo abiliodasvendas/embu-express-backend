@@ -6,6 +6,7 @@ export interface ClientDTO {
   nome_fantasia: string;
   ativo: boolean;
   unidades?: any[];
+  created_at?: string;
 }
 
 export function toClientDTO(client: any): ClientDTO {
@@ -14,7 +15,8 @@ export function toClientDTO(client: any): ClientDTO {
     public_id: client.public_id,
     nome_fantasia: client.nome_fantasia,
     ativo: client.ativo,
-    unidades: client.unidades
+    unidades: client.unidades,
+    created_at: client.created_at,
   };
 }
 
