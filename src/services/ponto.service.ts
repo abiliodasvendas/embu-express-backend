@@ -43,8 +43,6 @@ export interface FiltrosPonto {
     empresa_id?: number;
     incluir_todos?: boolean;
     searchTerm?: string;
-    status_entrada?: string;
-    status_saida?: string;
 }
 
 interface PausaPayload {
@@ -529,22 +527,7 @@ export const pontoService = {
             });
 
             const finalMapped: RegistroPonto[] = mappedResults as unknown as RegistroPonto[];
-            let finalResults = finalMapped;
-            if (filtros.status_entrada && filtros.status_entrada !== FilterOptions.TODOS) {
-                if (filtros.status_entrada === FilterOptions.INICIOU) finalResults = finalResults.filter(p => !p.ausente && p.entrada_hora);
-                else if (filtros.status_entrada === FilterOptions.NAO_INICIOU) finalResults = finalResults.filter(p => p.ausente);
-                else if (filtros.status_entrada === FilterOptions.EM_ATRASO) finalResults = finalResults.filter(p => p.ausente && (p.status_entrada === PONTO_STATUS.AMARELO || p.status_entrada === PONTO_STATUS.VERMELHO));
-                else if (filtros.status_entrada === FilterOptions.AGUARDANDO) finalResults = finalResults.filter(p => p.ausente && p.status_entrada === PONTO_STATUS.CINZA);
-                else finalResults = finalResults.filter(p => p.status_entrada === filtros.status_entrada);
-            }
-
-            if (filtros.status_saida && filtros.status_saida !== FilterOptions.TODOS) {
-                if (filtros.status_saida === FilterOptions.TRABALHANDO) finalResults = finalResults.filter(p => !p.saida_hora && !p.ausente && p.entrada_hora);
-                else if (filtros.status_saida === FilterOptions.CONCLUIU) finalResults = finalResults.filter(p => p.saida_hora && !p.ausente);
-                else finalResults = finalResults.filter(p => p.status_saida === filtros.status_saida);
-            }
-
-            return finalResults.sort((a, b) => {
+            return finalMapped.sort((a, b) => {
                 const nomeA = a.usuario?.nome_completo?.toLowerCase() || "";
                 const nomeB = b.usuario?.nome_completo?.toLowerCase() || "";
                 if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
@@ -558,17 +541,6 @@ export const pontoService = {
             .order("data_referencia", { ascending: false });
 
         if (filtros?.data_referencia) query = query.eq("data_referencia", filtros.data_referencia);
-
-        if (filtros?.status_entrada && filtros.status_entrada !== FilterOptions.TODOS) {
-            if (filtros.status_entrada === FilterOptions.INICIOU) query = query.not("entrada_hora", "is", null);
-            else query = query.eq("status_entrada", filtros.status_entrada);
-        }
-
-        if (filtros?.status_saida && filtros.status_saida !== FilterOptions.TODOS) {
-            if (filtros.status_saida === FilterOptions.TRABALHANDO) query = query.is("saida_hora", null);
-            else if (filtros.status_saida === FilterOptions.CONCLUIU) query = query.not("saida_hora", "is", null);
-            else query = query.eq("status_saida", filtros.status_saida);
-        }
 
         if (filtros?.usuario_id && filtros.usuario_id !== FilterOptions.TODOS) query = query.eq("usuario_id", filtros.usuario_id);
 
