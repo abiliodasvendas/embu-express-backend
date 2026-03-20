@@ -144,6 +144,7 @@ export interface RegistroPonto {
   updated_at?: string;
   usuario?: Usuario;
   pausas?: Pausa[];
+  cliente?: Client;
   ausente?: boolean;
 }
 

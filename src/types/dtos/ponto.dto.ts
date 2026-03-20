@@ -11,12 +11,14 @@ export interface PontoDTO {
   total_horas?: string | null;
   status_entrada: string;
   status_saida?: string;
+  saldo_minutos?: number | null;
   location?: PontoLocation | null;
   cliente_id?: number | null;
   empresa_id?: number | null;
   detalhes_calculo?: DetalhesCalculo | null;
   pausas?: Pausa[] | null;
   usuario?: Usuario | null;
+  cliente?: any | null;
 }
 
 export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
@@ -31,12 +33,14 @@ export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
     total_horas: ponto.detalhes_calculo?.resumo?.total_trabalhado || ponto.detalhes_calculo?.resumo?.horas_trabalhadas,
     status_entrada: ponto.status_entrada,
     status_saida: ponto.status_saida,
+    saldo_minutos: ponto.saldo_minutos,
     location: ponto.entrada_loc,
     cliente_id: ponto.cliente_id,
     empresa_id: ponto.empresa_id,
     detalhes_calculo: ponto.detalhes_calculo,
     pausas: ponto.pausas || [],
-    usuario: ponto.usuario
+    usuario: ponto.usuario,
+    cliente: ponto.cliente
   };
 }
 
