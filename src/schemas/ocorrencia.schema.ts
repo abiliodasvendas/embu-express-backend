@@ -16,7 +16,7 @@ export const ocorrenciaSchema = z.object({
   valor: z.number().optional().nullable(),
   impacto_financeiro: z.boolean().optional().default(false),
   tipo_lancamento: z.enum(["ENTRADA", "SAIDA"]).optional().default("SAIDA"),
-  observacao: z.string().optional().nullable(),
+  observacao: z.string().min(1, "Observação é obrigatória"),
   criado_por: z.string().uuid().optional(),
 });
 

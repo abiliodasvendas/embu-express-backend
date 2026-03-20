@@ -12,7 +12,7 @@ export const locationSchema = z.object({
 export const createPontoSchema = z.object({
   usuario_id: z.string().uuid("ID do usuário inválido"),
   data_referencia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data de referência inválida (YYYY-MM-DD)"),
-  entrada_hora: z.string().optional(),
+  entrada_hora: z.string().min(1, "Hora de entrada é obrigatória"),
   saida_hora: z.string().optional().nullable(),
   entrada_km: z.number().optional().nullable(),
   saida_km: z.number().optional().nullable(),

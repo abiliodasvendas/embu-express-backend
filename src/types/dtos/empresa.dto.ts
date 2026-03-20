@@ -3,8 +3,8 @@ import { Empresa } from "../../types/database.js";
 export interface EmpresaDTO {
   id: number;
   nome_fantasia: string;
-  razao_social?: string | null;
-  cnpj?: string | null;
+  razao_social: string;
+  cnpj: string;
   ativo: boolean;
   codigo?: string | null;
 }

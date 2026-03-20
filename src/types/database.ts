@@ -39,8 +39,8 @@ export interface Unidade {
 export interface Empresa {
   id: number;
   nome_fantasia: string;
-  razao_social?: string | null;
-  cnpj?: string | null;
+  razao_social: string;
+  cnpj: string;
   ativo: boolean;
   created_at?: string;
   codigo?: string | null;
@@ -119,7 +119,7 @@ export interface RegistroPonto {
   id: number;
   usuario_id: string;
   data_referencia: string;
-  entrada_hora?: string | null;
+  entrada_hora: string;
   saida_hora?: string | null;
   status_entrada: string;
   status_saida?: string;
@@ -184,7 +184,7 @@ export interface ColaboradorCliente {
   cliente_id: number;
   unidade_id: number;
   empresa_id: number;
-  valor_contrato?: number | null;
+  valor_contrato: number;
   valor_aluguel?: number | null;
   valor_bonus?: number | null;
   ajuda_custo?: number | null;
@@ -226,6 +226,7 @@ export interface TipoOcorrencia {
   descricao: string;
   impacto_financeiro?: boolean;
   valor_padrao?: number | null;
+  tipo_lancamento?: 'ENTRADA' | 'SAIDA';
   created_at?: string;
 }
 
@@ -238,7 +239,7 @@ export interface Ocorrencia {
   valor?: number | null;
   impacto_financeiro?: boolean;
   tipo_lancamento?: 'ENTRADA' | 'SAIDA';
-  observacao?: string | null;
+  observacao: string;
   criado_por?: string;
   created_at?: string;
   updated_at?: string;
