@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ColaboradorCliente } from "../database.js";
 
 export const colaboradorClienteHorarioSchema = z.object({
-    dia_semana: z.number().min(1).max(7),
+    dia_semana: z.number().min(0).max(6),
     hora_inicio: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
     hora_fim: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
     tolerancia_pausa_min: z.number().optional().default(0),
@@ -10,10 +10,14 @@ export const colaboradorClienteHorarioSchema = z.object({
 
 export const createVinculoSchema = z.object({
     colaborador_id: z.string().uuid(),
-    cliente_id: z.number(),
-    unidade_id: z.number(),
+    cliente_id: z.number().nullable().optional(),
+    unidade_id: z.number().nullable().optional(),
     empresa_id: z.number(),
-    valor_contrato: z.number(),
+    valor_contrato: z.number().optional().default(0),
+    valor_aluguel: z.number().optional().default(0),
+    valor_bonus: z.number().optional().default(0),
+    ajuda_custo: z.number().optional().default(0),
+    valor_adiantamento: z.number().optional().default(0),
     data_inicio: z.string().nullable().optional(),
     data_fim: z.string().nullable().optional(),
     horarios: z.array(colaboradorClienteHorarioSchema).optional().default([]),

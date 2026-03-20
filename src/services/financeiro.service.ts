@@ -174,7 +174,7 @@ export const financeiroService = {
                 nome_fantasia: link.cliente?.nome_fantasia,
                 nome_unidade: link.unidade?.nome_unidade,
                 id_vinculo: link.id,
-                saldo_fixo_original: baseFixaParaProRata + (link.valor_bonus || 0),
+                saldo_fixo_original: baseFixaParaProRata + bonusEfetivo,
                 valores_fixos: {
                     contrato: link.valor_contrato || 0,
                     bonus: bonusEfetivo,
