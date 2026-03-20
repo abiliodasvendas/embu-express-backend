@@ -34,6 +34,7 @@ export const createUsuarioSchema = z.object({
     hora_fim: z.string().optional(),
   }).passthrough()).optional(),
   turnos: z.array(z.record(z.string(), z.unknown())).optional(),
+  valor_mei: z.number().optional().default(0),
   silent: z.boolean().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
