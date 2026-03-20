@@ -61,7 +61,7 @@ export const financeiroService = {
         // Buscar ocorrências e pontos do período
         const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioMesStr, data_fim: dataFimMesStr });
         const { data: pontos } = await supabaseAdmin
-            .from("pontos")
+            .from("registros_ponto")
             .select("*")
             .eq("usuario_id", usuarioId)
             .gte("data_referencia", dataInicioMesStr)

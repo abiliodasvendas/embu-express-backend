@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
 import { parseTime } from "./ponto-calculator.service.js";
+import { toBRTime } from "../utils/utils.js";
 
 export interface PontoDiarioRelatorio {
     data: string;
@@ -20,6 +21,8 @@ export interface PontoDiarioRelatorio {
     shift_saida: string | null;   // Novo: Horário esperado de saída (HH:mm)
     entrada_km: number | null;
     saida_km: number | null;
+    km_rodado: number; // Novo: KM rodado em trabalho
+    unidade_nome: string | null; // Novo: Nome da unidade
 }
 
 export interface EspelhoPontoMensal {
@@ -58,7 +61,7 @@ export const pontoRelatorioService = {
 
         // 2. Buscar todos os pontos do mês
         const { data: allPoints } = await supabaseAdmin
-            .from("pontos")
+            .from("registros_ponto")
             .select("*")
             .eq("usuario_id", usuarioId)
             .gte("data_referencia", startOfMonth)
@@ -148,6 +151,7 @@ export const pontoRelatorioService = {
 
                 const dailyPoint = shiftPoints.find(p => p.data_referencia === refDateStr);
                 let dayWorkedMin = 0;
+                let dayWorkedKm = 0;
                 let dayStatus: string = CALENDARIO_STATUS.NAO_VIGENTE;
 
                 if (dailyPoint) {
@@ -165,6 +169,7 @@ export const pontoRelatorioService = {
                     }
 
                     shiftKpis.horas_trabalhadas += dayWorkedMin;
+                    dayWorkedKm = dailyPoint.detalhes_calculo?.resumo?.km_trabalhado || 0;
                     dayStatus = CALENDARIO_STATUS.TRABALHADO;
 
                     if (dailyPoint.entrada_km != null) {
@@ -201,12 +206,14 @@ export const pontoRelatorioService = {
                     minutos_esperados: dayExpectedMin,
                     minutos_trabalhados: dayWorkedMin,
                     minutos_saldo: dailyPoint?.saldo_minutos || (dayStatus === CALENDARIO_STATUS.FALTA ? -dayExpectedMin : 0),
-                    entrada_hora: dailyPoint?.entrada_hora || null,
-                    saida_hora: dailyPoint?.saida_hora || null,
+                    entrada_hora: dailyPoint?.entrada_hora ? toBRTime(dailyPoint.entrada_hora) : null,
+                    saida_hora: dailyPoint?.saida_hora ? toBRTime(dailyPoint.saida_hora) : null,
                     shift_entrada: hasShiftConfig ? shiftDayConfig.hora_inicio.substring(0, 5) : null,
                     shift_saida: hasShiftConfig ? shiftDayConfig.hora_fim.substring(0, 5) : null,
                     entrada_km: dailyPoint?.entrada_km || null,
-                    saida_km: dailyPoint?.saida_km || null
+                    saida_km: dailyPoint?.saida_km || null,
+                    km_rodado: dayWorkedKm,
+                    unidade_nome: link.unidade?.nome_unidade || null
                 };
 
                 calendar.push(dailyEntry);
