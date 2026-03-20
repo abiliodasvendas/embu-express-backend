@@ -211,11 +211,14 @@ export const pontoService = {
         return formatPoint(inserted as unknown as RegistroPonto);
     },
 
-    async updatePonto(id: number, data: Partial<PontoPayload>): Promise<RegistroPonto> {
-        const { entrada_loc: _e, saida_loc: _s, ...rest } = data;
-        const payload: Partial<RegistroPonto> = { ...rest as unknown as Partial<RegistroPonto> };
+    async updatePonto(id: number, data: Partial<PontoPayload> & { force_recalculate?: boolean }): Promise<RegistroPonto> {
+        const { entrada_loc: _e, saida_loc: _s, force_recalculate, ...rest } = data;
+        const payload: Partial<RegistroPonto> = { 
+            ...rest as unknown as Partial<RegistroPonto>,
+            updated_at: getNowBR()
+        };
 
-        if (data.entrada_hora || data.saida_hora !== undefined) {
+        if (data.entrada_hora || data.saida_hora !== undefined || force_recalculate) {
             const existing = await this.getPonto(id);
             if (!existing) throw new AppError(messages.ponto.erro.naoEncontrado, 404);
 
@@ -687,6 +690,7 @@ export const pontoService = {
         if (insertedRec) {
             insertedRec.inicio_hora = toBRTime(insertedRec.inicio_hora);
             if (insertedRec.fim_hora) insertedRec.fim_hora = toBRTime(insertedRec.fim_hora);
+            if (insertedRec.ponto_id) await this.updatePonto(insertedRec.ponto_id, { force_recalculate: true });
         }
         return insertedRec;
     },
@@ -719,7 +723,7 @@ export const pontoService = {
         if (result) {
             result.inicio_hora = toBRTime(result.inicio_hora);
             if (result.fim_hora) result.fim_hora = toBRTime(result.fim_hora);
-            if (result.ponto_id) await this.updatePonto(result.ponto_id, {});
+            if (result.ponto_id) await this.updatePonto(result.ponto_id, { force_recalculate: true });
         }
         return result;
     },
