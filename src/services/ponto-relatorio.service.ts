@@ -27,6 +27,7 @@ export interface PontoDiarioRelatorio {
 
 export interface EspelhoPontoMensal {
     shift_id: number;
+    cliente_id?: number; // Novo: ID do cliente para filtragem
     cliente_nome: string;
     unidade_nome: string;
     periodo: { mes: number; ano: number };
@@ -246,6 +247,9 @@ export const pontoRelatorioService = {
                 }
             }
 
+            // Ordenar por data decrescente (mais recente primeiro) para o front
+            calendar.sort((a, b) => b.data.localeCompare(a.data));
+
             if (firstKm !== null && lastKm !== null) shiftKpis.km_realizado = lastKm - firstKm;
             shiftKpis.km_saldo = shiftKpis.km_realizado - shiftKpis.km_contratado;
 
@@ -260,6 +264,7 @@ export const pontoRelatorioService = {
 
             shiftReports.push({
                 shift_id: link.id,
+                cliente_id: link.cliente_id,
                 cliente_nome: link.cliente?.nome_fantasia || "N/A",
                 unidade_nome: link.unidade?.nome_unidade || "N/A",
                 periodo: { mes, ano },

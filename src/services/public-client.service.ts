@@ -268,21 +268,12 @@ export const publicClientService = {
     /**
      * Espelho de Ponto Público (Scoped by client and user)
      */
-    async getEspelhoPonto(clienteId: number, usuarioId: string, mes: number, ano: number): Promise<RegistroPonto[]> {
-        const startOfMonth = `${ano}-${String(mes).padStart(2, '0')}-01`;
-        const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-        const endOfMonth = `${ano}-${String(mes).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-        const { data, error } = await supabaseAdmin
-            .from("v_relatorio_mensal_ponto")
-            .select("*")
-            .eq("cliente_id", clienteId)
-            .eq("usuario_id", usuarioId)
-            .gte("data_referencia", startOfMonth)
-            .lte("data_referencia", endOfMonth)
-            .order("data_referencia", { ascending: false });
-
-        if (error) throw error;
-        return (data || []) as RegistroPonto[];
+    async getEspelhoPonto(clienteId: number, usuarioId: string, mes: number, ano: number): Promise<any> {
+        // Aproveita a lógica consolidada de relatório, mas filtrando pelo cliente do link público
+        const { pontoRelatorioService } = await import("./ponto-relatorio.service.js");
+        const reports = await pontoRelatorioService.getEspelhoPonto(usuarioId, mes, ano);
+        
+        // Filtra para manter o consolidado (index 0) e os turnos pertencentes a este cliente
+        return reports.filter(r => r.shift_id === 0 || String(r.cliente_id) === String(clienteId));
     }
 };
