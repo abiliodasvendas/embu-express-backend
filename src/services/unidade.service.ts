@@ -1,9 +1,9 @@
-import { supabaseAdmin } from "../config/supabase.js";
-import { cleanString, onlyNumbers } from "../utils/utils.js";
-import { AppError } from "../errors/AppError.js";
 import { z } from "zod";
+import { supabaseAdmin } from "../config/supabase.js";
+import { AppError } from "../errors/AppError.js";
 import { unidadeSchema, updateUnidadeSchema } from "../schemas/unidade.schema.js";
 import { Unidade } from "../types/database.js";
+import { cleanString, onlyNumbers } from "../utils/utils.js";
 
 type CreateUnidadeDTO = z.infer<typeof unidadeSchema>;
 type UpdateUnidadeDTO = z.infer<typeof updateUnidadeSchema>;
@@ -69,7 +69,7 @@ export const unidadeService = {
   async getUnidade(id: number): Promise<Unidade> {
     const { data, error } = await supabaseAdmin
       .from("unidades_cliente")
-      .select("*, cliente:clientes(nome_fantasia)")
+      .select("*")
       .eq("id", id)
       .single();
     if (error) throw error;
@@ -81,7 +81,6 @@ export const unidadeService = {
       .from("unidades_cliente")
       .select("*")
       .eq("cliente_id", clienteId)
-      .eq("ativo", true)
       .order("nome_unidade", { ascending: true });
     if (error) throw error;
     return data || [];

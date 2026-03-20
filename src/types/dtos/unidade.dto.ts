@@ -17,6 +17,7 @@ export interface UnidadeDTO {
   escala_semanal?: number[] | null;
   ativo: boolean;
   cliente_nome?: string;
+  created_at: string;
 }
 
 export function toUnidadeDTO(u: any): UnidadeDTO {
@@ -36,7 +37,8 @@ export function toUnidadeDTO(u: any): UnidadeDTO {
     km_contratados: u.km_contratados,
     escala_semanal: u.escala_semanal,
     ativo: u.ativo,
-    cliente_nome: u.cliente?.nome_fantasia
+    cliente_nome: u.cliente?.nome_fantasia,
+    created_at: u.created_at
   };
 }
 
