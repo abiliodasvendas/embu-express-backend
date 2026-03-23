@@ -19,9 +19,11 @@ export interface PontoDTO {
   pausas?: Pausa[] | null;
   usuario?: Usuario | null;
   cliente?: any | null;
+  colaborador_cliente?: any | null;
+  observacao?: string | null;
 }
 
-export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
+export function toPontoDTO(ponto: any): PontoDTO {
   return {
     id: ponto.id,
     usuario_id: ponto.usuario_id,
@@ -40,7 +42,9 @@ export function toPontoDTO(ponto: RegistroPonto): PontoDTO {
     detalhes_calculo: ponto.detalhes_calculo,
     pausas: ponto.pausas || [],
     usuario: ponto.usuario,
-    cliente: ponto.cliente
+    cliente: ponto.cliente,
+    colaborador_cliente: ponto.colaborador_cliente,
+    observacao: ponto.observacao
   };
 }
 

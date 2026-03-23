@@ -23,6 +23,8 @@ export interface PontoDiarioRelatorio {
     saida_km: number | null;
     km_rodado: number; // Novo: KM rodado em trabalho
     unidade_nome: string | null; // Novo: Nome da unidade
+    ponto_id: number | null;
+    observacao: string | null;
 }
 
 export interface EspelhoPontoMensal {
@@ -214,7 +216,9 @@ export const pontoRelatorioService = {
                     entrada_km: dailyPoint?.entrada_km || null,
                     saida_km: dailyPoint?.saida_km || null,
                     km_rodado: dayWorkedKm,
-                    unidade_nome: link.unidade?.nome_unidade || null
+                    unidade_nome: link.unidade?.nome_unidade || null,
+                    ponto_id: dailyPoint?.id || null,
+                    observacao: dailyPoint?.observacao || null
                 };
 
                 calendar.push(dailyEntry);

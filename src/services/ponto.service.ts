@@ -350,7 +350,7 @@ export const pontoService = {
     async getPonto(id: number): Promise<RegistroPonto | null> {
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
-            .select("*, cliente:clientes(*), usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
+            .select("*, cliente:clientes(*), usuario:usuarios!registros_ponto_usuario_id_fkey(*), colaborador_cliente:colaborador_clientes(*, cliente:clientes(nome_fantasia), unidade:unidades_cliente(*)), pausas:registros_pausas(*)")
             .eq("id", id)
             .maybeSingle();
         if (error) throw error;
@@ -363,7 +363,7 @@ export const pontoService = {
 
             let userQuery = supabaseAdmin
                 .from("usuarios")
-                .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*), horarios:colaborador_cliente_horarios(*))")
+                .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*))")
                 .eq("status", CADASTRO_STATUS.ATIVO);
 
             if (filtros.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) {
@@ -404,7 +404,7 @@ export const pontoService = {
             const userIds = users.map(u => u.id);
             const { data: pontos, error: pontoError } = await supabaseAdmin
                 .from("registros_ponto")
-                .select("*, cliente:clientes(nome_fantasia), pausas:registros_pausas(*)")
+                .select("*, cliente:clientes(nome_fantasia), colaborador_cliente:colaborador_clientes(unidade:unidades_cliente(nome_unidade)), pausas:registros_pausas(*)")
                 .in("usuario_id", userIds)
                 .eq("data_referencia", dataRef);
 
@@ -493,6 +493,7 @@ export const pontoService = {
                     status_saida: statusSaidaMock,
                     cliente_id: link.cliente_id,
                     cliente: link.cliente,
+                    colaborador_cliente: link,
                     empresa_id: link.empresa_id,
                     colaborador_cliente_id: link.id,
                     detalhes_calculo: {
@@ -537,7 +538,7 @@ export const pontoService = {
 
         let query = supabaseAdmin
             .from("registros_ponto")
-            .select("*, cliente:clientes(nome_fantasia), usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia))), pausas:registros_pausas(*)")
+            .select("*, cliente:clientes(nome_fantasia), colaborador_cliente:colaborador_clientes(unidade:unidades_cliente(nome_unidade)), usuario:usuarios!registros_ponto_usuario_id_fkey!inner(*, links:colaborador_clientes(cliente:clientes(nome_fantasia), unidade:unidades_cliente(nome_unidade))), pausas:registros_pausas(*)")
             .order("data_referencia", { ascending: false });
 
         if (filtros?.data_referencia) query = query.eq("data_referencia", filtros.data_referencia);

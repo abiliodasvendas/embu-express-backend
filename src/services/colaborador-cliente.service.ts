@@ -40,7 +40,7 @@ export const colaboradorClienteService = {
             const { data: insertedLink, error: insertLinkError } = await supabaseAdmin
                 .from("colaborador_clientes")
                 .insert(payload)
-                .select("*, cliente:clientes(nome_fantasia), unidade:unidades_cliente(nome_unidade), empresa:empresas(nome_fantasia)")
+                .select("*, cliente:clientes(nome_fantasia), unidade:unidades_cliente(*), empresa:empresas(nome_fantasia)")
                 .single();
 
             if (insertLinkError) throw insertLinkError;
