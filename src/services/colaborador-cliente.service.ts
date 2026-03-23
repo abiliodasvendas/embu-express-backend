@@ -99,7 +99,10 @@ export const colaboradorClienteService = {
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            logger.error({ error, rest }, "[colaboradorClienteService] Erro ao inserir na tabela colaborador_clientes");
+            throw error;
+        }
 
         if (horarios && horarios.length > 0) {
             const horariosToInsert = horarios.map(h => ({
@@ -109,9 +112,15 @@ export const colaboradorClienteService = {
                 hora_fim: h.hora_fim,
                 tolerancia_pausa_min: h.tolerancia_pausa_min || 0
             }));
-            await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+            const { error: hError } = await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+            if (hError) {
+                logger.error({ error: hError, horariosToInsert }, "[colaboradorClienteService] Erro ao inserir horários");
+                throw hError;
+            }
+            data.horarios = horarios;
         }
 
+        logger.info({ id: data.id }, "[colaboradorClienteService] Vínculo criado com sucesso");
         return data as ColaboradorCliente;
     },
 
@@ -126,7 +135,10 @@ export const colaboradorClienteService = {
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            logger.error({ error, id, rest }, "[colaboradorClienteService] Erro ao atualizar na tabela colaborador_clientes");
+            throw error;
+        }
 
         if (horarios) {
             // Remove antigos e insere novos para simplificar o sync dos horários do dia
@@ -140,10 +152,16 @@ export const colaboradorClienteService = {
                     hora_fim: h.hora_fim,
                     tolerancia_pausa_min: h.tolerancia_pausa_min || 0
                 }));
-                await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+                const { error: hError } = await supabaseAdmin.from("colaborador_cliente_horarios").insert(horariosToInsert);
+                if (hError) {
+                    logger.error({ error: hError, id, horariosToInsert }, "[colaboradorClienteService] Erro ao atualizar horários");
+                    throw hError;
+                }
             }
+            data.horarios = horarios;
         }
 
+        logger.info({ id }, "[colaboradorClienteService] Vínculo atualizado com sucesso");
         return data as ColaboradorCliente;
     },
 

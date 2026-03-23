@@ -10,8 +10,8 @@ export const colaboradorClienteHorarioSchema = z.object({
 
 export const createVinculoSchema = z.object({
     colaborador_id: z.string().uuid(),
-    cliente_id: z.number().nullable().optional(),
-    unidade_id: z.number().nullable().optional(),
+    cliente_id: z.number(),
+    unidade_id: z.number(),
     empresa_id: z.number(),
     valor_contrato: z.number().optional().default(0),
     valor_aluguel: z.number().optional().default(0),
@@ -23,7 +23,19 @@ export const createVinculoSchema = z.object({
     horarios: z.array(colaboradorClienteHorarioSchema).optional().default([]),
 });
 
-export const updateVinculoSchema = createVinculoSchema.partial().omit({ colaborador_id: true });
+export const updateVinculoSchema = z.object({
+    cliente_id: z.number().optional(),
+    unidade_id: z.number().optional(),
+    empresa_id: z.number().optional(),
+    valor_contrato: z.number().optional(),
+    valor_aluguel: z.number().optional(),
+    valor_bonus: z.number().optional(),
+    ajuda_custo: z.number().optional(),
+    valor_adiantamento: z.number().optional(),
+    data_inicio: z.string().nullable().optional(),
+    data_fim: z.string().nullable().optional(),
+    horarios: z.array(colaboradorClienteHorarioSchema).optional(),
+});
 
 export type CreateVinculoDTO = z.infer<typeof createVinculoSchema>;
 export type UpdateVinculoDTO = z.infer<typeof updateVinculoSchema>;
@@ -68,11 +80,11 @@ export function toVinculoDTO(v: ColaboradorCliente): VinculoDTO {
         cliente_id: v.cliente_id,
         unidade_id: v.unidade_id,
         empresa_id: v.empresa_id,
-        valor_contrato: v.valor_contrato || 0,
-        valor_aluguel: v.valor_aluguel || 0,
-        valor_bonus: v.valor_bonus || 0,
-        ajuda_custo: v.ajuda_custo || 0,
-        valor_adiantamento: v.valor_adiantamento || 0,
+        valor_contrato: Number(v.valor_contrato || 0),
+        valor_aluguel: Number(v.valor_aluguel || 0),
+        valor_bonus: Number(v.valor_bonus || 0),
+        ajuda_custo: Number(v.ajuda_custo || 0),
+        valor_adiantamento: Number(v.valor_adiantamento || 0),
         data_inicio: v.data_inicio || null,
         data_fim: v.data_fim || null,
         horarios: v.horarios?.map(h => ({
