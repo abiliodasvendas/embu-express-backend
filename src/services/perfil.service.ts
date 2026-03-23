@@ -18,7 +18,7 @@ export const perfilService = {
                 *,
                 perfil_permissoes(
                     permissao_id,
-                    permissao:permissoes(nome_interno, modulo, descricao)
+                    permissao:permissoes(id, nome_interno, modulo, descricao)
                 ),
                 usuarios:usuarios(count)
             `)
@@ -57,7 +57,7 @@ export const perfilService = {
                 *,
                 perfil_permissoes(
                     permissao_id,
-                    permissao:permissoes(nome_interno, modulo, descricao)
+                    permissao:permissoes(id, nome_interno, modulo, descricao)
                 ),
                 usuarios:usuarios(count)
             `)
