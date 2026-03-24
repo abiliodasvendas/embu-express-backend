@@ -5,7 +5,7 @@ import { OcorrenciaController } from "../controllers/ocorrencia.controller.js";
 
 const ocorrenciaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // TIPOS DE OCORRÊNCIA
-    app.get("/tipos", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, OcorrenciaController.listTipos);
+    app.get("/tipos", OcorrenciaController.listTipos);
     app.post("/tipos", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, OcorrenciaController.createTipo);
     app.put("/tipos/:id", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, OcorrenciaController.updateTipo);
     app.delete("/tipos/:id", { preHandler: [verifyPermissao(PERMISSIONS.OCORRENCIAS.TIPOS)] }, OcorrenciaController.deleteTipo);

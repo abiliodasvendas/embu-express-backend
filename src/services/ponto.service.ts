@@ -155,63 +155,78 @@ export const pontoService = {
 
         if (error) throw error;
 
-        // --- LÓGICA DE BÔNUS DE FERIADO ---
-        if (!saida_hora && melhorTurno && melhorTurno.id) {
-            try {
-                const { data: feriados } = await supabaseAdmin
-                    .from("feriados")
-                    .select("id, descricao")
-                    .eq("data", data.data_referencia);
-
-                if (feriados && feriados.length > 0) {
-                    const feriado = feriados[0];
-                    const configFeriado = await configuracaoService.getConfiguracao("valor_adicional_feriado");
-                    const valorFeriado = configFeriado?.valor ? Number(configFeriado.valor) : 0;
-
-                    if (valorFeriado > 0) {
-                        let tipoOcorrenciaId = null;
-                        const { data: tipos } = await supabaseAdmin
-                            .from("tipos_ocorrencia")
-                            .select("id")
-                            .ilike("descricao", "Feriado Trabalhado");
-
-                        if (tipos && tipos.length > 0) {
-                            tipoOcorrenciaId = tipos[0].id;
-                        } else {
-                            const { data: novoTipo } = await supabaseAdmin
-                                .from("tipos_ocorrencia")
-                                .insert([{ descricao: "Feriado Trabalhado", impacto_financeiro: true }])
-                                .select()
-                                .single();
-                            tipoOcorrenciaId = novoTipo?.id;
-                        }
-
-                        if (tipoOcorrenciaId) {
-                            await supabaseAdmin.from("ocorrencias").insert([{
-                                colaborador_id: data.usuario_id,
-                                colaborador_cliente_id: melhorTurno.id,
-                                tipo_id: tipoOcorrenciaId,
-                                data_ocorrencia: getNowBR(),
-                                valor: valorFeriado,
-                                impacto_financeiro: true,
-                                tipo_lancamento: "ENTRADA",
-                                observacao: `Inclusão automática: ${feriado.descricao || 'Feriado Trabalhado'}`,
-                                criado_por: data.usuario_id
-                            }]);
-                        }
-                    }
-                }
-            } catch (feriadoError) {
-                console.error("Erro ao processar bônus automático de feriado:", feriadoError);
-            }
+        // Processa bônus de feriado se houver turno vinculado
+        if (inserted?.colaborador_cliente_id) {
+            await this.processarBonusFeriado(inserted.usuario_id, inserted.data_referencia, String(inserted.colaborador_cliente_id));
         }
 
         return formatPoint(inserted as unknown as RegistroPonto);
     },
 
+    async processarBonusFeriado(usuarioId: string, dataReferencia: string, colaboradorClienteId: string): Promise<void> {
+        try {
+            const { data: feriados } = await supabaseAdmin
+                .from("feriados")
+                .select("id, descricao")
+                .eq("data", dataReferencia);
+
+            if (!feriados || feriados.length === 0) return;
+
+            const feriado = feriados[0];
+            const configFeriado = await configuracaoService.getConfiguracao("valor_adicional_feriado");
+            const valorFeriado = configFeriado?.valor ? Number(configFeriado.valor) : 0;
+
+
+            let tipoOcorrenciaId = null;
+            const { data: tipos } = await supabaseAdmin
+                .from("tipos_ocorrencia")
+                .select("id")
+                .ilike("descricao", "Feriado Trabalhado");
+
+            if (tipos && tipos.length > 0) {
+                tipoOcorrenciaId = tipos[0].id;
+            } else {
+                const { data: novoTipo } = await supabaseAdmin
+                    .from("tipos_ocorrencia")
+                    .insert([{ descricao: "Feriado Trabalhado", impacto_financeiro: true }])
+                    .select()
+                    .single();
+                tipoOcorrenciaId = novoTipo?.id;
+            }
+
+            if (!tipoOcorrenciaId) return;
+
+            // Verifica se já existe uma ocorrência de feriado para este colaborador nesta data e turno
+            const { data: existingOcorrencia } = await supabaseAdmin
+                .from("ocorrencias")
+                .select("id")
+                .eq("colaborador_id", usuarioId)
+                .eq("colaborador_cliente_id", colaboradorClienteId)
+                .eq("data_ocorrencia", dataReferencia)
+                .eq("tipo_id", tipoOcorrenciaId)
+                .maybeSingle();
+
+            if (!existingOcorrencia) {
+                await supabaseAdmin.from("ocorrencias").insert([{
+                    colaborador_id: usuarioId,
+                    colaborador_cliente_id: colaboradorClienteId,
+                    tipo_id: tipoOcorrenciaId,
+                    data_ocorrencia: dataReferencia,
+                    valor: valorFeriado,
+                    impacto_financeiro: true,
+                    tipo_lancamento: "ENTRADA",
+                    observacao: `Inclusão automática: ${feriado.descricao || 'Feriado Trabalhado'}`,
+                    criado_por: usuarioId
+                }]);
+            }
+        } catch (error) {
+            console.error("Erro ao processar bônus automático de feriado:", error);
+        }
+    },
+
     async updatePonto(id: number, data: Partial<PontoPayload> & { force_recalculate?: boolean }): Promise<RegistroPonto> {
         const { entrada_loc: _e, saida_loc: _s, force_recalculate, ...rest } = data;
-        const payload: Partial<RegistroPonto> = { 
+        const payload: Partial<RegistroPonto> = {
             ...rest as unknown as Partial<RegistroPonto>,
             updated_at: getNowBR()
         };
@@ -344,6 +359,13 @@ export const pontoService = {
             .single();
 
         if (error) throw error;
+
+        // Ao atualizar um ponto (ex: preenchimento manual retroativo), verifica se deve gerar bônus de feriado
+        const registro = updated as any;
+        if (registro?.colaborador_cliente_id) {
+            await this.processarBonusFeriado(registro.usuario_id, registro.data_referencia, String(registro.colaborador_cliente_id));
+        }
+
         return formatPoint(updated as unknown as RegistroPonto);
     },
 
