@@ -77,18 +77,20 @@ export const financeiroService = {
 
         const adiantamentoConfirmado = !!confirmacaoAdiantamento;
 
+        const now = new Date();
+        const hojeLocalStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const hojeInicioDia = new Date(hojeLocalStr + 'T00:00:00');
+
         const resumoClientes = (links || []).map(link => {
             const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
             const dataFimTurno = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
 
             let diasEscalaNoMesTotal = 0;   // Base (Divisor)
             let diasEsperadosTurno = 0;     // Meta individual
+            let faltasTurno = 0;            // Contador de faltas passadas
             const calendarioVisual: any[] = [];
 
             // 1. Loop diário para análise de escala, vigência e status visual
-            const now = new Date();
-            const hojeLocalStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-            const hojeFimDia = new Date(hojeLocalStr + 'T23:59:59');
 
             for (let d = 1; d <= ultimoDiaMes; d++) {
                 const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
@@ -102,7 +104,9 @@ export const financeiroService = {
                 // Data para comparação de vigência
                 const dtComparacao = new Date(dataReferenciaStr + 'T12:00:00');
                 const isVigente = (!dataInicioTurno || dtComparacao >= dataInicioTurno) && (!dataFimTurno || dtComparacao <= dataFimTurno);
-                const isFuturo = dtComparacao > hojeFimDia;
+                
+                // Se o dia avaliado for hoje ou maior, é considerado "Futuro/Em aberto"
+                const isFuturoOuHoje = dtComparacao >= hojeInicioDia;
 
                 if (isDiaEscala) {
                     diasEscalaNoMesTotal++;
@@ -112,11 +116,15 @@ export const financeiroService = {
                 // Status Visual
                 let status: string = CALENDARIO_STATUS.NAO_VIGENTE;
                 if (isVigente) {
-                    if (isFuturo) {
+                    const temPonto = (pontos || []).some(p => p.data_referencia === dataReferenciaStr && p.colaborador_cliente_id === link.id);
+
+                    if (temPonto) {
+                        status = CALENDARIO_STATUS.TRABALHADO;
+                    } else if (isFuturoOuHoje) {
                         status = CALENDARIO_STATUS.FUTURO;
                     } else if (isDiaEscala) {
-                        const temPonto = (pontos || []).some(p => p.data_referencia === dataReferenciaStr && p.colaborador_cliente_id === link.id);
-                        status = temPonto ? CALENDARIO_STATUS.TRABALHADO : CALENDARIO_STATUS.FALTA;
+                        status = CALENDARIO_STATUS.FALTA;
+                        faltasTurno++;
                     } else {
                         status = CALENDARIO_STATUS.NAO_VIGENTE;
                     }
@@ -159,8 +167,11 @@ export const financeiroService = {
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
 
             // 4. Cálculo do Pro-rata (Contrato + Ajuda + Aluguel - Adiantamento) + Bônus (Não pro-rata)
+            // Nova lógica: Baseia-se na meta do período (diasEsperadosTurno) menos as faltas reais.
+            // Proporciona a visualização de "100%" no início do mês, subtraindo apenas o que for perdido.
             const baseFixaParaProRata = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0) - valorAdiantamentoEfetivo;
-            const valorCalculadoProRata = (baseFixaParaProRata / diasEscalaNoMesTotal) * diasTrabalhados;
+            const diasParaPagamento = Math.max(0, diasEsperadosTurno - faltasTurno);
+            const valorCalculadoProRata = (baseFixaParaProRata / diasEscalaNoMesTotal) * diasParaPagamento;
             const valorFinalComBonus = valorCalculadoProRata + bonusEfetivo;
 
             // Ocorrências vinculadas a este turno
@@ -187,6 +198,7 @@ export const financeiroService = {
                 dias_base_mes: diasEscalaNoMesTotal,
                 dias_esperados_turno: diasEsperadosTurno,
                 dias_trabalhados: diasTrabalhados,
+                faltas: faltasTurno,
                 calendario_visual: calendarioVisual,
                 data_inicio: link.data_inicio || null,
                 data_fim: link.data_fim || null,
@@ -203,17 +215,39 @@ export const financeiroService = {
         let diasBaseReferencia = 26; // Padrão Seg-Sab caso não tenha turnos
 
         if (valorMeiTotal > 0) {
-            // Dias únicos com presença em QUALQUER turno
-            const datasComPonto = [...new Set((pontos || []).map(p => p.data_referencia))].sort();
-            diasAtivosUnicos = datasComPonto;
+            // 1. Dias em que o colaborador de fato bateu ponto (Independente de onde)
+            const datasComPonto = [...new Set((pontos || []).map(p => p.data_referencia))];
+            
+            // 2. Dias que o colaborador DEVERIA ter trabalhado (União das escalas vigentes de todos os turnos)
+            const datasEscalaEsperada = new Set<string>();
+            resumoClientes.forEach(r => {
+                r.calendario_visual.forEach((dia: any) => {
+                    // Consideramos dias de escala onde o contrato estava vigente
+                    if (dia.is_dia_escala && dia.status !== CALENDARIO_STATUS.NAO_VIGENTE) {
+                        datasEscalaEsperada.add(dia.data);
+                    }
+                });
+            });
+
+            // 3. Faltas Reais unificadas: Estava escalado em algum lugar mas não bateu ponto em NENHUM lugar naquele dia.
+            // Apenas para dias que já passaram.
+            const faltasMeiCount = [...datasEscalaEsperada].filter(data => 
+                new Date(data + 'T12:00:00') < hojeInicioDia && 
+                !datasComPonto.includes(data)
+            ).length;
 
             // Usamos a escala do primeiro turno como referência de base, ou 26 se vazio
             if (resumoClientes.length > 0) {
                 diasBaseReferencia = resumoClientes[0].dias_base_mes;
             }
 
-            proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasAtivosUnicos.length;
+            const diasParaCobrancaMei = Math.max(0, datasEscalaEsperada.size - faltasMeiCount);
+            proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasParaCobrancaMei;
+            
             if (proRataMeiFinal > valorMeiTotal) proRataMeiFinal = valorMeiTotal;
+            
+            // Para exibição no histórico de datas trabalhadas
+            diasAtivosUnicos = datasComPonto.sort();
         }
 
         const ocorrenciasAvulsas = ocorrencias.filter(o => !o.colaborador_cliente_id && o.impacto_financeiro);

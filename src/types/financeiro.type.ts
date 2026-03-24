@@ -32,6 +32,7 @@ export interface ResumoClienteFinanceiro {
     dias_base_mes: number;
     dias_esperados_turno: number;
     dias_trabalhados: number;
+    faltas: number;
     calendario_visual: any[];
     data_inicio: string | null;
     data_fim: string | null;
