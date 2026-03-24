@@ -98,7 +98,6 @@ export const pontoRelatorioService = {
         const globalCalendarMap = new Map<number, PontoDiarioRelatorio>();
 
         for (const link of (links || [])) {
-            const unitSchedule = link.unidade?.escala_semanal || [1, 2, 3, 4, 5, 6];
             const startShift = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
             const endShiftValue = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
 
@@ -119,9 +118,6 @@ export const pontoRelatorioService = {
 
             const calendar: PontoDiarioRelatorio[] = [];
             const shiftPoints = (allPoints || []).filter(p => p.colaborador_cliente_id === link.id);
-
-            let firstKm: number | null = null;
-            let lastKm: number | null = null;
 
             for (let d = 1; d <= lastDayOfMonth; d++) {
                 const currentDate = new Date(Date.UTC(ano, mes - 1, d));
@@ -173,16 +169,8 @@ export const pontoRelatorioService = {
 
                     shiftKpis.horas_trabalhadas += dayWorkedMin;
                     dayWorkedKm = dailyPoint.detalhes_calculo?.resumo?.km_trabalhado || 0;
+                    shiftKpis.km_realizado += dayWorkedKm; // Soma cumulativa resiliente
                     dayStatus = CALENDARIO_STATUS.TRABALHADO;
-
-                    if (dailyPoint.entrada_km != null) {
-                        if (firstKm === null) firstKm = dailyPoint.entrada_km;
-                        lastKm = dailyPoint.entrada_km;
-                    }
-                    if (dailyPoint.saida_km != null) {
-                        if (firstKm === null) firstKm = dailyPoint.saida_km;
-                        lastKm = dailyPoint.saida_km;
-                    }
                 } else if (isActive) {
                     if (isFutureDate) {
                         dayStatus = CALENDARIO_STATUS.FUTURO;
@@ -242,7 +230,6 @@ export const pontoRelatorioService = {
                     if (dailyEntry.entrada_hora && (!gEntry.entrada_hora || dailyEntry.entrada_hora < gEntry.entrada_hora)) gEntry.entrada_hora = dailyEntry.entrada_hora;
                     if (dailyEntry.saida_hora && (!gEntry.saida_hora || dailyEntry.saida_hora > gEntry.saida_hora)) gEntry.saida_hora = dailyEntry.saida_hora;
 
-                    // Consolidado shift hours (fusão das janelas)
                     if (dailyEntry.shift_entrada && (!gEntry.shift_entrada || dailyEntry.shift_entrada < gEntry.shift_entrada)) gEntry.shift_entrada = dailyEntry.shift_entrada;
                     if (dailyEntry.shift_saida && (!gEntry.shift_saida || dailyEntry.shift_saida > gEntry.shift_saida)) gEntry.shift_saida = dailyEntry.shift_saida;
                     
@@ -254,7 +241,6 @@ export const pontoRelatorioService = {
             // Ordenar por data decrescente (mais recente primeiro) para o front
             calendar.sort((a, b) => b.data.localeCompare(a.data));
 
-            if (firstKm !== null && lastKm !== null) shiftKpis.km_realizado = lastKm - firstKm;
             shiftKpis.km_saldo = shiftKpis.km_realizado - shiftKpis.km_contratado;
 
             globalKpis.horas_esperadas += shiftKpis.horas_esperadas;
@@ -273,24 +259,19 @@ export const pontoRelatorioService = {
                 unidade_nome: link.unidade?.nome_unidade || "N/A",
                 periodo: { mes, ano },
                 kpis: shiftKpis,
-                // FILTRO: Apenas dias relevantes (com meta ou trabalho)
                 calendario: calendar.filter(d => d.minutos_esperados > 0 || d.minutos_trabalhados > 0)
             });
         }
 
         const finalResult: EspelhoPontoMensal[] = [];
         if (shiftReports.length > 1) {
-            // Unir todos os calendários individuais em uma única lista plana (sem agrupar por dia)
             const consolidatedCalendar: PontoDiarioRelatorio[] = [];
             for (const report of shiftReports) {
                 consolidatedCalendar.push(...report.calendario);
             }
 
-            // Ordenar por dia (primeiro por dia, depois por turno_id se necessário)
             consolidatedCalendar.sort((a, b) => b.dia - a.dia);
 
-            // Recalcular KPIs globais baseados no totalizador já acumulado (union days logic)
-            // Para dias atuados/metas, contamos dias únicos no calendário consolidado
             const uniqueDaysMeta = new Set(consolidatedCalendar.filter(d => d.minutos_esperados > 0).map(d => d.dia));
             const uniqueDaysWorked = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.TRABALHADO).map(d => d.dia));
             const uniqueDaysLack = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.FALTA).map(d => d.dia));
@@ -306,11 +287,10 @@ export const pontoRelatorioService = {
                 unidade_nome: "Todos os Turnos",
                 periodo: { mes, ano },
                 kpis: globalKpis, 
-                calendario: consolidatedCalendar // Já está ord. decrescente
+                calendario: consolidatedCalendar
             });
         }
         
-        // Retornar os relatórios individuais também
         finalResult.push(...shiftReports);
         return finalResult.length > 0 ? finalResult : [];
     }
