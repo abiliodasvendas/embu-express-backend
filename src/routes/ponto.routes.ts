@@ -4,32 +4,32 @@ import { verifyOperacional, verifyPermissao } from "../middlewares/auth.middlewa
 import { PontoController } from "../controllers/ponto.controller.js";
 
 const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-    // ADMIN: Inserção manual de ponto
+    // ADMIN: Inserção manual de atividade
     app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_CRIAR)] }, PontoController.register);
 
-    // OPERACIONAL: Motoboy batendo ponto
+    // OPERACIONAL: Motoboy batendo atividade
     app.post("/toggle", { preHandler: [verifyOperacional()] }, PontoController.toggle);
 
-    // OPERACIONAL / ADMIN: Ver ponto de hoje (Usado pelo App para mostrar status)
+    // OPERACIONAL / ADMIN: Ver atividade de hoje (Usado pelo App para mostrar status)
     app.get("/hoje", { preHandler: [verifyOperacional()] }, PontoController.getHoje); // listPontos already handles query params for hoje? Wait, no.
-    
+
     // Actually the route /hoje was doing getPontoHoje(usuarioId) from query. 
     // And there is another /hoje/:usuarioId. 
-    
+
     // I need to be careful with the mapping.
-    
+
     app.get("/ultimo-km/:usuarioId", { preHandler: [verifyOperacional()] }, PontoController.getUltimoKm);
-    
-    // ADMIN: Editar ponto manualmente
+
+    // ADMIN: Editar atividade manualmente
     app.put("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_EDITAR)] }, PontoController.update);
 
-    // ADMIN: Deletar ponto
+    // ADMIN: Deletar atividade
     app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_DELETAR)] }, PontoController.delete);
 
-    // ADMIN: Listar pontos
+    // ADMIN: Listar atividades
     app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, PontoController.list);
 
-    // ADMIN / PESSOAL: Ver detalhes de um ponto específico
+    // ADMIN / PESSOAL: Ver detalhes de uma atividade específica
     app.get("/:id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.getOne);
 
     // RELATÓRIOS

@@ -41,5 +41,4 @@ export const registerSchema = z.object({
   tipo_chave_pix: z.string().optional(),
   chave_pix: z.string().optional().nullable(),
   perfil_id: z.coerce.number(),
-  isMotoboyOrFiscal: z.boolean().optional(),
 });

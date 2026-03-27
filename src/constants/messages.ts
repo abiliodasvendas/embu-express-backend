@@ -58,7 +58,7 @@ export const messages = {
       duracaoMaxima: "O registro excede o limite máximo de {max} horas.",
       sobreposicao: "O horário informado conflita com outro registro existente.",
       kmInvalido: "O KM informado parece incorreto (diferença muito grande). Verifique o valor.",
-      naoEncontrado: "Registro de ponto não encontrado.",
+      naoEncontrado: "Registro de atividade não encontrado.",
       pausaNaoEncontrada: "Pausa não encontrada.",
       detalhesCalcNecessario: "Aguardando registro para calcular os detalhes.",
     }

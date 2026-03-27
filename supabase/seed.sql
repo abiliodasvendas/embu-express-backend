@@ -37,10 +37,10 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (17, 'empresas:editar', 'Empresas', 'Alterar dados da empresa'),
 (18, 'empresas:deletar', 'Empresas', 'Remover empresa do sistema'),
 (19, 'empresas:status', 'Empresas', 'Ativar/desativar empresa'),
-(21, 'ponto:admin_ver', 'Ponto (Controle)', 'Visualizar lista e detalhes de pontos da equipe'),
-(22, 'ponto:admin_criar', 'Ponto (Controle)', 'Inserir marcação de ponto manualmente no painel'),
+(21, 'ponto:admin_ver', 'Ponto (Controle)', 'Visualizar lista e detalhes de atividade da equipe'),
+(22, 'ponto:admin_criar', 'Ponto (Controle)', 'Inserir marcação de atividade manualmente no painel'),
 (23, 'ponto:admin_editar', 'Ponto (Controle)', 'Alterar ou corrigir horário de uma marcação existente'),
-(24, 'ponto:admin_deletar', 'Ponto (Controle)', 'Excluir registro de ponto equivocado'),
+(24, 'ponto:admin_deletar', 'Ponto (Controle)', 'Excluir registro de atividade equivocado'),
 (25, 'configuracoes:ver', 'Configuração', 'Visualizar parâmetros do sistema'),
 (26, 'configuracoes:editar', 'Configuração', 'Alterar parâmetros globais do sistema'),
 (27, 'ocorrencias:ver', 'Ocorrências', 'Visualizar lista de ocorrências'),
@@ -50,7 +50,7 @@ INSERT INTO "public"."permissoes" ("id", "nome_interno", "modulo", "descricao") 
 (31, 'financeiro:extrato', 'Financeiro', 'Visualizar extrato mensal'),
 (32, 'financeiro:fechar', 'Financeiro', 'Realizar fechamento mensal'),
 (33, 'financeiro:pagar', 'Financeiro', 'Marcar fechamento como pago'),
-(34, 'ponto:ver_meu', 'Ponto (Pessoal)', 'Visualizar o próprio espelho de ponto'),
+(34, 'ponto:ver_meu', 'Ponto (Pessoal)', 'Visualizar o próprio espelho de atividade'),
 (35, 'financeiro:ver_meu', 'Financeiro (Pessoal)', 'Visualizar o próprio extrato financeiro'),
 (36, 'feriados:ver', 'Feriados', 'Visualizar listagem de feriados'),
 (37, 'feriados:editar', 'Feriados', 'Criar, editar e excluir feriados')
@@ -154,4 +154,6 @@ INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao", "impacto_financeiro"
 ON CONFLICT (id) DO NOTHING;
 
 -- Sync sequences after manual ID inserts
-SELECT setval('public.tipos_ocorrencia_id_seq', (SELECT MAX(id) FROM public.tipos_ocorrencia) + 1);
+SELECT setval('public.tipos_ocorrencia_id_seq', (SELECT MAX(id) FROM public.tipos_ocorrencia));
+SELECT setval('public.roles_id_seq', (SELECT MAX(id) FROM public.perfis));
+SELECT setval('public.permissoes_id_seq', (SELECT MAX(id) FROM public.permissoes));
