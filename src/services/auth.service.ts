@@ -235,14 +235,4 @@ export const authService = {
             throw error;
         }
     },
-
-    async forgotPassword(email: string): Promise<void> {
-        const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-            redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:8080'}/nova-senha`,
-        });
-
-        if (error) {
-            throw new AppError(`${messages.auth.erro.redefinirSenha}: ${error.message}`, 400);
-        }
-    }
 };

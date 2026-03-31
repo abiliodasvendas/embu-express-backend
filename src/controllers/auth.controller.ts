@@ -1,8 +1,7 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { authService } from "../services/auth.service.js";
-import { loginSchema, refreshSchema, updatePasswordSchema, forgotPasswordSchema, registerSchema } from "../schemas/auth.schema.js";
+import { loginSchema, refreshSchema, updatePasswordSchema, registerSchema } from "../schemas/auth.schema.js";
 import { AppError } from "../errors/AppError.js";
 
 export const AuthController = {
@@ -44,9 +43,4 @@ export const AuthController = {
         return reply.status(201).send(result);
     },
 
-    async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
-        const { email } = forgotPasswordSchema.parse(request.body);
-        await authService.forgotPassword(email);
-        return reply.status(200).send({ success: true, message: messages.auth.sucesso.emailRecuperacaoEnviado });
-    }
 };
