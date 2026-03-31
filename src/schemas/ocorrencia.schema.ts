@@ -3,7 +3,6 @@ import { z } from "zod";
 export const tipoOcorrenciaSchema = z.object({
   descricao: z.string().min(1, "Descrição é obrigatória"),
   impacto_financeiro: z.boolean().optional().default(false),
-  ativo: z.boolean().optional().default(true),
 });
 
 export const updateTipoOcorrenciaSchema = tipoOcorrenciaSchema.partial();
