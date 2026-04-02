@@ -145,7 +145,7 @@ INSERT INTO "public"."usuarios" (
 
 -- 5. Create Initial Occurrence Types
 INSERT INTO "public"."tipos_ocorrencia" ("id", "descricao", "impacto_financeiro") VALUES
-(1, 'Falta', false),
+(1, 'Ausência', false),
 (2, 'Atraso', false),
 (3, 'Bônus Extra', true),
 (4, 'Quebra de Equipamento', false),

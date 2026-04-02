@@ -20,7 +20,7 @@ export type PixType = keyof typeof PIX_TYPES;
 
 export const CALENDARIO_STATUS = {
     TRABALHADO: 'TRABALHADO',
-    FALTA: 'FALTA',
+    SEM_ATIVIDADE: 'SEM_ATIVIDADE',
     NAO_VIGENTE: 'NAO_VIGENTE',
     FUTURO: 'FUTURO',
-} as const;
+} as const;

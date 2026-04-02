@@ -37,10 +37,10 @@ export interface EspelhoPontoMensal {
         dias_base_mes: number;
         dias_meta_turno: number;
         dias_trabalhados: number;
-        dias_faltas: number;
+        dias_ausencias: number;
         horas_esperadas: number; // minutos
         horas_trabalhadas: number; // minutos
-        horas_faltas: number; // minutos
+        horas_ausencias: number; // minutos
         horas_extras: number; // minutos (saldo positivo)
         horas_devidas: number; // minutos (saldo negativo)
         km_contratado: number;
@@ -83,10 +83,10 @@ export const pontoRelatorioService = {
             dias_base_mes: 0,
             dias_meta_turno: 0,
             dias_trabalhados: 0,
-            dias_faltas: 0,
+            dias_ausencias: 0,
             horas_esperadas: 0,
             horas_trabalhadas: 0,
-            horas_faltas: 0,
+            horas_ausencias: 0,
             horas_extras: 0,
             horas_devidas: 0,
             km_contratado: 0,
@@ -105,10 +105,10 @@ export const pontoRelatorioService = {
                 dias_base_mes: 0,
                 dias_meta_turno: 0,
                 dias_trabalhados: 0,
-                dias_faltas: 0,
+                dias_ausencias: 0,
                 horas_esperadas: 0,
                 horas_trabalhadas: 0,
-                horas_faltas: 0,
+                horas_ausencias: 0,
                 horas_extras: 0,
                 horas_devidas: 0,
                 km_contratado: link.unidade?.km_contratados || 0,
@@ -137,7 +137,7 @@ export const pontoRelatorioService = {
                     const [hI, mI] = parseTime(shiftDayConfig.hora_inicio);
                     const [hF, mF] = parseTime(shiftDayConfig.hora_fim);
                     const tolPausa = shiftDayConfig.tolerancia_pausa_min || 0;
-                    
+
                     let totalMin = (hF * 60 + mF) - (hI * 60 + mI);
                     if (totalMin < 0) totalMin += 1440;
                     dayExpectedMin = Math.max(0, totalMin - tolPausa);
@@ -161,10 +161,10 @@ export const pontoRelatorioService = {
                         if (saldo > 0) shiftKpis.horas_extras += saldo;
                         else if (saldo < 0) shiftKpis.horas_devidas += Math.abs(saldo);
                     } else if (dailyPoint.detalhes_calculo?.resumo?.horas_trabalhadas) {
-                         const parts = dailyPoint.detalhes_calculo.resumo.horas_trabalhadas.split(' ');
-                         const h = parseInt(parts[0]) || 0;
-                         const m = parseInt(parts[1]) || 0;
-                         dayWorkedMin = h * 60 + m;
+                        const parts = dailyPoint.detalhes_calculo.resumo.horas_trabalhadas.split(' ');
+                        const h = parseInt(parts[0]) || 0;
+                        const m = parseInt(parts[1]) || 0;
+                        dayWorkedMin = h * 60 + m;
                     }
 
                     shiftKpis.horas_trabalhadas += dayWorkedMin;
@@ -175,9 +175,9 @@ export const pontoRelatorioService = {
                     if (isFutureDate) {
                         dayStatus = CALENDARIO_STATUS.FUTURO;
                     } else if (hasShiftConfig) {
-                        dayStatus = CALENDARIO_STATUS.FALTA;
-                        shiftKpis.dias_faltas++;
-                        shiftKpis.horas_faltas += dayExpectedMin;
+                        dayStatus = CALENDARIO_STATUS.SEM_ATIVIDADE;
+                        shiftKpis.dias_ausencias++;
+                        shiftKpis.horas_ausencias += dayExpectedMin;
                         shiftKpis.horas_devidas += dayExpectedMin;
                     }
                 }
@@ -196,7 +196,7 @@ export const pontoRelatorioService = {
                     cliente_nome: link.cliente?.nome_fantasia || null,
                     minutos_esperados: dayExpectedMin,
                     minutos_trabalhados: dayWorkedMin,
-                    minutos_saldo: dailyPoint?.saldo_minutos || (dayStatus === CALENDARIO_STATUS.FALTA ? -dayExpectedMin : 0),
+                    minutos_saldo: dailyPoint?.saldo_minutos || (dayStatus === CALENDARIO_STATUS.SEM_ATIVIDADE ? -dayExpectedMin : 0),
                     entrada_hora: dailyPoint?.entrada_hora ? toBRTime(dailyPoint.entrada_hora) : null,
                     saida_hora: dailyPoint?.saida_hora ? toBRTime(dailyPoint.saida_hora) : null,
                     shift_entrada: hasShiftConfig ? shiftDayConfig.hora_inicio.substring(0, 5) : null,
@@ -221,18 +221,18 @@ export const pontoRelatorioService = {
                     gEntry.minutos_trabalhados += dailyEntry.minutos_trabalhados;
                     gEntry.minutos_saldo += dailyEntry.minutos_saldo;
                     if (dailyEntry.is_dia_escala) gEntry.is_dia_escala = true;
-                    
-                    const priorities: Record<string, number> = { [CALENDARIO_STATUS.TRABALHADO]: 4, [CALENDARIO_STATUS.FALTA]: 3, [CALENDARIO_STATUS.FUTURO]: 2, [CALENDARIO_STATUS.NAO_VIGENTE]: 1 };
+
+                    const priorities: Record<string, number> = { [CALENDARIO_STATUS.TRABALHADO]: 4, [CALENDARIO_STATUS.SEM_ATIVIDADE]: 3, [CALENDARIO_STATUS.FUTURO]: 2, [CALENDARIO_STATUS.NAO_VIGENTE]: 1 };
                     if (priorities[dailyEntry.status] > priorities[gEntry.status]) {
                         gEntry.status = dailyEntry.status;
                     }
-                    
+
                     if (dailyEntry.entrada_hora && (!gEntry.entrada_hora || dailyEntry.entrada_hora < gEntry.entrada_hora)) gEntry.entrada_hora = dailyEntry.entrada_hora;
                     if (dailyEntry.saida_hora && (!gEntry.saida_hora || dailyEntry.saida_hora > gEntry.saida_hora)) gEntry.saida_hora = dailyEntry.saida_hora;
 
                     if (dailyEntry.shift_entrada && (!gEntry.shift_entrada || dailyEntry.shift_entrada < gEntry.shift_entrada)) gEntry.shift_entrada = dailyEntry.shift_entrada;
                     if (dailyEntry.shift_saida && (!gEntry.shift_saida || dailyEntry.shift_saida > gEntry.shift_saida)) gEntry.shift_saida = dailyEntry.shift_saida;
-                    
+
                     if (dailyEntry.entrada_km && (!gEntry.entrada_km || dailyEntry.entrada_km < gEntry.entrada_km)) gEntry.entrada_km = dailyEntry.entrada_km;
                     if (dailyEntry.saida_km && (!gEntry.saida_km || dailyEntry.saida_km > gEntry.saida_km)) gEntry.saida_km = dailyEntry.saida_km;
                 }
@@ -245,7 +245,7 @@ export const pontoRelatorioService = {
 
             globalKpis.horas_esperadas += shiftKpis.horas_esperadas;
             globalKpis.horas_trabalhadas += shiftKpis.horas_trabalhadas;
-            globalKpis.horas_faltas += shiftKpis.horas_faltas;
+            globalKpis.horas_ausencias += shiftKpis.horas_ausencias;
             globalKpis.horas_extras += shiftKpis.horas_extras;
             globalKpis.horas_devidas += shiftKpis.horas_devidas;
             globalKpis.km_contratado += shiftKpis.km_contratado;
@@ -274,11 +274,11 @@ export const pontoRelatorioService = {
 
             const uniqueDaysMeta = new Set(consolidatedCalendar.filter(d => d.minutos_esperados > 0).map(d => d.dia));
             const uniqueDaysWorked = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.TRABALHADO).map(d => d.dia));
-            const uniqueDaysLack = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.FALTA).map(d => d.dia));
+            const uniqueDaysLack = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.SEM_ATIVIDADE).map(d => d.dia));
 
             globalKpis.dias_meta_turno = uniqueDaysMeta.size;
             globalKpis.dias_trabalhados = uniqueDaysWorked.size;
-            globalKpis.dias_faltas = uniqueDaysLack.size;
+            globalKpis.dias_ausencias = uniqueDaysLack.size;
             globalKpis.dias_base_mes = lastDayOfMonth;
 
             finalResult.push({
@@ -286,11 +286,11 @@ export const pontoRelatorioService = {
                 cliente_nome: "Consolidado",
                 unidade_nome: "Todos os Turnos",
                 periodo: { mes, ano },
-                kpis: globalKpis, 
+                kpis: globalKpis,
                 calendario: consolidatedCalendar
             });
         }
-        
+
         finalResult.push(...shiftReports);
         return finalResult.length > 0 ? finalResult : [];
     }
