@@ -32,6 +32,9 @@ export const usuarioService = {
         });
 
         if (authError) {
+            if (authError.message?.includes("already been registered") || authError.status === 422) {
+                throw new AppError(messages.usuario.erro.emailJaExiste, 400);
+            }
             console.error("[createUsuario] Erro no Auth:", authError);
             throw authError;
         }

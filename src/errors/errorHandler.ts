@@ -20,7 +20,8 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
         return reply.status(statusCode).send({
             status: "error",
-            message: message
+            message: message,
+            error: message
         });
     }
 
@@ -35,6 +36,7 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         return reply.status(400).send({
             status: "error",
             message: "Dados de entrada inválidos.",
+            error: "Dados de entrada inválidos.",
             details: error.issues
         });
     }
@@ -51,6 +53,7 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         return reply.status(400).send({
             status: "error",
             message: "Dados de entrada inválidos.",
+            error: "Dados de entrada inválidos.",
             errors: error.validation
         });
     }
@@ -66,8 +69,26 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         return reply.status(400).send({
             status: "error",
             message: "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.",
+            error: "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.",
             code: '23503'
         });
+    }
+
+    // 2.7 Erro de Autenticação Supabase (AuthApiError)
+    if (error.name === 'AuthApiError' || (error as any).status === 422 || (error as any).status === 400) {
+        if (error.message?.includes('already been registered')) {
+            logger.warn({
+                msg: "Erro de Autenticação (Email Duplicado)",
+                error: error.message,
+                method,
+                url
+            });
+            return reply.status(400).send({
+                status: "error",
+                message: "Este e-mail já está cadastrado no sistema.",
+                error: "Este e-mail já está cadastrado no sistema."
+            });
+        }
     }
 
     // 3. Erro Desconhecido (Bug / Infra)

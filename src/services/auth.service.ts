@@ -177,7 +177,13 @@ export const authService = {
             }
         });
 
-        if (authError) throw authError;
+        if (authError) {
+            if (authError.message?.includes("already been registered") || authError.status === 422) {
+                throw new AppError(messages.usuario.erro.emailJaExiste, 400);
+            }
+            throw authError;
+        }
+
         if (!authUser?.user) throw new AppError(messages.usuario.erro.criarAuth, 500);
 
         try {
@@ -229,9 +235,19 @@ export const authService = {
             if (dbError) throw dbError;
 
             return inserted;
-        } catch (error) {
+        } catch (error: any) {
             // Rollback Auth User if DB insert fails
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+
+            if (error.code === '23505') {
+                if (error.message?.includes('cpf')) {
+                    throw new AppError(messages.usuario.erro.cpfJaExiste, 409);
+                }
+                if (error.message?.includes('email')) {
+                    throw new AppError(messages.usuario.erro.emailJaExiste, 409);
+                }
+            }
+
             throw error;
         }
     },
