@@ -469,6 +469,8 @@ export const pontoService = {
                         const iniMin = hIni * 60 + mIni;
                         if (fimMin < iniMin) fimMin += 1440;
                         const isOpenTooLong = (!isHoje && !isFuturo) || (isHoje && nowTotalMin > (fimMin + 240));
+                        const isOvertime = isHoje && nowTotalMin > fimMin && !isOpenTooLong;
+                        if (isOvertime) formattedPonto.status_saida = PONTO_STATUS.AMARELO;
                         if (isOpenTooLong) formattedPonto.status_saida = PONTO_STATUS.PENDENTE;
                     }
                     return { ...formattedPonto, usuario: link.usuario };
