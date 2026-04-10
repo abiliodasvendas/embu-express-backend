@@ -585,22 +585,62 @@ export const pontoService = {
         });
     },
 
+    isPontoAtivo(ponto: RegistroPonto, now: Date): boolean {
+        if (!ponto || ponto.saida_hora) return false;
+
+        const turnoFimBase = ponto.detalhes_calculo?.saida?.turno_base;
+        if (!turnoFimBase) return false;
+
+        try {
+            const [hF, mF] = parseTime(turnoFimBase);
+            // Criar datetime do fim do turno usando string ISO com offset de Brasília para consistência
+            const fimTurnoISO = `${ponto.data_referencia}T${hF.toString().padStart(2, '0')}:${mF.toString().padStart(2, '0')}:00-03:00`;
+            const fimTurno = new Date(fimTurnoISO);
+
+            // Se o fim do turno for menor que a entrada, ele virou o dia
+            const entrada = new Date(ponto.entrada_hora);
+            if (fimTurno < entrada) {
+                fimTurno.setDate(fimTurno.getDate() + 1);
+            }
+
+            // Buffer de 4 horas após o fim esperado
+            const limiteAtivo = new Date(fimTurno.getTime() + 4 * 60 * 60 * 1000);
+            
+            return now <= limiteAtivo;
+        } catch (e) {
+            return false;
+        }
+    },
+
     async getPontoHoje(usuarioId: string): Promise<RegistroPonto | null> {
-        const hoje = toLocalDateString(new Date(getNowBR()));
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*, cliente:clientes(*), pausas:registros_pausas(*)")
             .eq("usuario_id", usuarioId)
-            .eq("data_referencia", hoje)
-            .order("entrada_hora", { ascending: false })
+            .order("id", { ascending: false })
             .limit(1);
 
         if (error) throw error;
-        return formatPoint(data?.[0] as unknown as RegistroPonto) || null;
+        if (!data || data.length === 0) return null;
+
+        const lastRecord = data[0] as unknown as RegistroPonto;
+
+        // Se o registro estiver FECHADO, não retorna para permitir novos inicios no mesmo dia
+        if (lastRecord.saida_hora) return null;
+
+        // Se o registro estiver ABERTO, verifica se ainda é considerado ativo (dentro do buffer de 4h do fim do turno)
+        const now = new Date(getNowBR());
+        if (this.isPontoAtivo(lastRecord, now)) {
+            return formatPoint(lastRecord);
+        }
+
+        return null;
     },
 
     async togglePonto(usuarioId: string, location?: PontoLocation, km?: number, clienteId?: number, empresaId?: number, colaboradorClienteId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: RegistroPonto }> {
-        const now = getNowBR();
+        const nowStr = getNowBR();
+        const now = new Date(nowStr);
+        
         const { data: lastRecords, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*")
@@ -609,28 +649,23 @@ export const pontoService = {
             .limit(1);
 
         if (error) throw error;
-        const lastRecord = lastRecords?.[0];
-        const nowSEO = new Date(now);
+        const lastRecord = lastRecords?.[0] as RegistroPonto | undefined;
 
-        if (lastRecord && !lastRecord.saida_hora) {
-            const entryDate = new Date(lastRecord.entrada_hora);
-            const diffMs = nowSEO.getTime() - entryDate.getTime();
-            const diffHours = diffMs / (1000 * 60 * 60);
-
-            if (diffHours < 16) {
-                const updated = await this.updatePonto(lastRecord.id, {
-                    saida_hora: now,
-                    saida_loc: location,
-                    saida_km: km
-                });
-                return { action: 'CLOSE', record: updated };
-            }
+        // Se o último registro estiver aberto e for considerado ativo, faz o fechamento
+        if (lastRecord && !lastRecord.saida_hora && this.isPontoAtivo(lastRecord, now)) {
+            const updated = await this.updatePonto(lastRecord.id, {
+                saida_hora: nowStr,
+                saida_loc: location,
+                saida_km: km
+            });
+            return { action: 'CLOSE', record: updated };
         }
 
+        // Caso contrário, inicia um novo registro
         const newRecord = await this.registrarPonto({
             usuario_id: usuarioId,
-            data_referencia: toLocalDateString(nowSEO),
-            entrada_hora: now,
+            data_referencia: toLocalDateString(now),
+            entrada_hora: nowStr,
             saida_hora: null,
             criado_por: usuarioId,
             entrada_loc: location,
