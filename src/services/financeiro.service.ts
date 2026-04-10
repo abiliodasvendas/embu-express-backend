@@ -229,19 +229,14 @@ export const financeiroService = {
                 });
             });
 
-            // 3. Ausencias Reais unificadas: Estava escalado em algum lugar mas não bateu ponto em NENHUM lugar naquele dia.
-            // Apenas para dias que já passaram.
-            const ausenciasMeiCount = [...datasEscalaEsperada].filter(data =>
-                new Date(data + 'T12:00:00') < hojeInicioDia &&
-                !datasComPonto.includes(data)
-            ).length;
-
             // Usamos a escala do primeiro turno como referência de base, ou 26 se vazio
             if (resumoClientes.length > 0) {
                 diasBaseReferencia = resumoClientes[0].dias_base_mes;
             }
 
-            const diasParaCobrancaMei = Math.max(0, datasEscalaEsperada.size - ausenciasMeiCount);
+            // A partir de agora, não descontamos faltas para o cálculo do MEI.
+            // O valor é garantido pela vigência da escala no período em que houver contrato.
+            const diasParaCobrancaMei = datasEscalaEsperada.size;
             proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasParaCobrancaMei;
 
             if (proRataMeiFinal > valorMeiTotal) proRataMeiFinal = valorMeiTotal;
