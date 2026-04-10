@@ -78,22 +78,14 @@ export const pontoService = {
         const durationCheck = TimeRecordRules.validateMinDuration(entrada_hora, saida_hora);
         if (!durationCheck.valid) throw new AppError(durationCheck.message || "Duração mínima");
 
-        const { data: registrosDia, error: fetchError } = await supabaseAdmin
+        // 1. Buscar registros do dia E registros em aberto (de qualquer dia)
+        const { data: registrosConflitantes, error: fetchError } = await supabaseAdmin
             .from("registros_ponto")
-            .select("id, entrada_hora, saida_hora")
+            .select("id, entrada_hora, saida_hora, colaborador_cliente_id, data_referencia, detalhes_calculo")
             .eq("usuario_id", data.usuario_id)
-            .eq("data_referencia", data.data_referencia);
+            .or(`data_referencia.eq.${data.data_referencia},saida_hora.is.null`);
 
         if (fetchError) throw fetchError;
-
-        if (registrosDia && registrosDia.length > 0) {
-            const newStart = new Date(entrada_hora);
-            const newEnd = saida_hora ? new Date(saida_hora) : null;
-            const overlapCheck = TimeRecordRules.checkOverlap(newStart, newEnd, registrosDia);
-            if (overlapCheck.hasOverlap) {
-                throw new AppError(messages.ponto.erro.sobreposicao);
-            }
-        }
 
         const { status_entrada, status_saida, detalhes_calculo, saldo_minutos, melhorTurno } = await pontoCalculatorService.calculateStatus(
             data.usuario_id,
@@ -108,6 +100,24 @@ export const pontoService = {
             undefined,
             data.colaborador_cliente_id || undefined
         );
+
+        const now = new Date(getNowBR());
+        const turnoId = melhorTurno?.id || data.colaborador_cliente_id;
+
+        if (registrosConflitantes && registrosConflitantes.length > 0) {
+            // Filtrar apenas registros que ainda são considerados "ativos" ou são da mesma data
+            const registrosValidos = registrosConflitantes.filter(r => {
+                if (r.data_referencia === data.data_referencia) return true;
+                if (!r.saida_hora && this.isPontoAtivo(r as any, now)) return true;
+                return false;
+            });
+
+            // 1. Verificar se o turno já foi registrado hoje
+            if (turnoId && registrosValidos.some(r => r.colaborador_cliente_id === turnoId && r.data_referencia === data.data_referencia)) {
+                throw new AppError(messages.ponto.erro.duplicidadeTurno, 400);
+            }
+
+        }
 
         let finalClienteId = data.cliente_id;
         let finalEmpresaId = data.empresa_id;
@@ -605,55 +615,63 @@ export const pontoService = {
 
             // Buffer de 4 horas após o fim esperado
             const limiteAtivo = new Date(fimTurno.getTime() + 4 * 60 * 60 * 1000);
-            
+
             return now <= limiteAtivo;
         } catch (e) {
             return false;
         }
     },
 
-    async getPontoHoje(usuarioId: string): Promise<RegistroPonto | null> {
+    async getPontoHoje(usuarioId: string): Promise<RegistroPonto[] | RegistroPonto | null> {
         const { data, error } = await supabaseAdmin
             .from("registros_ponto")
             .select("*, cliente:clientes(*), pausas:registros_pausas(*)")
             .eq("usuario_id", usuarioId)
-            .order("id", { ascending: false })
-            .limit(1);
+            .is("saida_hora", null);
 
         if (error) throw error;
         if (!data || data.length === 0) return null;
 
-        const lastRecord = data[0] as unknown as RegistroPonto;
-
-        // Se o registro estiver FECHADO, não retorna para permitir novos inicios no mesmo dia
-        if (lastRecord.saida_hora) return null;
-
-        // Se o registro estiver ABERTO, verifica se ainda é considerado ativo (dentro do buffer de 4h do fim do turno)
         const now = new Date(getNowBR());
-        if (this.isPontoAtivo(lastRecord, now)) {
-            return formatPoint(lastRecord);
-        }
 
-        return null;
+        // Retorna apenas os registros que ainda são considerados ativos (dentro do buffer de 4h)
+        const ativos = data
+            .filter(r => this.isPontoAtivo(r as unknown as RegistroPonto, now))
+            .map(formatPoint);
+
+        if (ativos.length === 0) return null;
+
+        // Se houver apenas um, retorna o objeto para manter compatibilidade, 
+        // caso contrário retorna a lista para o App tratar múltiplos ativos
+        return ativos.length === 1 ? ativos[0] : ativos;
     },
 
     async togglePonto(usuarioId: string, location?: PontoLocation, km?: number, clienteId?: number, empresaId?: number, colaboradorClienteId?: number): Promise<{ action: 'OPEN' | 'CLOSE', record: RegistroPonto }> {
         const nowStr = getNowBR();
         const now = new Date(nowStr);
-        
-        const { data: lastRecords, error } = await supabaseAdmin
+
+        // 1. Buscar registros abertos do usuário
+        let query = supabaseAdmin
             .from("registros_ponto")
             .select("*")
             .eq("usuario_id", usuarioId)
-            .order("id", { ascending: false })
-            .limit(1);
+            .is("saida_hora", null);
+
+        // Se informou o turno, prioriza buscar o aberto deste turno
+        if (colaboradorClienteId) {
+            query = query.eq("colaborador_cliente_id", colaboradorClienteId);
+        }
+
+        const { data: openRecords, error } = await query.order("id", { ascending: false });
 
         if (error) throw error;
-        const lastRecord = lastRecords?.[0] as RegistroPonto | undefined;
 
-        // Se o último registro estiver aberto e for considerado ativo, faz o fechamento
-        if (lastRecord && !lastRecord.saida_hora && this.isPontoAtivo(lastRecord, now)) {
-            const updated = await this.updatePonto(lastRecord.id, {
+        // Tenta encontrar um registro aberto que ainda está no período de atividade (inclusive noite anterior)
+        const activeRecord = openRecords?.find(r => this.isPontoAtivo(r as any, now));
+
+        // Se encontrou um registro aberto e ativo, decide fechar
+        if (activeRecord) {
+            const updated = await this.updatePonto(activeRecord.id, {
                 saida_hora: nowStr,
                 saida_loc: location,
                 saida_km: km

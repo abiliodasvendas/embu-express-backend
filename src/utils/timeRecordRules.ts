@@ -64,30 +64,4 @@ export class TimeRecordRules {
 
         return { valid: true };
     }
-
-    /**
-     * Verifica sobreposição de horários.
-     * @param newStart 
-     * @param newEnd 
-     * @param existingRecords Lista de registros EXISTENTES do usuário no mesmo dia/turno
-     */
-    static checkOverlap(newStart: Date, newEnd: Date | null, existingRecords: any[]): { hasOverlap: boolean, conflictRecord?: any } {
-        if (!existingRecords || existingRecords.length === 0) return { hasOverlap: false };
-
-        const startMs = newStart.getTime();
-        const endMs = newEnd ? newEnd.getTime() : Infinity; // Se aberto, considera infinito (ou até agora/fim do dia)
-
-        for (const reg of existingRecords) {
-            const regStart = new Date(reg.entrada_hora).getTime();
-            const regEnd = reg.saida_hora ? new Date(reg.saida_hora).getTime() : Infinity;
-
-            // Lógica de Overlap: (StartA < EndB) && (EndA > StartB)
-            // Se um dos dois for infinito, a lógica se mantém (Infinity > qualquer hora)
-            if (startMs < regEnd && endMs > regStart) {
-                return { hasOverlap: true, conflictRecord: reg };
-            }
-        }
-
-        return { hasOverlap: false };
-    }
 }
