@@ -96,7 +96,7 @@ export const usuarioService = {
 
         const { data: usuarioAtual, error: fetchError } = await supabaseAdmin
             .from("usuarios")
-            .select("cpf, senha_padrao")
+            .select("email, cpf, senha_padrao")
             .eq("id", id)
             .single();
 
@@ -111,6 +111,23 @@ export const usuarioService = {
         const usuarioData: Partial<Usuario> = { ...rest } as Partial<Usuario>;
 
         if (data.nome_completo !== undefined) usuarioData.nome_completo = cleanString(data.nome_completo || "");
+        
+        if (data.email !== undefined) {
+            const novoEmail = data.email.toLowerCase().trim();
+            usuarioData.email = novoEmail;
+
+            if (novoEmail !== usuarioAtual.email?.toLowerCase().trim()) {
+                const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+                    email: novoEmail
+                });
+
+                if (authError) {
+                    console.error("[updateUsuario] Falha ao atualizar email no Auth:", authError);
+                    throw authError;
+                }
+            }
+        }
+
         if (data.cpf !== undefined) {
             const novoCpf = onlyNumbers(data.cpf || "");
             usuarioData.cpf = novoCpf;
