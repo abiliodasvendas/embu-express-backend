@@ -56,12 +56,9 @@ export const messages = {
       ordemInvalida: "A hora de saída não pode ser anterior à hora de entrada.",
       duracaoMinima: "O registro deve ter duração mínima de {min} minuto(s).",
       duracaoMaxima: "O registro excede o limite máximo de {max} horas.",
-      sobreposicao: "O horário informado conflita com outro registro existente.",
-      kmInvalido: "O KM informado parece incorreto (diferença muito grande). Verifique o valor.",
       duplicidadeTurno: "Não é possível iniciar este turno pois você já trabalhou nele hoje.",
       naoEncontrado: "Registro de atividade não encontrado.",
       pausaNaoEncontrada: "Pausa não encontrada.",
-      detalhesCalcNecessario: "Aguardando registro para calcular os detalhes.",
     }
   },
   cliente: {
