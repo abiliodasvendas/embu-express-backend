@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
 import { parseTime } from "./ponto-calculator.service.js";
-import { toBRTime } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
 
 export interface PontoDiarioRelatorio {
     data: string;
@@ -72,9 +72,10 @@ export const pontoRelatorioService = {
             .order("data_referencia", { ascending: true })
             .order("entrada_hora", { ascending: true });
 
-        const now = new Date();
-        const todayStr = now.toLocaleDateString('en-CA');
-        const endOfToday = new Date(todayStr + 'T23:59:59');
+        const todayStr = toLocalDateString();
+        const nowBR = getNowBR();
+        const [nowH, nowM] = parseTime(nowBR.split('T')[1].substring(0, 5));
+        const nowTotalMin = nowH * 60 + nowM;
 
         const shiftReports: EspelhoPontoMensal[] = [];
 
@@ -130,7 +131,18 @@ export const pontoRelatorioService = {
 
                 const dtCheck = new Date(refDateStr + 'T12:00:00');
                 const isActive = (!startShift || dtCheck >= startShift) && (!endShiftValue || dtCheck <= endShiftValue);
-                const isFutureDate = dtCheck > endOfToday;
+
+                // Determinar se o turno já deveria ter sido encerrado
+                let hasShiftEnded = false;
+                if (hasShiftConfig) {
+                    const [hEnd, mEnd] = parseTime(shiftDayConfig.hora_fim);
+                    const shiftEndTotalMin = hEnd * 60 + mEnd;
+                    
+                    const isPastDate = refDateStr < todayStr;
+                    const isToday = refDateStr === todayStr;
+                    
+                    hasShiftEnded = isPastDate || (isToday && nowTotalMin > shiftEndTotalMin);
+                }
 
                 let dayExpectedMin = 0;
                 if (hasShiftConfig && isActive) {
@@ -172,7 +184,8 @@ export const pontoRelatorioService = {
                     shiftKpis.km_realizado += dayWorkedKm; // Soma cumulativa resiliente
                     dayStatus = CALENDARIO_STATUS.TRABALHADO;
                 } else if (isActive) {
-                    if (isFutureDate) {
+                    // SE não trabalhou, o status depende de o turno já ter acabado ou não
+                    if (!hasShiftEnded) {
                         dayStatus = CALENDARIO_STATUS.FUTURO;
                     } else if (hasShiftConfig) {
                         dayStatus = CALENDARIO_STATUS.SEM_ATIVIDADE;
@@ -181,6 +194,7 @@ export const pontoRelatorioService = {
                         shiftKpis.horas_devidas += dayExpectedMin;
                     }
                 }
+
 
                 const dayOfWeekNames = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
                 const dayOfWeekLong = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
