@@ -595,26 +595,18 @@ export const pontoService = {
         });
     },
 
+    /**
+     * Determina se um ponto sem saída ainda é considerado "ativo" para o colaborador.
+     * Regra: Se não tem saída e foi iniciado há menos de 24 horas, está ativo.
+     * Se passou de 24 horas e não foi fechado, é ignorado pela UI (libera novo ponto).
+     */
     isPontoAtivo(ponto: RegistroPonto, now: Date): boolean {
         if (!ponto || ponto.saida_hora) return false;
 
-        const turnoFimBase = ponto.detalhes_calculo?.saida?.turno_base;
-        if (!turnoFimBase) return false;
-
         try {
-            const [hF, mF] = parseTime(turnoFimBase);
-            // Criar datetime do fim do turno usando string ISO com offset de Brasília para consistência
-            const fimTurnoISO = `${ponto.data_referencia}T${hF.toString().padStart(2, '0')}:${mF.toString().padStart(2, '0')}:00-03:00`;
-            const fimTurno = new Date(fimTurnoISO);
-
-            // Se o fim do turno for menor que a entrada, ele virou o dia
             const entrada = new Date(ponto.entrada_hora);
-            if (fimTurno < entrada) {
-                fimTurno.setDate(fimTurno.getDate() + 1);
-            }
-
-            // Buffer de 4 horas após o fim esperado
-            const limiteAtivo = new Date(fimTurno.getTime() + 4 * 60 * 60 * 1000);
+            // 24 horas de validade para um ponto aberto
+            const limiteAtivo = new Date(entrada.getTime() + 24 * 60 * 60 * 1000);
 
             return now <= limiteAtivo;
         } catch (e) {
@@ -634,7 +626,7 @@ export const pontoService = {
 
         const now = new Date(getNowBR());
 
-        // Retorna apenas os registros que ainda são considerados ativos (dentro do buffer de 4h)
+        // Retorna apenas os registros que ainda são considerados ativos (menos de 24h abertos)
         const ativos = data
             .filter(r => this.isPontoAtivo(r as unknown as RegistroPonto, now))
             .map(formatPoint);
