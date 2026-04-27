@@ -75,8 +75,6 @@ export const pontoService = {
         const orderCheck = TimeRecordRules.validateTimeOrder(entrada_hora, saida_hora);
         if (!orderCheck.valid) throw new AppError(orderCheck.message || "Erro de ordem");
 
-        const durationCheck = TimeRecordRules.validateMinDuration(entrada_hora, saida_hora);
-        if (!durationCheck.valid) throw new AppError(durationCheck.message || "Duração mínima");
 
         // 1. Buscar registros do dia E registros em aberto (de qualquer dia)
         const { data: registrosConflitantes, error: fetchError } = await supabaseAdmin
@@ -258,8 +256,6 @@ export const pontoService = {
                 const orderCheck = TimeRecordRules.validateTimeOrder(entrada, saida);
                 if (!orderCheck.valid) throw new AppError(orderCheck.message || "Erro de ordem");
 
-                const maxConfirm = TimeRecordRules.validateMaxDuration(entrada, saida);
-                if (!maxConfirm.valid) throw new AppError(maxConfirm.message || "Duração excessiva");
             }
 
             const { data: pausas_db } = await supabaseAdmin
@@ -601,17 +597,7 @@ export const pontoService = {
      * Se passou de 24 horas e não foi fechado, é ignorado pela UI (libera novo ponto).
      */
     isPontoAtivo(ponto: RegistroPonto, now: Date): boolean {
-        if (!ponto || ponto.saida_hora) return false;
-
-        try {
-            const entrada = new Date(ponto.entrada_hora);
-            // 24 horas de validade para um ponto aberto
-            const limiteAtivo = new Date(entrada.getTime() + 24 * 60 * 60 * 1000);
-
-            return now <= limiteAtivo;
-        } catch (e) {
-            return false;
-        }
+        return !!ponto && !ponto.saida_hora;
     },
 
     async getPontoHoje(usuarioId: string): Promise<RegistroPonto[] | RegistroPonto | null> {
@@ -649,10 +635,6 @@ export const pontoService = {
             .eq("usuario_id", usuarioId)
             .is("saida_hora", null);
 
-        // Se informou o turno, prioriza buscar o aberto deste turno
-        if (colaboradorClienteId) {
-            query = query.eq("colaborador_cliente_id", colaboradorClienteId);
-        }
 
         const { data: openRecords, error } = await query.order("id", { ascending: false });
 
