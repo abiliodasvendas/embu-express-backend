@@ -431,8 +431,8 @@ export const pontoService = {
             });
 
             if (activeLinks.length === 0) return [];
+            const userIds = [...new Set(activeLinks.map(l => l.usuario.id))];
 
-            const userIds = users.map(u => u.id);
             const { data: pontos, error: pontoError } = await supabaseAdmin
                 .from("registros_ponto")
                 .select("*, cliente:clientes(nome_fantasia), colaborador_cliente:colaborador_clientes(unidade:unidades_cliente(nome_unidade)), pausas:registros_pausas(*)")
@@ -448,6 +448,7 @@ export const pontoService = {
             const hoje = toLocalDateString();
             const isHoje = dataRef === hoje;
             const isFuturo = dataRef > hoje;
+
             let nowTotalMin = 0;
             if (isHoje) {
                 const nowStr = getNowBR();
@@ -554,10 +555,18 @@ export const pontoService = {
                 } as unknown as RegistroPonto);
             });
 
-            const leftoverPontos = pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [];
+            const leftoverPontos = (pontos?.filter(p => !usedPointIds.has(p.id.toString())) || [])
+                .filter(p => {
+                    // Se estiver filtrando por cliente, as sobras também devem ser desse cliente
+                    if (filtros.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) {
+                        return String(p.cliente_id) === String(filtros.cliente_id);
+                    }
+                    return true;
+                });
+
             leftoverPontos.forEach(p => {
-                const user = users.find(u => u.id === p.usuario_id);
-                mappedResults.push({ ...p, usuario: user || p.usuario });
+                const user = users?.find(u => u.id === p.usuario_id);
+                mappedResults.push({ ...formatPoint(p), usuario: user || p.usuario });
             });
 
             const finalMapped: RegistroPonto[] = mappedResults as unknown as RegistroPonto[];
