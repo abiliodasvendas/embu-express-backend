@@ -392,7 +392,8 @@ export const pontoService = {
             let userQuery = supabaseAdmin
                 .from("usuarios")
                 .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*))")
-                .eq("status", CADASTRO_STATUS.ATIVO);
+                .eq("status", CADASTRO_STATUS.ATIVO)
+                .or(`data_fim.is.null,data_fim.gte.${dataRef}`, { foreignTable: 'links' });
 
             if (filtros.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) {
                 userQuery = userQuery.eq("links.cliente_id", filtros.cliente_id);
