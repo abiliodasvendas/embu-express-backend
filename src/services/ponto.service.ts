@@ -418,7 +418,7 @@ export const pontoService = {
             users?.forEach(u => {
                 u.links?.forEach((link: ColaboradorCliente) => {
                     const isVigente = !link.data_fim || link.data_fim >= dataRef;
-                    const matchesCliente = !filtros.cliente_id || filtros.cliente_id === FilterOptions.TODOS || link.cliente_id === filtros.cliente_id;
+                    const matchesCliente = !filtros.cliente_id || filtros.cliente_id === FilterOptions.TODOS || String(link.cliente_id) === String(filtros.cliente_id);
                     
                     // O horário do dia no vínculo agora define a obrigação (substitui a escala do cliente)
                     const hConfig = link.horarios?.find(h => h.dia_semana === scaleDay);
