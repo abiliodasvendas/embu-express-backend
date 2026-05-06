@@ -115,3 +115,26 @@ export function formatPoint(p: Partial<RegistroPonto> | RegistroPonto): Registro
   }
   return result;
 }
+
+/**
+ * Retorna o dia da semana (0-6, onde 0 é Domingo) no timezone de Brasília
+ */
+export const getDayOfWeekBR = (dateInput: string | Date): number => {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (!date || isNaN(date.getTime())) return NaN;
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  });
+
+  const parts = formatter.formatToParts(date);
+  const p: any = {};
+  parts.forEach(part => p[part.type] = part.value);
+
+  // Mês no JS é 0-11
+  const localDate = new Date(Number(p.year), Number(p.month) - 1, Number(p.day), 12, 0, 0);
+  return localDate.getDay();
+};

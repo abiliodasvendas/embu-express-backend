@@ -4,7 +4,7 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
-import { getNowBR, toBRTime, toLocalDateString, onlyNumbers, formatPoint } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString, onlyNumbers, formatPoint, getDayOfWeekBR } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { pontoCalculatorService, parseTime } from "./ponto-calculator.service.js";
@@ -282,13 +282,11 @@ export const pontoService = {
             const clienteIdAtualValue = data.cliente_id !== undefined ? data.cliente_id : existing.cliente_id;
             const clienteMudou = data.cliente_id !== undefined && data.cliente_id !== existing.cliente_id;
 
+            const dayOfWeek = getDayOfWeekBR(entrada);
             let snapshot: Partial<ColaboradorCliente> | undefined = undefined;
-            if (!clienteMudou && existing.detalhes_calculo?.entrada?.turno_base && existing.detalhes_calculo?.saida?.turno_base) {
-                // Determine the day of week for the record to build a valid snapshot
-                const dateObj = new Date(entrada);
-                let dayOfWeek = dateObj.getDay();
-                if (dayOfWeek === 0) dayOfWeek = 7;
-
+            
+            // Só usa snapshot se NÃO for um reprocessamento forçado e NÃO houver mudança de cliente
+            if (!force_recalculate && !clienteMudou && existing.detalhes_calculo?.entrada?.turno_base && existing.detalhes_calculo?.saida?.turno_base) {
                 snapshot = {
                     horarios: [{
                         dia_semana: dayOfWeek,
@@ -410,9 +408,7 @@ export const pontoService = {
             const { data: users, error: userError } = await userQuery;
             if (userError) throw userError;
 
-            const dateObj = new Date(dataRef + "T12:00:00Z");
-            let dayOfWeek = dateObj.getUTCDay();
-            const scaleDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+            const scaleDay = getDayOfWeekBR(dataRef + "T12:00:00Z");
 
             const activeLinks: (ColaboradorCliente & { usuario: Usuario })[] = [];
             users?.forEach(u => {

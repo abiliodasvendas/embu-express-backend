@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
-import { getNowBR, toLocalDateString } from "../utils/utils.js";
+import { getNowBR, toLocalDateString, getDayOfWeekBR } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { DetalhesCalculo, ColaboradorCliente } from "../types/database.js";
 
@@ -73,8 +73,7 @@ export const pontoCalculatorService = {
         detalhes.saida.tolerancia = 0;
         detalhes.saida.limite_he_excessiva = limiteHEExcessiva;
         let melhorTurno: Partial<ColaboradorCliente> | null = null;
-        const dateObj = new Date(entrada);
-        let dayOfWeek = dateObj.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+        const dayOfWeek = getDayOfWeekBR(entrada);
 
         if (snapshotTurno) {
             melhorTurno = snapshotTurno;
@@ -85,11 +84,12 @@ export const pontoCalculatorService = {
                 .select("*, unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
                 .eq("colaborador_id", usuarioId);
 
-            const hoje = toLocalDateString();
+            const dataRef = entrada.split('T')[0];
             const turnosValidos = (todosOsTurnos || [])
-                .filter(t => !t.data_fim || t.data_fim >= hoje)
+                .filter(t => !t.data_fim || t.data_fim >= dataRef)
                 // O sistema agora só aceita turnos com configuração flexível explícita (sem fallback de unidade)
                 .filter(t => t.horarios?.some((h: any) => h.dia_semana === dayOfWeek));
+
 
             if (turnosValidos.length > 0) {
                 const [hEntrada, mEntrada] = parseTime(entrada);
@@ -168,7 +168,7 @@ export const pontoCalculatorService = {
                 const end = new Date(saida).getTime();
                 const brutoMinutos = Math.round((end - start) / 60000);
 
-                const liquidoMinutos = brutoMinutos - Math.max(pausasMinutos, tolPausa);
+                const liquidoMinutos = brutoMinutos - pausasMinutos;
 
                 detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
                 detalhes.resumo.pausa_total = pausasMinutos;
