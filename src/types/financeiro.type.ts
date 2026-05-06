@@ -28,6 +28,7 @@ export interface ResumoClienteFinanceiro {
         aluguel: number;
         adiantamento: number;
         adiantamento_config: number;
+        taxa_entrega: number;
     };
     dias_base_mes: number;
     dias_esperados_turno: number;

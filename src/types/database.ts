@@ -190,6 +190,7 @@ export interface ColaboradorCliente {
   valor_bonus?: number | null;
   ajuda_custo?: number | null;
   valor_adiantamento?: number | null;
+  taxa_entrega?: number | null;
   data_inicio?: string | null;
   data_fim?: string | null;
   cliente?: Client;

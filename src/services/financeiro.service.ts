@@ -193,7 +193,8 @@ export const financeiroService = {
                     ajuda_custo: link.ajuda_custo || 0,
                     aluguel: link.valor_aluguel || 0,
                     adiantamento: valorAdiantamentoEfetivo,
-                    adiantamento_config: valorAdiantamentoConfig
+                    adiantamento_config: valorAdiantamentoConfig,
+                    taxa_entrega: link.taxa_entrega || 0
                 },
                 dias_base_mes: diasEscalaNoMesTotal,
                 dias_esperados_turno: diasEsperadosTurno,
