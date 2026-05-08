@@ -61,6 +61,38 @@ export const financeiroService = {
 
         // Buscar ocorrências e pontos do período
         const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioMesStr, data_fim: dataFimMesStr });
+
+        // 3. Verificação de Saldo Devedor do Mês Anterior
+        let mesAnterior = mes - 1;
+        let anoAnterior = ano;
+        if (mesAnterior === 0) {
+            mesAnterior = 12;
+            anoAnterior = ano - 1;
+        }
+
+        const { data: fechamentoAnterior } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("saldo_final")
+            .eq("colaborador_id", usuarioId)
+            .eq("mes", mesAnterior)
+            .eq("ano", anoAnterior)
+            .eq("pago", true)
+            .maybeSingle();
+
+        if (fechamentoAnterior && fechamentoAnterior.saldo_final < 0) {
+            const valorDebito = Math.abs(fechamentoAnterior.saldo_final);
+            ocorrencias.push({
+                is_virtual: true,
+                colaborador_id: usuarioId,
+                tipo_id: 0,
+                data_ocorrencia: dataInicioMesStr,
+                valor: valorDebito,
+                impacto_financeiro: true,
+                tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
+                observacao: `Saldo devedor acumulado de ${String(mesAnterior).padStart(2, '0')}/${anoAnterior}`,
+                tipo: { descricao: "Saldo Devedor (Mês Anterior)" }
+            } as Ocorrencia);
+        }
         const { data: pontos } = await supabaseAdmin
             .from("registros_ponto")
             .select("*")
