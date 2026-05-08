@@ -196,8 +196,8 @@ export const financeiroService = {
                         valor: parseFloat(valorDia.toFixed(2)),
                         impacto_financeiro: false, // Já está no pro-rata
                         tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
-                        observacao: `Ausência - ${dia.dia_semana_curto}`,
-                        tipo: { descricao: "Ausência" }
+                        observacao: `Sem Atividade - ${dia.dia_semana_curto}`,
+                        tipo: { descricao: "Sem Atividade" }
                     });
                 }
             });
