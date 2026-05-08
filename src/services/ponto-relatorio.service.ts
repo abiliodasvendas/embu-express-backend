@@ -62,6 +62,15 @@ export const pontoRelatorioService = {
             .select("*, cliente:clientes(nome_fantasia), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
             .eq("colaborador_id", usuarioId);
 
+        const nowBR = getNowBR();
+        const todayDate = new Date(nowBR.split('T')[0] + 'T00:00:00');
+        const todayStr = toLocalDateString();
+        const [nowH, nowM] = parseTime(nowBR.split('T')[1].substring(0, 5));
+        const nowTotalMin = nowH * 60 + nowM;
+
+        const isCurrentMonth = mes === (todayDate.getMonth() + 1) && ano === todayDate.getFullYear();
+        const isFuturePeriod = ano > todayDate.getFullYear() || (ano === todayDate.getFullYear() && mes > (todayDate.getMonth() + 1));
+
         // 2. Buscar todos os pontos do mês
         const { data: allPoints } = await supabaseAdmin
             .from("registros_ponto")
@@ -72,10 +81,6 @@ export const pontoRelatorioService = {
             .order("data_referencia", { ascending: true })
             .order("entrada_hora", { ascending: true });
 
-        const todayStr = toLocalDateString();
-        const nowBR = getNowBR();
-        const [nowH, nowM] = parseTime(nowBR.split('T')[1].substring(0, 5));
-        const nowTotalMin = nowH * 60 + nowM;
 
         const shiftReports: EspelhoPontoMensal[] = [];
 
@@ -154,9 +159,20 @@ export const pontoRelatorioService = {
                     if (totalMin < 0) totalMin += 1440;
                     dayExpectedMin = Math.max(0, totalMin - tolPausa);
 
+                    const isPastDate = refDateStr < todayStr;
+                    const isToday = refDateStr === todayStr;
+
                     if (isActive) {
-                        shiftKpis.dias_meta_turno++;
-                        shiftKpis.horas_esperadas += dayExpectedMin;
+                        // Regra de Saldo Inteligente: 
+                        // 1. Se for um mês futuro, não conta nada (saldo 0).
+                        // 2. Se for o mês atual, só conta até hoje.
+                        // 3. Se for um mês passado, conta o mês inteiro.
+                        const shouldCountTowardsBalance = !isFuturePeriod && (!isCurrentMonth || (isPastDate || (isToday && hasShiftEnded)));
+
+                        if (shouldCountTowardsBalance) {
+                            shiftKpis.dias_meta_turno++;
+                            shiftKpis.horas_esperadas += dayExpectedMin;
+                        }
                     }
                 }
 
@@ -286,7 +302,18 @@ export const pontoRelatorioService = {
 
             consolidatedCalendar.sort((a, b) => b.dia - a.dia);
 
-            const uniqueDaysMeta = new Set(consolidatedCalendar.filter(d => d.minutos_esperados > 0).map(d => d.dia));
+            const uniqueDaysMeta = new Set(
+                consolidatedCalendar
+                    .filter(d => {
+                        if (d.minutos_esperados <= 0) return false;
+                        if (isFuturePeriod) return false;
+                        if (!isCurrentMonth) return true;
+                        
+                        const isPastDate = d.data < todayStr;
+                        return isPastDate || d.status !== CALENDARIO_STATUS.FUTURO;
+                    })
+                    .map(d => d.dia)
+            );
             const uniqueDaysWorked = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.TRABALHADO).map(d => d.dia));
             const uniqueDaysLack = new Set(consolidatedCalendar.filter(d => d.status === CALENDARIO_STATUS.SEM_ATIVIDADE).map(d => d.dia));
 
