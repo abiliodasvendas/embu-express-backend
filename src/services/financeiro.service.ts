@@ -166,13 +166,12 @@ export const financeiroService = {
             const valorAdiantamentoConfig = link.valor_adiantamento || 0;
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
 
-            // 4. Cálculo do Pro-rata (Contrato + Ajuda + Aluguel - Adiantamento) + Bônus (Não pro-rata)
-            // Nova lógica: Baseia-se na meta do período (diasEsperadosTurno) menos as ausencias reais.
-            // Proporciona a visualização de "100%" no início do mês, subtraindo apenas o que for perdido.
-            const baseFixaParaProRata = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0) - valorAdiantamentoEfetivo;
+            // 4. Cálculo do Pro-rata (Contrato + Ajuda + Aluguel) - Adiantamento + Bônus (Não pro-rata)
+            // Nova lógica: O pro-rata é calculado sobre a base bruta. O adiantamento é subtraído do valor final proporcional.
+            const baseBrutaFixa = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0);
             const diasParaPagamento = Math.max(0, diasEsperadosTurno - ausenciasTurno);
-            const valorCalculadoProRata = (baseFixaParaProRata / diasEscalaNoMesTotal) * diasParaPagamento;
-            const valorFinalComBonus = valorCalculadoProRata + bonusEfetivo;
+            const valorCalculadoProRata = (baseBrutaFixa / diasEscalaNoMesTotal) * diasParaPagamento;
+            const valorFinalComBonus = valorCalculadoProRata - valorAdiantamentoEfetivo + bonusEfetivo;
 
             // Ocorrências vinculadas a este turno
             const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
@@ -185,7 +184,7 @@ export const financeiroService = {
                 nome_fantasia: link.cliente?.nome_fantasia,
                 nome_unidade: link.unidade?.nome_unidade,
                 id_vinculo: link.id,
-                saldo_fixo_original: baseFixaParaProRata + bonusEfetivo,
+                saldo_fixo_original: baseBrutaFixa - valorAdiantamentoEfetivo + bonusEfetivo,
                 valores_fixos: {
                     contrato: link.valor_contrato || 0,
                     bonus: bonusEfetivo,
