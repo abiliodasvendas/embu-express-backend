@@ -174,11 +174,6 @@ export const financeiroService = {
             const valorCalculadoProRata = (baseBrutaFixa / diasEscalaNoMesTotal) * diasParaPagamento;
             const valorFinalComBonus = valorCalculadoProRata - valorAdiantamentoEfetivo + bonusEfetivo;
 
-            // Ocorrências reais vinculadas a este turno (da base de dados)
-            const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
-            const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
-            const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
-
             const valorDia = baseBrutaFixa / diasEscalaNoMesTotal;
             const virtualOcorrenciasTurno: Ocorrencia[] = [];
             const datasAusencia: string[] = [];
@@ -194,7 +189,7 @@ export const financeiroService = {
                         tipo_id: 0,
                         data_ocorrencia: dia.data,
                         valor: parseFloat(valorDia.toFixed(2)),
-                        impacto_financeiro: false, // Já está no pro-rata
+                        impacto_financeiro: true, // Agora impacta para fins de exibição de saldo
                         tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
                         observacao: `Sem Atividade - ${dia.dia_semana_curto}`,
                         tipo: { descricao: "Sem Atividade" }
@@ -210,12 +205,24 @@ export const financeiroService = {
                     tipo_id: 0,
                     data_ocorrencia: dataFimMesStr,
                     valor: valorAdiantamentoEfetivo,
-                    impacto_financeiro: false, // Já está no pro-rata
+                    impacto_financeiro: true, // Agora impacta para fins de exibição de saldo
                     tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
                     observacao: "Adiantamento Mensal",
                     tipo: { descricao: "Adiantamento" }
                 });
             }
+
+            // Ocorrências REAIS + VIRTUAIS vinculadas a este turno
+            const todasOcorrenciasTurno = [
+                ...ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro),
+                ...virtualOcorrenciasTurno
+            ];
+
+            const totalCreditosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
+            const totalDebitosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
+
+            // O valor calculado agora é a BASE + BONUS + Saldo de Ocorrências (que já inclui as deduções virtuais)
+            const valorFinalCalculado = baseBrutaFixa + bonusEfetivo + totalCreditosTurno - totalDebitosTurno;
 
             return {
                 cliente_id: link.cliente_id,
@@ -243,7 +250,7 @@ export const financeiroService = {
                 data_fim: link.data_fim || null,
                 creditos_ocorrencia: totalCreditosTurno,
                 debitos_ocorrencia: totalDebitosTurno,
-                valor_calculado: parseFloat((valorFinalComBonus + totalCreditosTurno - totalDebitosTurno).toFixed(2)),
+                valor_calculado: parseFloat(valorFinalCalculado.toFixed(2)),
                 datas_ausencia: datasAusencia,
                 _virtual_ocorrencias: virtualOcorrenciasTurno // Temporário para merge final
             };
