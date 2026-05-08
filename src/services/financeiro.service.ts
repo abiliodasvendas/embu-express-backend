@@ -4,6 +4,7 @@ import { getNowBR, toBRTime } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
 import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload } from "../types/financeiro.type.js";
+import { Ocorrencia } from "../types/database.js";
 
 function formatFechamento<T extends { data_fechamento?: string; data_pagamento?: string; created_at?: string }>(f: T): T {
     if (!f) return f;
@@ -173,10 +174,48 @@ export const financeiroService = {
             const valorCalculadoProRata = (baseBrutaFixa / diasEscalaNoMesTotal) * diasParaPagamento;
             const valorFinalComBonus = valorCalculadoProRata - valorAdiantamentoEfetivo + bonusEfetivo;
 
-            // Ocorrências vinculadas a este turno
+            // Ocorrências reais vinculadas a este turno (da base de dados)
             const ocorrenciasDesteTurno = ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro);
             const totalCreditosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
             const totalDebitosTurno = ocorrenciasDesteTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
+
+            const valorDia = baseBrutaFixa / diasEscalaNoMesTotal;
+            const virtualOcorrenciasTurno: Ocorrencia[] = [];
+            const datasAusencia: string[] = [];
+
+            // 5. Coletar datas de ausência para gerar ocorrências virtuais
+            calendarioVisual.forEach(dia => {
+                if (dia.status === CALENDARIO_STATUS.SEM_ATIVIDADE) {
+                    datasAusencia.push(dia.data);
+                    virtualOcorrenciasTurno.push({
+                        is_virtual: true,
+                        colaborador_id: usuarioId,
+                        colaborador_cliente_id: link.id,
+                        tipo_id: 0,
+                        data_ocorrencia: dia.data,
+                        valor: parseFloat(valorDia.toFixed(2)),
+                        impacto_financeiro: false, // Já está no pro-rata
+                        tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
+                        observacao: `Ausência - ${dia.dia_semana_curto}`,
+                        tipo: { descricao: "Ausência" }
+                    });
+                }
+            });
+
+            if (valorAdiantamentoEfetivo > 0) {
+                virtualOcorrenciasTurno.push({
+                    is_virtual: true,
+                    colaborador_id: usuarioId,
+                    colaborador_cliente_id: link.id,
+                    tipo_id: 0,
+                    data_ocorrencia: dataFimMesStr,
+                    valor: valorAdiantamentoEfetivo,
+                    impacto_financeiro: false, // Já está no pro-rata
+                    tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
+                    observacao: "Adiantamento Mensal",
+                    tipo: { descricao: "Adiantamento" }
+                });
+            }
 
             return {
                 cliente_id: link.cliente_id,
@@ -204,9 +243,25 @@ export const financeiroService = {
                 data_fim: link.data_fim || null,
                 creditos_ocorrencia: totalCreditosTurno,
                 debitos_ocorrencia: totalDebitosTurno,
-                valor_calculado: parseFloat((valorFinalComBonus + totalCreditosTurno - totalDebitosTurno).toFixed(2))
+                valor_calculado: parseFloat((valorFinalComBonus + totalCreditosTurno - totalDebitosTurno).toFixed(2)),
+                datas_ausencia: datasAusencia,
+                _virtual_ocorrencias: virtualOcorrenciasTurno // Temporário para merge final
             };
         }).filter((r): r is Exclude<typeof r, null> => r !== null);
+
+        // 6. Consolidação Final de Ocorrências (Reais + Virtuais)
+        // Marcamos as ocorrências de feriado reais como virtuais se forem automáticas do sistema
+        const ocorrenciasComFeriadoMarcado = (ocorrencias || []).map(o => {
+            const ehAutomática = o.observacao?.includes("Inclusão automática:");
+            if (ehAutomática) return { ...o, is_virtual: true };
+            return o;
+        });
+
+        const virtualOcorrenciasGlobais = resumoClientes.flatMap(r => (r as any)._virtual_ocorrencias || []);
+        const todasOcorrencias = [...ocorrenciasComFeriadoMarcado, ...virtualOcorrenciasGlobais].sort((a, b) => b.data_ocorrencia.localeCompare(a.data_ocorrencia));
+
+        // Limpar campo temporário
+        resumoClientes.forEach(r => delete (r as any)._virtual_ocorrencias);
 
         // 5. Consolidação MEI
         const valorMeiTotal = usuario?.valor_mei || 0;
@@ -266,7 +321,7 @@ export const financeiroService = {
                 dias_trabalhados: diasAtivosUnicos.length,
                 datas_trabalhadas: diasAtivosUnicos
             },
-            ocorrencias: ocorrencias,
+            ocorrencias: todasOcorrencias,
             ocorrencias_avulsas: {
                 creditos: creditosAvulsos,
                 debitos: debitosAvulsos,

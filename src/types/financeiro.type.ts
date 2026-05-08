@@ -40,6 +40,7 @@ export interface ResumoClienteFinanceiro {
     creditos_ocorrencia: number;
     debitos_ocorrencia: number;
     valor_calculado: number;
+    datas_ausencia: string[];
 }
 
 export interface MeiConsolidado {

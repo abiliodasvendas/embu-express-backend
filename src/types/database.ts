@@ -233,7 +233,8 @@ export interface TipoOcorrencia {
 }
 
 export interface Ocorrencia {
-  id: number;
+  id?: number;
+  is_virtual?: boolean;
   colaborador_id: string;
   colaborador_cliente_id?: number | null;
   tipo_id: number;
