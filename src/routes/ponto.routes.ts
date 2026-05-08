@@ -42,8 +42,14 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.post("/:id/pausas", { preHandler: [verifyOperacional()] }, PontoController.iniciarPausa);
     app.put("/pausas/:id", { preHandler: [verifyOperacional()] }, PontoController.finalizarPausa);
 
+    // AUSÊNCIAS MANUAIS (CACHE EM MEMÓRIA)
+    app.get("/manual-absence", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_VER)] }, PontoController.listManualAbsences);
+    app.post("/manual-absence", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_EDITAR)] }, PontoController.addManualAbsence);
+    app.delete("/manual-absence", { preHandler: [verifyPermissao(PERMISSIONS.PONTO.ADMIN_EDITAR)] }, PontoController.removeManualAbsence);
+
     // Fallback/Legacy compat for App
     app.get("/hoje/:usuarioId", { preHandler: [verifyOperacional()] }, PontoController.getHoje);
 };
+
 
 export default pontoRoutes;

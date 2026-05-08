@@ -71,3 +71,13 @@ export const espelhoPontoSchema = z.object({
         ano: z.string().transform(Number).optional()
     })
 });
+
+export const manualAbsenceSchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    userId: z.string().uuid()
+});
+
+export const queryDateSchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+});
+

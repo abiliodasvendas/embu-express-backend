@@ -1,13 +1,44 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { pontoService } from "../services/ponto.service.js";
 import { pontoRelatorioService } from "../services/ponto-relatorio.service.js";
-import { createPontoSchema, updatePontoSchema, togglePontoSchema, listPontoSchema, relatorioMensalSchema, iniciarPausaSchema, finalizarPausaSchema, espelhoPontoSchema } from "../schemas/ponto.schema.js";
+import { ManualAbsenceService } from "../services/manual-absence.service.js";
+import { 
+  createPontoSchema, 
+  updatePontoSchema, 
+  togglePontoSchema, 
+  listPontoSchema, 
+  relatorioMensalSchema, 
+  iniciarPausaSchema, 
+  finalizarPausaSchema, 
+  espelhoPontoSchema,
+  manualAbsenceSchema,
+  queryDateSchema
+} from "../schemas/ponto.schema.js";
 import { toPontoDTO, toPontoListDTO } from "../types/dtos/ponto.dto.js";
 import { z } from "zod";
 
 import { AuthenticatedRequest } from "../types/request.type.js";
 
 export const PontoController = {
+
+  async addManualAbsence(request: FastifyRequest, reply: FastifyReply) {
+    const { date, userId } = manualAbsenceSchema.parse(request.body);
+    ManualAbsenceService.add(date, userId);
+    return reply.status(200).send({ success: true });
+  },
+
+  async removeManualAbsence(request: FastifyRequest, reply: FastifyReply) {
+    const { date, userId } = manualAbsenceSchema.parse(request.body);
+    ManualAbsenceService.remove(date, userId);
+    return reply.status(200).send({ success: true });
+  },
+
+  async listManualAbsences(request: FastifyRequest, reply: FastifyReply) {
+    const { date } = queryDateSchema.parse(request.query);
+    const result = ManualAbsenceService.list(date);
+    return reply.status(200).send(result);
+  },
+
   async register(request: FastifyRequest, reply: FastifyReply) {
     const data = createPontoSchema.parse(request.body);
     const result = await pontoService.registrarPonto(data);
