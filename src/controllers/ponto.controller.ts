@@ -23,19 +23,19 @@ export const PontoController = {
 
   async addManualAbsence(request: FastifyRequest, reply: FastifyReply) {
     const { date, userId } = manualAbsenceSchema.parse(request.body);
-    ManualAbsenceService.add(date, userId);
+    await ManualAbsenceService.add(date, userId);
     return reply.status(200).send({ success: true });
   },
 
   async removeManualAbsence(request: FastifyRequest, reply: FastifyReply) {
     const { date, userId } = manualAbsenceSchema.parse(request.body);
-    ManualAbsenceService.remove(date, userId);
+    await ManualAbsenceService.remove(date, userId);
     return reply.status(200).send({ success: true });
   },
 
   async listManualAbsences(request: FastifyRequest, reply: FastifyReply) {
     const { date } = queryDateSchema.parse(request.query);
-    const result = ManualAbsenceService.list(date);
+    const result = await ManualAbsenceService.list(date);
     return reply.status(200).send(result);
   },
 
