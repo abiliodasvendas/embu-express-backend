@@ -82,6 +82,14 @@ export const pontoRelatorioService = {
             .order("entrada_hora", { ascending: true });
 
 
+        // 3. Buscar feriados do mês
+        const { data: feriadosData } = await supabaseAdmin
+            .from("feriados")
+            .select("data")
+            .gte("data", startOfMonth)
+            .lte("data", endOfMonth);
+        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
+
         const shiftReports: EspelhoPontoMensal[] = [];
 
         // Estrutura para consolidar dados de todos os turnos
@@ -129,6 +137,7 @@ export const pontoRelatorioService = {
                 const currentDate = new Date(Date.UTC(ano, mes - 1, d));
                 const refDateStr = currentDate.toISOString().split('T')[0];
                 const weekDayNum = currentDate.getUTCDay();
+                const isFeriado = feriadosMes.has(refDateStr);
 
                 // RESOLUÇÃO DE ESCALA: Exclusivamente via Escala Flexível (Novo Modelo)
                 const shiftDayConfig = link.horarios?.find((h: any) => h.dia_semana === weekDayNum);
@@ -137,14 +146,14 @@ export const pontoRelatorioService = {
                 const dtCheck = new Date(refDateStr + 'T12:00:00');
                 const isActive = (!startShift || dtCheck >= startShift) && (!endShiftValue || dtCheck <= endShiftValue);
 
+                const isPastDate = refDateStr < todayStr;
+                const isToday = refDateStr === todayStr;
+
                 // Determinar se o turno já deveria ter sido encerrado
                 let hasShiftEnded = false;
                 if (hasShiftConfig) {
                     const [hEnd, mEnd] = parseTime(shiftDayConfig.hora_fim);
                     const shiftEndTotalMin = hEnd * 60 + mEnd;
-                    
-                    const isPastDate = refDateStr < todayStr;
-                    const isToday = refDateStr === todayStr;
                     
                     hasShiftEnded = isPastDate || (isToday && nowTotalMin > shiftEndTotalMin);
                 }
@@ -159,18 +168,19 @@ export const pontoRelatorioService = {
                     if (totalMin < 0) totalMin += 1440;
                     dayExpectedMin = Math.max(0, totalMin - tolPausa);
 
-                    const isPastDate = refDateStr < todayStr;
-                    const isToday = refDateStr === todayStr;
+                    if (isFeriado) {
+                        dayExpectedMin = 0; // Feriados não geram débito de horas
+                    }
 
                     if (isActive) {
                         // Regra de Saldo Inteligente: 
                         // 1. Se for um mês futuro, não conta nada (saldo 0).
-                        // 2. Se for o mês atual, só conta até hoje.
+                        // 2. Se for o mês atual, conta até hoje (inclusive).
                         // 3. Se for um mês passado, conta o mês inteiro.
-                        const shouldCountTowardsBalance = !isFuturePeriod && (!isCurrentMonth || (isPastDate || (isToday && hasShiftEnded)));
+                        const shouldCountTowardsBalance = !isFuturePeriod && (!isCurrentMonth || isPastDate || isToday);
 
                         if (shouldCountTowardsBalance) {
-                            shiftKpis.dias_meta_turno++;
+                            if (!isFeriado) shiftKpis.dias_meta_turno++;
                             shiftKpis.horas_esperadas += dayExpectedMin;
                         }
                     }
@@ -214,14 +224,19 @@ export const pontoRelatorioService = {
                     shiftKpis.km_realizado += dayWorkedKm; // Soma cumulativa resiliente
                     dayStatus = CALENDARIO_STATUS.TRABALHADO;
                 } else if (isActive) {
-                    // SE não trabalhou, o status depende de o turno já ter acabado ou não
-                    if (!hasShiftEnded) {
+                    const isStrictlyFuture = !isPastDate && !isToday;
+                    // SE não trabalhou, o status depende de ser estritamente futuro ou não
+                    if (isStrictlyFuture) {
                         dayStatus = CALENDARIO_STATUS.FUTURO;
                     } else if (hasShiftConfig) {
-                        dayStatus = CALENDARIO_STATUS.SEM_ATIVIDADE;
-                        shiftKpis.dias_ausencias++;
-                        shiftKpis.horas_ausencias += dayExpectedMin;
-                        shiftKpis.horas_devidas += dayExpectedMin;
+                        if (isFeriado) {
+                            dayStatus = CALENDARIO_STATUS.FERIADO;
+                        } else {
+                            dayStatus = CALENDARIO_STATUS.SEM_ATIVIDADE;
+                            shiftKpis.dias_ausencias++;
+                            shiftKpis.horas_ausencias += dayExpectedMin;
+                            shiftKpis.horas_devidas += dayExpectedMin;
+                        }
                     }
                 }
 
