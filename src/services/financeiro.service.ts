@@ -100,6 +100,13 @@ export const financeiroService = {
             .gte("data_referencia", dataInicioMesStr)
             .lte("data_referencia", dataFimMesStr);
 
+        const { data: feriadosData } = await supabaseAdmin
+            .from("feriados")
+            .select("data")
+            .gte("data", dataInicioMesStr)
+            .lte("data", dataFimMesStr);
+        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
+
         const { data: confirmacaoAdiantamento } = await supabaseAdmin
             .from("confirmacoes_adiantamento")
             .select("*")
@@ -150,14 +157,19 @@ export const financeiroService = {
                 let status: string = CALENDARIO_STATUS.NAO_VIGENTE;
                 if (isVigente) {
                     const temPonto = (pontos || []).some(p => p.data_referencia === dataReferenciaStr && p.colaborador_cliente_id === link.id);
+                    const isFeriado = feriadosMes.has(dataReferenciaStr);
 
                     if (temPonto) {
                         status = CALENDARIO_STATUS.TRABALHADO;
                     } else if (isFuturoOuHoje) {
                         status = CALENDARIO_STATUS.FUTURO;
                     } else if (isDiaEscala) {
-                        status = CALENDARIO_STATUS.SEM_ATIVIDADE;
-                        ausenciasTurno++;
+                        if (isFeriado) {
+                            status = CALENDARIO_STATUS.FERIADO;
+                        } else {
+                            status = CALENDARIO_STATUS.SEM_ATIVIDADE;
+                            ausenciasTurno++;
+                        }
                     } else {
                         status = CALENDARIO_STATUS.NAO_VIGENTE;
                     }

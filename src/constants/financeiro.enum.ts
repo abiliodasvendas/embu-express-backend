@@ -23,4 +23,5 @@ export const CALENDARIO_STATUS = {
     SEM_ATIVIDADE: 'SEM_ATIVIDADE',
     NAO_VIGENTE: 'NAO_VIGENTE',
     FUTURO: 'FUTURO',
+    FERIADO: 'FERIADO',
 } as const;
