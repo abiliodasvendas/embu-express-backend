@@ -195,6 +195,20 @@ export const pontoRelatorioService = {
                         dayWorkedMin = h * 60 + m;
                     }
 
+                    // REFORÇO DE ARREDONDAMENTO (Dinâmico para o Relatório)
+                    // Se o colaborador entrou antes da escala, garantimos que esse tempo não conte no "Efetivo"
+                    if (dailyPoint.entrada_hora && hasShiftConfig) {
+                        const [hE, mE] = parseTime(dailyPoint.entrada_hora);
+                        const [hT, mT] = parseTime(shiftDayConfig.hora_inicio);
+                        let diffEntradaRaw = (hE * 60 + mE) - (hT * 60 + mT);
+                        const diffEntrada = diffEntradaRaw > 720 ? diffEntradaRaw - 1440 : (diffEntradaRaw < -720 ? diffEntradaRaw + 1440 : diffEntradaRaw);
+                        
+                        if (diffEntrada < 0) {
+                            // Subtrai o excesso da entrada antecipada do tempo trabalhado
+                            dayWorkedMin = Math.max(0, dayWorkedMin + diffEntrada);
+                        }
+                    }
+
                     shiftKpis.horas_trabalhadas += dayWorkedMin;
                     dayWorkedKm = dailyPoint.detalhes_calculo?.resumo?.km_trabalhado || 0;
                     shiftKpis.km_realizado += dayWorkedKm; // Soma cumulativa resiliente
@@ -226,7 +240,7 @@ export const pontoRelatorioService = {
                     cliente_nome: link.cliente?.nome_fantasia || null,
                     minutos_esperados: dayExpectedMin,
                     minutos_trabalhados: dayWorkedMin,
-                    minutos_saldo: dailyPoint?.saldo_minutos || (dayStatus === CALENDARIO_STATUS.SEM_ATIVIDADE ? -dayExpectedMin : 0),
+                    minutos_saldo: dayWorkedMin - dayExpectedMin,
                     entrada_hora: dailyPoint?.entrada_hora ? toBRTime(dailyPoint.entrada_hora) : null,
                     saida_hora: dailyPoint?.saida_hora ? toBRTime(dailyPoint.saida_hora) : null,
                     shift_entrada: hasShiftConfig ? shiftDayConfig.hora_inicio.substring(0, 5) : null,

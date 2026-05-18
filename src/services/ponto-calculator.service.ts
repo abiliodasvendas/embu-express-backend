@@ -166,9 +166,15 @@ export const pontoCalculatorService = {
 
                 const start = new Date(entrada).getTime();
                 const end = new Date(saida).getTime();
-                const brutoMinutos = Math.round((end - start) / 60000);
+                let brutoMinutos = Math.round((end - start) / 60000);
 
-                const liquidoMinutos = brutoMinutos - pausasMinutos;
+                // REGRA DE ARREDONDAMENTO: Entrada Antecipada
+                // Ignora minutos excedentes se o colaborador entrou antes do horário oficial.
+                if (detalhes.entrada.diff_minutos < 0) {
+                    brutoMinutos += detalhes.entrada.diff_minutos; // Subtrai o excedente
+                }
+
+                const liquidoMinutos = Math.max(0, brutoMinutos - pausasMinutos);
 
                 detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
                 detalhes.resumo.pausa_total = pausasMinutos;
