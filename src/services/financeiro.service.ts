@@ -32,7 +32,7 @@ interface ColaboradorClienteDb {
     valor_adiantamento: number | null;
     cliente: {
         nome_fantasia: string;
-    } | null;
+    }[] | null;
 }
 
 function formatFechamento<T extends { data_fechamento?: string; data_pagamento?: string; created_at?: string }>(f: T): T {
@@ -576,7 +576,13 @@ export const financeiroService = {
             const valorFinal = fechamento ? (fechamento.saldo_final || 0) : 0;
 
             const clientes = turnos
-                .map(t => t.cliente?.nome_fantasia)
+                .map(t => {
+                    if (!t.cliente) return null;
+                    if (Array.isArray(t.cliente)) {
+                        return t.cliente[0]?.nome_fantasia;
+                    }
+                    return (t.cliente as any).nome_fantasia;
+                })
                 .filter((nome): nome is string => !!nome);
             const clientesUnicos = [...new Set(clientes)];
 
