@@ -23,6 +23,10 @@ const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.delete("/desfazer-pagamento/:usuarioId", {
         preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
     }, FinanceiroController.desfazerPagamento);
+
+    app.get("/status-geral", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.EXTRATO)]
+    }, FinanceiroController.getStatusGeral);
 };
 
 export default financeiroRoutes;

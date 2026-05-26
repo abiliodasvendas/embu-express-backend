@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { financeiroService } from "../services/financeiro.service.js";
 import { fecharMesSchema, getExtratoSchema } from "../types/dtos/financeiro.dto.js";
+import { z } from "zod";
 
 interface AuthenticatedRequest extends FastifyRequest {
     user?: {
@@ -42,5 +43,15 @@ export const FinanceiroController = {
     const { params, query } = getExtratoSchema.parse(request);
     await financeiroService.desfazerPagamento(params.usuarioId, query.mes, query.ano);
     return reply.status(204).send();
+  },
+
+  async getStatusGeral(request: FastifyRequest, reply: FastifyReply) {
+    const querySchema = z.object({
+        mes: z.coerce.number(),
+        ano: z.coerce.number()
+    });
+    const { mes, ano } = querySchema.parse(request.query);
+    const result = await financeiroService.getStatusGeral(mes, ano);
+    return reply.send(result);
   }
 };

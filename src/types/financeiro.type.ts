@@ -86,3 +86,17 @@ export interface ConfirmacaoAdiantamentoPayload {
     confirmado_por: string;
     data_confirmacao: string;
 }
+
+export interface StatusGeralFechamento {
+    colaborador_id: string;
+    nome_completo: string;
+    email: string;
+    adiantamento_confirmado: boolean;
+    data_confirmacao_adiantamento: string | null;
+    pago: boolean;
+    data_pagamento: string | null;
+    valor_adiantamento_configurado: number;
+    valor_final: number;
+    clientes: string[];
+}
+

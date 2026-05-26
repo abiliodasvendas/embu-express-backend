@@ -3,8 +3,37 @@ import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../consta
 import { getNowBR, toBRTime } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
-import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload } from "../types/financeiro.type.js";
+import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento } from "../types/financeiro.type.js";
 import { Ocorrencia } from "../types/database.js";
+
+interface ConfirmacaoAdiantamentoDb {
+    id: number;
+    colaborador_id: string;
+    mes: number;
+    ano: number;
+    confirmado_por: string;
+    data_confirmacao: string;
+}
+
+interface FechamentoFinanceiroDb {
+    id: number;
+    colaborador_id: string;
+    mes: number;
+    ano: number;
+    saldo_final: number;
+    fechado_por: string;
+    data_fechamento: string;
+    pago: boolean;
+    data_pagamento: string;
+}
+
+interface ColaboradorClienteDb {
+    colaborador_id: string;
+    valor_adiantamento: number | null;
+    cliente: {
+        nome_fantasia: string;
+    } | null;
+}
 
 function formatFechamento<T extends { data_fechamento?: string; data_pagamento?: string; created_at?: string }>(f: T): T {
     if (!f) return f;
@@ -489,5 +518,80 @@ export const financeiroService = {
             .eq("ano", ano);
 
         if (error) throw error;
+    },
+
+    async getStatusGeral(mes: number, ano: number): Promise<StatusGeralFechamento[]> {
+        const { data: colaboradores, error: colabError } = await supabaseAdmin
+            .from("usuarios")
+            .select("id, nome_completo, email, status")
+            .eq("status", "ATIVO")
+            .order("nome_completo", { ascending: true });
+
+        if (colabError) throw colabError;
+
+        const { data: confirmacoes } = await supabaseAdmin
+            .from("confirmacoes_adiantamento")
+            .select("*")
+            .eq("mes", mes)
+            .eq("ano", ano);
+
+        const { data: fechamentos } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("*")
+            .eq("mes", mes)
+            .eq("ano", ano);
+
+        const { data: todosTurnos } = await supabaseAdmin
+            .from("colaborador_clientes")
+            .select("colaborador_id, valor_adiantamento, cliente:clientes(nome_fantasia)");
+
+        const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
+        (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => {
+            confirmacoesMap.set(c.colaborador_id, c);
+        });
+
+        const fechamentosMap = new Map<string, FechamentoFinanceiroDb>();
+        (fechamentos as FechamentoFinanceiroDb[] || []).forEach(f => {
+            fechamentosMap.set(f.colaborador_id, f);
+        });
+        
+        const turnosPorColab = new Map<string, ColaboradorClienteDb[]>();
+        (todosTurnos as ColaboradorClienteDb[] || []).forEach(t => {
+            if (!turnosPorColab.has(t.colaborador_id)) {
+                turnosPorColab.set(t.colaborador_id, []);
+            }
+            turnosPorColab.get(t.colaborador_id)!.push(t);
+        });
+
+        return (colaboradores || []).map(colab => {
+            const confirmacao = confirmacoesMap.get(colab.id);
+            const fechamento = fechamentosMap.get(colab.id);
+            const turnos = turnosPorColab.get(colab.id) || [];
+
+            const adiantamentoConfirmado = !!confirmacao;
+            const pago = !!fechamento;
+
+            const valorAdiantamentoConfigurado = turnos.reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
+
+            const valorFinal = fechamento ? (fechamento.saldo_final || 0) : 0;
+
+            const clientes = turnos
+                .map(t => t.cliente?.nome_fantasia)
+                .filter((nome): nome is string => !!nome);
+            const clientesUnicos = [...new Set(clientes)];
+
+            return {
+                colaborador_id: colab.id,
+                nome_completo: colab.nome_completo || "",
+                email: colab.email || "",
+                adiantamento_confirmado: adiantamentoConfirmado,
+                data_confirmacao_adiantamento: confirmacao ? toBRTime(confirmacao.data_confirmacao) : null,
+                pago,
+                data_pagamento: fechamento ? toBRTime(fechamento.data_pagamento) : null,
+                valor_adiantamento_configurado: valorAdiantamentoConfigurado,
+                valor_final: parseFloat(valorFinal.toFixed(2)),
+                clientes: clientesUnicos
+            };
+        });
     }
 };
