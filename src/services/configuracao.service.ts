@@ -22,7 +22,7 @@ export const configuracaoService = {
         const { data, error } = await supabaseAdmin
             .from("configuracoes_sistema")
             .select("*")
-            .eq("chave", chave)
+            .eq("chave", chave.toLowerCase())
             .limit(1);
             
         if (error) throw error;
@@ -33,7 +33,7 @@ export const configuracaoService = {
         const { data, error } = await supabaseAdmin
             .from("configuracoes_sistema")
             .update({ valor, updated_at: getNowBR() })
-            .eq("chave", chave)
+            .eq("chave", chave.toLowerCase())
             .select()
             .limit(1);
         if (error) throw error;

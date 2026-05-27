@@ -68,6 +68,21 @@ function processLocationData(loc: PontoLocation | null | undefined): DatabasePon
 
 
 export const pontoService = {
+    calcularDistancia(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371e3; // raio da Terra em metros
+        const phi1 = lat1 * Math.PI/180;
+        const phi2 = lat2 * Math.PI/180;
+        const deltaPhi = (lat2-lat1) * Math.PI/180;
+        const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c;
+    },
+
     async registrarPonto(data: PontoPayload): Promise<RegistroPonto> {
         const entrada_hora = (data.entrada_hora ? toBRTime(data.entrada_hora) : getNowBR()) as string;
         const saida_hora = (data.saida_hora ? toBRTime(data.saida_hora) : null) as (string | null);
@@ -129,6 +144,53 @@ export const pontoService = {
 
         const eLoc = processLocationData(data.entrada_loc);
         const sLoc = processLocationData(data.saida_loc);
+
+        // Geofencing Validation (Entrada) - Valida se o App enviou a localização e se é Início de Turno (sem saida_hora)
+        if (!data.saida_hora && data.entrada_loc && data.entrada_loc.latitude && data.entrada_loc.longitude && finalVinculoId) {
+            // Verifica se a validação está desativada para este colaborador específico no banco
+            const { data: userProfile } = await supabaseAdmin
+                .from('usuarios')
+                .select('validar_localizacao')
+                .eq('id', data.usuario_id)
+                .single();
+
+            if (userProfile?.validar_localizacao !== false) {
+                const { data: linkInfo } = await supabaseAdmin
+                    .from('colaborador_clientes')
+                    .select('unidade:unidades_cliente(latitude, longitude)')
+                    .eq('id', finalVinculoId)
+                    .single();
+
+                if (linkInfo?.unidade) {
+                    const { latitude, longitude } = linkInfo.unidade as any;
+                    if (latitude && longitude) {
+                        const config = await configuracaoService.getConfiguracao('raio_geofencing_metros');
+                        if (!config?.valor) {
+                            throw new AppError("Configuração de raio de geofencing não encontrada.", 500);
+                        }
+                        const limit = parseInt(config.valor, 10);
+                        
+                        const dist = this.calcularDistancia(data.entrada_loc.latitude, data.entrada_loc.longitude, latitude, longitude);
+                        
+                        console.log(`[GEOFENCING] Validação de local para usuário ${data.usuario_id}:`);
+                        console.log(` - Local Colaborador: ${data.entrada_loc.latitude}, ${data.entrada_loc.longitude}`);
+                        if ((data.entrada_loc as any).accuracy) {
+                            console.log(` - Precisão GPS: ${(data.entrada_loc as any).accuracy.toFixed(1)} metros`);
+                        }
+                        console.log(` - Local Unidade: ${latitude}, ${longitude}`);
+                        console.log(` - Distância Calculada: ${dist.toFixed(2)} metros`);
+                        console.log(` - Limite Configurado: ${limit} metros`);
+
+                        if (dist > limit) {
+                            console.warn(`[GEOFENCING] BLOQUEADO: Usuário fora do raio permitido.`);
+                            throw new AppError(`Localização inválida. Você está a ${Math.round(dist)}m da unidade (Limite: ${limit}m).`, 403);
+                        }
+                    }
+                }
+            } else {
+                console.log(`[GEOFENCING] Ignorado: Usuário ${data.usuario_id} possui 'validar_localizacao' configurado como false.`);
+            }
+        }
 
         const { ...rest } = data;
 

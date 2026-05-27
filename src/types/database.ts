@@ -73,6 +73,7 @@ export interface Usuario {
   moto_ano?: string | null;
   moto_placa?: string | null;
   valor_mei?: number | null;
+  validar_localizacao?: boolean;
   perfil?: Perfil;
   links?: ColaboradorCliente[];
 }
