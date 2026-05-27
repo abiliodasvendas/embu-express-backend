@@ -8,8 +8,15 @@ export async function createApp(): Promise<FastifyInstance> {
   try {
     const app = Fastify({
       loggerInstance: logger as any,
-      disableRequestLogging: false,
+      disableRequestLogging: true,
     }) as FastifyInstance;
+
+    // Logs de requisição simplificados (estilo Morgan)
+    app.addHook("onResponse", (request, reply, done) => {
+      if (request.method === "OPTIONS") return done();
+      request.log.info(`${request.method} ${request.url} - ${reply.statusCode}`);
+      done();
+    });
 
     // Global Error Handler
     app.setErrorHandler(globalErrorHandler);

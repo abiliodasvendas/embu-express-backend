@@ -1,14 +1,14 @@
+import { supabaseAdmin } from "../config/supabase.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { FilterOptions } from "../constants/filters.enum.js";
-import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
-import { TimeRecordRules } from "../utils/timeRecordRules.js";
-import { getNowBR, toBRTime, toLocalDateString, onlyNumbers, formatPoint, getDayOfWeekBR } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
+import { ColaboradorCliente, PontoLocation as DatabasePontoLocation, Pausa, RegistroPonto, Usuario } from "../types/database.js";
+import { TimeRecordRules } from "../utils/timeRecordRules.js";
+import { formatPoint, getDayOfWeekBR, getNowBR, onlyNumbers, toBRTime, toLocalDateString } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
-import { pontoCalculatorService, parseTime } from "./ponto-calculator.service.js";
-import { RegistroPonto, PontoLocation as DatabasePontoLocation, Pausa, ColaboradorCliente, Usuario, DetalhesCalculo } from "../types/database.js";
+import { parseTime, pontoCalculatorService } from "./ponto-calculator.service.js";
 
 // Interfaces
 export interface PontoLocation {
@@ -145,6 +145,12 @@ export const pontoService = {
         const eLoc = processLocationData(data.entrada_loc);
         const sLoc = processLocationData(data.saida_loc);
 
+        if (!data.saida_hora) {
+            console.log(`[GEOFENCING] Diagnóstico de entrada para o usuário ${data.usuario_id}:`);
+            console.log(` - Localização enviada:`, data.entrada_loc ? `${data.entrada_loc.latitude}, ${data.entrada_loc.longitude} (Precisão: ${data.entrada_loc.accuracy || 0}m)` : "Nenhuma");
+            console.log(` - Vínculo de colaborador (finalVinculoId):`, finalVinculoId || "Não identificado");
+        }
+
         // Geofencing Validation (Entrada) - Valida se o App enviou a localização e se é Início de Turno (sem saida_hora)
         if (!data.saida_hora && data.entrada_loc && data.entrada_loc.latitude && data.entrada_loc.longitude && finalVinculoId) {
             // Verifica se a validação está desativada para este colaborador específico no banco
@@ -183,7 +189,8 @@ export const pontoService = {
 
                         if (dist > limit) {
                             console.warn(`[GEOFENCING] BLOQUEADO: Usuário fora do raio permitido.`);
-                            throw new AppError(`Localização inválida. Você está a ${Math.round(dist)}m da unidade (Limite: ${limit}m).`, 403);
+                            throw new AppError(`Localização inválida: você está fora do raio permitido.`, 403);
+                            // throw new AppError(`Localização inválida. Você está a aproximadamente ${Math.round(dist)}m da unidade (Limite: ${limit}m).`, 403);
                         }
                     }
                 }
