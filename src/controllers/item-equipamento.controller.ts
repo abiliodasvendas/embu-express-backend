@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { AuthenticatedRequest } from "../types/request.type.js";
 import {
   categoriaItemService,
   itemEquipamentoService,
@@ -60,7 +61,7 @@ export const ItemEquipamentoController = {
     return reply.status(200).send({ success: true });
   },
 
-  async associarItens(request: FastifyRequest, reply: FastifyReply) {
+  async associarItens(request: AuthenticatedRequest, reply: FastifyReply) {
     const { colaborador_id, itens_ids, observacao } = associarItemSchema.parse(request.body);
     const criadoPor = request.user?.id;
     const result = await alocacaoItemService.associarItens(
