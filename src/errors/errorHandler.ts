@@ -66,11 +66,41 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
             method,
             url
         });
+        
+        let customMessage = "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.";
+        
+        if (error.message?.includes("fk_itens_equipamentos_categoria")) {
+            customMessage = "Não é possível excluir esta categoria pois ela possui itens associados no catálogo. Remova ou reassocie os itens antes de tentar excluir.";
+        } else if (error.message?.includes("fk_colaborador_itens_item")) {
+            customMessage = "Não é possível excluir este item pois ele possui alocações ativas para colaboradores. Desassocie os equipamentos antes de excluir o item.";
+        }
+        
         return reply.status(400).send({
             status: "error",
-            message: "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.",
-            error: "Não é possível excluir este registro pois ele já possui histórico (ex: pontos ou ocorrências) associado. Utilize a edição para encerrá-lo/inativá-lo.",
+            message: customMessage,
+            error: customMessage,
             code: '23503'
+        });
+    }
+
+    if ((error as any).code === '23505') {
+        logger.warn({
+            msg: "Violação de Registro Único (Integridade SQL)",
+            error: error.message,
+            method,
+            url
+        });
+        let customMessage = "Este registro já existe.";
+        if (error.message?.includes("categoria_itens")) {
+            customMessage = "Já existe uma categoria cadastrada com este nome.";
+        } else if (error.message?.includes("itens_equipamentos")) {
+            customMessage = "Já existe um item cadastrado com este nome.";
+        }
+        return reply.status(400).send({
+            status: "error",
+            message: customMessage,
+            error: customMessage,
+            code: '23505'
         });
     }
 
