@@ -251,3 +251,35 @@ export interface Ocorrencia {
   criado_por_usuario?: Partial<Usuario>;
   vinculo?: Partial<ColaboradorCliente>;
 }
+
+export interface CategoriaItem {
+  id: number;
+  nome: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ItemEquipamento {
+  id: number;
+  nome: string;
+  categoria_id: number;
+  ativo: boolean;
+  created_at?: string;
+  updated_at?: string;
+  categoria?: CategoriaItem;
+  total_alocado?: number;
+}
+
+export interface ColaboradorItem {
+  id: number;
+  colaborador_id: string;
+  item_id: number;
+  quantidade: number;
+  observacao?: string | null;
+  criado_por?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  item?: ItemEquipamento;
+  colaborador?: { nome_completo: string; cpf: string };
+  criado_por_usuario?: { nome_completo: string };
+}

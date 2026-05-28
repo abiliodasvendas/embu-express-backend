@@ -12,6 +12,7 @@ import financeiroRoutes from "./financeiro.routes.js";
 import publicClientRoutes from "./public-client.routes.js";
 import feriadoRoutes from "./feriado.routes.js";
 import { unidadeRoutes } from "./unidade.routes.js";
+import itemEquipamentoRoutes from "./item-equipamento.routes.js";
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Embu Express Routes
@@ -28,6 +29,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(publicClientRoutes, { prefix: "/api/public/c" });
   app.register(feriadoRoutes, { prefix: "/api/feriados" });
   app.register(unidadeRoutes, { prefix: "/api/unidades" });
+  app.register(itemEquipamentoRoutes, { prefix: "/api/itens-equipamentos" });
 };
 
 export default routes;

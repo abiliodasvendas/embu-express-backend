@@ -54,6 +54,10 @@ export const PERMISSIONS = {
         VER: 'feriados:ver',
         EDITAR: 'feriados:editar',
     },
+    EQUIPAMENTOS: {
+        VER: 'equipamentos:ver',
+        EDITAR: 'equipamentos:editar',
+    },
 } as const;
 
 export const ROLES = {

@@ -8,6 +8,7 @@ export class AppError extends Error {
 
     this.statusCode = statusCode;
     this.isOperational = true;
+    this.name = "AppError";
 
     Error.captureStackTrace(this);
   }
