@@ -207,4 +207,14 @@ export const alocacaoItemService = {
     if (error) throw error;
     return true;
   },
+
+  async desassociarTodosItensColaborador(colaboradorId: string): Promise<boolean> {
+    const { error } = await supabaseAdmin
+      .from("colaborador_itens")
+      .delete()
+      .eq("colaborador_id", colaboradorId);
+
+    if (error) throw error;
+    return true;
+  },
 };

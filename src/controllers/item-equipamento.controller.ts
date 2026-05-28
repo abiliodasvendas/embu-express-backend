@@ -89,4 +89,10 @@ export const ItemEquipamentoController = {
     await alocacaoItemService.desassociarItem(id);
     return reply.status(200).send({ success: true });
   },
+
+  async desassociarTodosItensColaborador(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await alocacaoItemService.desassociarTodosItensColaborador(id);
+    return reply.status(200).send({ success: true });
+  },
 };

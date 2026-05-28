@@ -18,6 +18,7 @@ const itemEquipamentoRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.get("/:id/colaboradores", { preHandler: [verifyPermissao(PERMISSIONS.EQUIPAMENTOS.VER)] }, ItemEquipamentoController.listAlocadosPorItem);
   app.get("/colaborador/:id", { preHandler: [verifyPermissao(PERMISSIONS.EQUIPAMENTOS.VER)] }, ItemEquipamentoController.listItensColaborador);
   app.delete("/alocacao/:id", { preHandler: [verifyPermissao(PERMISSIONS.EQUIPAMENTOS.EDITAR)] }, ItemEquipamentoController.desassociarItem);
+  app.delete("/alocacao/colaborador/:id", { preHandler: [verifyPermissao(PERMISSIONS.EQUIPAMENTOS.EDITAR)] }, ItemEquipamentoController.desassociarTodosItensColaborador);
 };
 
 export default itemEquipamentoRoutes;
