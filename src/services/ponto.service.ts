@@ -153,20 +153,13 @@ export const pontoService = {
 
         // Geofencing Validation (Entrada) - Valida se o App enviou a localização e se é Início de Turno (sem saida_hora)
         if (!data.saida_hora && data.entrada_loc && data.entrada_loc.latitude && data.entrada_loc.longitude && finalVinculoId) {
-            // Verifica se a validação está desativada para este colaborador específico no banco
-            const { data: userProfile } = await supabaseAdmin
-                .from('usuarios')
-                .select('validar_localizacao')
-                .eq('id', data.usuario_id)
+            const { data: linkInfo } = await supabaseAdmin
+                .from('colaborador_clientes')
+                .select('validar_localizacao, unidade:unidades_cliente(latitude, longitude)')
+                .eq('id', finalVinculoId)
                 .single();
 
-            if (userProfile?.validar_localizacao !== false) {
-                const { data: linkInfo } = await supabaseAdmin
-                    .from('colaborador_clientes')
-                    .select('unidade:unidades_cliente(latitude, longitude)')
-                    .eq('id', finalVinculoId)
-                    .single();
-
+            if (linkInfo?.validar_localizacao !== false) {
                 if (linkInfo?.unidade) {
                     const { latitude, longitude } = linkInfo.unidade as any;
                     if (latitude && longitude) {
@@ -190,12 +183,11 @@ export const pontoService = {
                         if (dist > limit) {
                             console.warn(`[GEOFENCING] BLOQUEADO: Usuário fora do raio permitido.`);
                             throw new AppError(`Localização inválida: você está fora do raio permitido.`, 403);
-                            // throw new AppError(`Localização inválida. Você está a aproximadamente ${Math.round(dist)}m da unidade (Limite: ${limit}m).`, 403);
                         }
                     }
                 }
             } else {
-                console.log(`[GEOFENCING] Ignorado: Usuário ${data.usuario_id} possui 'validar_localizacao' configurado como false.`);
+                console.log(`[GEOFENCING] Ignorado: Turno ${finalVinculoId} do Usuário ${data.usuario_id} possui 'validar_localizacao' configurado como false.`);
             }
         }
 
@@ -927,7 +919,7 @@ export const pontoService = {
             grupos[ccId].pontos.push({
                 id: registro.id,
                 data_referencia: registro.data_referencia,
-                entrada_hora: registro.entrada_hora,
+                entrada_hora: registro.entrada_hora ? toBRTime(registro.entrada_hora) : null,
                 lat: registro.entrada_lat,
                 lng: registro.entrada_lng,
                 metadata: registro.entrada_metadata,

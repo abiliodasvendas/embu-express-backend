@@ -35,7 +35,6 @@ export const createUsuarioSchema = z.object({
   }).passthrough()).optional(),
   turnos: z.array(z.record(z.string(), z.unknown())).optional(),
   valor_mei: z.number().optional().default(0),
-  validar_localizacao: z.boolean().optional(),
   silent: z.boolean().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),

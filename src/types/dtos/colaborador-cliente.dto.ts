@@ -21,6 +21,7 @@ export const createVinculoSchema = z.object({
     taxa_entrega: z.number().optional().default(0),
     data_inicio: z.string().nullable().optional(),
     horarios: z.array(colaboradorClienteHorarioSchema).optional().default([]),
+    validar_localizacao: z.boolean().optional().default(true),
 });
 
 export const updateVinculoSchema = z.object({
@@ -36,6 +37,7 @@ export const updateVinculoSchema = z.object({
     data_inicio: z.string().nullable().optional(),
     data_fim: z.string().nullable().optional(),
     horarios: z.array(colaboradorClienteHorarioSchema).optional(),
+    validar_localizacao: z.boolean().optional(),
 });
 
 export type CreateVinculoDTO = z.infer<typeof createVinculoSchema>;
@@ -55,6 +57,7 @@ export interface VinculoDTO {
     taxa_entrega: number;
     data_inicio: string | null;
     data_fim: string | null;
+    validar_localizacao: boolean;
     horarios?: {
         dia_semana: number;
         hora_inicio: string;
@@ -90,6 +93,7 @@ export function toVinculoDTO(v: ColaboradorCliente): VinculoDTO {
         taxa_entrega: Number(v.taxa_entrega || 0),
         data_inicio: v.data_inicio || null,
         data_fim: v.data_fim || null,
+        validar_localizacao: v.validar_localizacao !== false,
         horarios: v.horarios?.map(h => ({
             dia_semana: h.dia_semana,
             hora_inicio: h.hora_inicio,
