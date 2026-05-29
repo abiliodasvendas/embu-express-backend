@@ -20,22 +20,27 @@ export const unidadeService = {
     if (partes.length === 0) return null;
     
     const endereco = partes.join(', ');
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey) {
+      console.error("GOOGLE_MAPS_API_KEY não configurada nas variáveis de ambiente.");
+      return null;
+    }
+
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endereco)}&limit=1`;
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': 'EmbuExpressApp/1.0'
-        }
-      });
-      if (response.data && response.data.length > 0) {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(endereco)}&key=${apiKey}`;
+      const response = await axios.get(url);
+      
+      if (response.data && response.data.status === "OK" && response.data.results.length > 0) {
+        const location = response.data.results[0].geometry.location;
         return {
-          lat: parseFloat(response.data[0].lat),
-          lon: parseFloat(response.data[0].lon)
+          lat: location.lat,
+          lon: location.lng
         };
       }
       return null;
     } catch (error) {
-      console.error("Erro no geocoding:", error);
+      console.error("Erro no geocoding do Google:", error);
       return null;
     }
   },
