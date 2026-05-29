@@ -237,6 +237,11 @@ export const pontoService = {
             await this.processarBonusFeriado(inserted.usuario_id, inserted.data_referencia, String(inserted.colaborador_cliente_id));
         }
 
+        // Limpa ausência manual e ocorrência de "Sem Atividade" se houver registro de entrada
+        if (inserted?.entrada_hora) {
+            await this.limparAusenciaManualEOcorrencia(inserted.usuario_id, inserted.data_referencia);
+        }
+
         return formatPoint(inserted as unknown as RegistroPonto);
     },
 
@@ -437,6 +442,11 @@ export const pontoService = {
         const registro = updated as any;
         if (registro?.colaborador_cliente_id) {
             await this.processarBonusFeriado(registro.usuario_id, registro.data_referencia, String(registro.colaborador_cliente_id));
+        }
+
+        // Limpa ausência manual e ocorrência de "Sem Atividade" se houver registro de entrada
+        if (registro?.entrada_hora) {
+            await this.limparAusenciaManualEOcorrencia(registro.usuario_id, registro.data_referencia);
         }
 
         return formatPoint(updated as unknown as RegistroPonto);
@@ -858,5 +868,33 @@ export const pontoService = {
 
         if (error) throw error;
         return data || [];
+    },
+
+    async limparAusenciaManualEOcorrencia(usuarioId: string, dataReferencia: string): Promise<void> {
+        try {
+            await supabaseAdmin
+                .from("ausencias_manuais")
+                .delete()
+                .match({ usuario_id: usuarioId, data_referencia: dataReferencia });
+
+            let tipoOcorrenciaId = null;
+            const { data: tipos } = await supabaseAdmin
+                .from("tipos_ocorrencia")
+                .select("id")
+                .ilike("descricao", "Sem Atividade");
+
+            if (tipos && tipos.length > 0) {
+                tipoOcorrenciaId = tipos[0].id;
+            }
+
+            if (tipoOcorrenciaId) {
+                await supabaseAdmin
+                    .from("ocorrencias")
+                    .delete()
+                    .match({ colaborador_id: usuarioId, data_ocorrencia: dataReferencia, tipo_id: tipoOcorrenciaId });
+            }
+        } catch (error) {
+            console.error("Erro ao limpar ausência e ocorrência de Sem Atividade:", error);
+        }
     }
 };
