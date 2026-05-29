@@ -1,7 +1,7 @@
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
-import { cleanString, onlyNumbers } from "../utils/utils.js";
+import { cleanString, onlyNumbers, toLocalDateString } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { colaboradorClienteService } from "./colaborador-cliente.service.js";
 import { PIX_TYPES } from "../constants/financeiro.enum.js";
@@ -283,6 +283,55 @@ export const usuarioService = {
             .eq("id", id);
 
         if (error) throw new AppError(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`, 500);
+
+        if (novoStatus === CADASTRO_STATUS.INATIVO) {
+            try {
+                let { data: tipoOcorrencia } = await supabaseAdmin
+                    .from("tipos_ocorrencia")
+                    .select("id, impacto_financeiro")
+                    .ilike("descricao", "%desligamento%")
+                    .limit(1);
+
+                if (!tipoOcorrencia || tipoOcorrencia.length === 0) {
+                    const { data: tipoOutros } = await supabaseAdmin
+                        .from("tipos_ocorrencia")
+                        .select("id, impacto_financeiro")
+                        .ilike("descricao", "%outros%")
+                        .limit(1);
+                    tipoOcorrencia = tipoOutros;
+                }
+
+                if (tipoOcorrencia && tipoOcorrencia.length > 0) {
+                    const tipo = tipoOcorrencia[0];
+                    const now = new Date();
+                    const dataOcorrencia = toLocalDateString(now);
+
+                    const formatter = new Intl.DateTimeFormat('pt-BR', {
+                        timeZone: 'America/Sao_Paulo',
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                    const dataFormatada = formatter.format(now);
+                    const observacao = `Desligado na data ${dataFormatada}`;
+
+                    await supabaseAdmin
+                        .from("ocorrencias")
+                        .insert([{
+                            colaborador_id: id,
+                            tipo_id: tipo.id,
+                            data_ocorrencia: dataOcorrencia,
+                            observacao: observacao,
+                            impacto_financeiro: tipo.impacto_financeiro || false,
+                            tipo_lancamento: "SAIDA",
+                            criado_por: executorId || null
+                        }]);
+                }
+            } catch (err) {
+                console.error("[updateStatus] Erro ao gerar ocorrencia de desligamento:", err);
+            }
+        }
+
         return novoStatus;
     },
 
