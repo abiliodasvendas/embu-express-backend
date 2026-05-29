@@ -11,6 +11,7 @@ import {
   iniciarPausaSchema, 
   finalizarPausaSchema, 
   espelhoPontoSchema,
+  geolocalizacaoPontoSchema,
   manualAbsenceSchema,
   queryDateSchema
 } from "../schemas/ponto.schema.js";
@@ -147,6 +148,19 @@ export const PontoController = {
 
     const data = finalizarPausaSchema.parse(request.body);
     const result = await pontoService.finalizarPausa(pausa_id, data);
+    return reply.status(200).send(result);
+  },
+
+  async geolocalizacaoMensal(request: FastifyRequest, reply: FastifyReply) {
+    const { params, querystring } = geolocalizacaoPontoSchema.parse({
+        params: request.params,
+        querystring: request.query
+    });
+    
+    const mes = querystring.mes || (new Date().getMonth() + 1);
+    const ano = querystring.ano || new Date().getFullYear();
+    
+    const result = await pontoService.getGeolocalizacaoMensal(params.usuario_id, mes, ano);
     return reply.status(200).send(result);
   }
 };

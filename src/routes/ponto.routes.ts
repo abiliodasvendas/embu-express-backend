@@ -35,6 +35,7 @@ const pontoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // RELATÓRIOS
     app.get("/relatorio-mensal/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.relatorioMensal);
     app.get("/espelho-ponto/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.espelhoPonto);
+    app.get("/geolocalizacao/:usuario_id", { preHandler: [verifyPermissao([PERMISSIONS.PONTO.ADMIN_VER, PERMISSIONS.PONTO.VER_MEU])] }, PontoController.geolocalizacaoMensal);
 
     // PAUSAS
     app.post("/pausa/inicio", { preHandler: [verifyOperacional()] }, PontoController.iniciarPausa);

@@ -72,6 +72,16 @@ export const espelhoPontoSchema = z.object({
     })
 });
 
+export const geolocalizacaoPontoSchema = z.object({
+    params: z.object({
+        usuario_id: z.string().uuid()
+    }),
+    querystring: z.object({
+        mes: z.string().transform(Number).optional(),
+        ano: z.string().transform(Number).optional()
+    })
+});
+
 export const manualAbsenceSchema = z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     userId: z.string().uuid()

@@ -870,6 +870,74 @@ export const pontoService = {
         return data || [];
     },
 
+    async getGeolocalizacaoMensal(usuarioId: string, mes: number, ano: number) {
+        const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+        const startDate = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const endDate = `${ano}-${String(mes).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        const { data, error } = await supabaseAdmin
+            .from("registros_ponto")
+            .select(`
+                id,
+                data_referencia,
+                entrada_hora,
+                entrada_lat,
+                entrada_lng,
+                entrada_metadata,
+                detalhes_calculo,
+                colaborador_cliente_id,
+                colaborador_cliente:colaborador_clientes(
+                    id,
+                    cliente:clientes(nome_fantasia),
+                    unidade:unidades_cliente(nome_unidade, latitude, longitude)
+                )
+            `)
+            .eq("usuario_id", usuarioId)
+            .gte("data_referencia", startDate)
+            .lte("data_referencia", endDate)
+            .not("entrada_lat", "is", null)
+            .neq("entrada_lat", 0);
+
+        if (error) throw error;
+
+        const grupos: { [key: number]: any } = {};
+
+        for (const registro of (data || [])) {
+            const vinculo = registro.colaborador_cliente as any;
+            if (!vinculo) continue;
+
+            const ccId = vinculo.id;
+            const clienteNome = vinculo.cliente?.nome_fantasia || "Sem Cliente";
+            const unidade = vinculo.unidade as any;
+            const unidadeNome = unidade?.nome_unidade || "Sem Unidade";
+            const unidadeLat = unidade?.latitude || null;
+            const unidadeLng = unidade?.longitude || null;
+
+            if (!grupos[ccId]) {
+                grupos[ccId] = {
+                    colaborador_cliente_id: ccId,
+                    nome_fantasia_cliente: clienteNome,
+                    nome_unidade: unidadeNome,
+                    unidade_latitude: unidadeLat,
+                    unidade_longitude: unidadeLng,
+                    pontos: []
+                };
+            }
+
+            grupos[ccId].pontos.push({
+                id: registro.id,
+                data_referencia: registro.data_referencia,
+                entrada_hora: registro.entrada_hora,
+                lat: registro.entrada_lat,
+                lng: registro.entrada_lng,
+                metadata: registro.entrada_metadata,
+                detalhes_calculo: registro.detalhes_calculo
+            });
+        }
+
+        return Object.values(grupos);
+    },
+
     async limparAusenciaManualEOcorrencia(usuarioId: string, dataReferencia: string): Promise<void> {
         try {
             await supabaseAdmin
