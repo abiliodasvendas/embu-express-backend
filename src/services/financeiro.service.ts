@@ -234,8 +234,9 @@ export const financeiroService = {
 
             const diasTrabalhados = pontosDesteTurno.length;
 
-            // 3. Regra de Bônus: Apenas se trabalhou 100% da escala MENSAL da unidade
-            const bonusEfetivo = diasTrabalhados >= diasEscalaNoMesTotal ? (link.valor_bonus || 0) : 0;
+            // 3. Regra de Bônus: Concede se não houve nenhuma ausência (Zero Falta)
+            // Permite bônus completo mesmo iniciando no meio do mês, desde que não tenha faltas
+            const bonusEfetivo = (diasEsperadosTurno > 0 && ausenciasTurno === 0) ? (link.valor_bonus || 0) : 0;
 
             const valorAdiantamentoConfig = link.valor_adiantamento || 0;
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
