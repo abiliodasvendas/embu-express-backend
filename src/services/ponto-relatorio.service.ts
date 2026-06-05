@@ -143,8 +143,11 @@ export const pontoRelatorioService = {
                 const shiftDayConfig = link.horarios?.find((h: any) => h.dia_semana === weekDayNum);
                 const hasShiftConfig = !!shiftDayConfig;
 
+                const dailyPoint = shiftPoints.find(p => p.data_referencia === refDateStr);
+
                 const dtCheck = new Date(refDateStr + 'T12:00:00');
-                const isActive = (!startShift || dtCheck >= startShift) && (!endShiftValue || dtCheck <= endShiftValue);
+                const isDateInBounds = (!startShift || dtCheck >= startShift) && (!endShiftValue || dtCheck <= endShiftValue);
+                const isActive = isDateInBounds || !!dailyPoint;
 
                 const isPastDate = refDateStr < todayStr;
                 const isToday = refDateStr === todayStr;
@@ -186,7 +189,6 @@ export const pontoRelatorioService = {
                     }
                 }
 
-                const dailyPoint = shiftPoints.find(p => p.data_referencia === refDateStr);
                 let dayWorkedMin = 0;
                 let dayWorkedKm = 0;
                 let dayStatus: string = CALENDARIO_STATUS.NAO_VIGENTE;

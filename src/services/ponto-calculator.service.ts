@@ -129,6 +129,8 @@ export const pontoCalculatorService = {
 
         // 3. Cálculos de Entrada
         if (horaInicioBase && horaFimBase) {
+            detalhes.resumo.pausa_configurada = tolPausa;
+
             const [hE, mE] = parseTime(entrada);
             const entradaMinutos = hE * 60 + mE;
             const [hT, mT] = parseTime(horaInicioBase);
@@ -178,7 +180,6 @@ export const pontoCalculatorService = {
 
                 detalhes.resumo.horas_trabalhadas = `${Math.floor(liquidoMinutos / 60)}h ${liquidoMinutos % 60}min`;
                 detalhes.resumo.pausa_total = pausasMinutos;
-                detalhes.resumo.pausa_configurada = tolPausa;
                 detalhes.resumo.pausa_extra = Math.max(0, pausasMinutos - tolPausa);
 
                 let esperadoMinutosBruto = turnoFimMinutos - turnoInicioMinutos;
