@@ -27,6 +27,10 @@ const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.get("/status-geral", {
         preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.EXTRATO)]
     }, FinanceiroController.getStatusGeral);
+
+    app.get("/dashboard-lote", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.EXTRATO)]
+    }, FinanceiroController.getDashboardLote);
 };
 
 export default financeiroRoutes;

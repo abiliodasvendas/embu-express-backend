@@ -53,5 +53,15 @@ export const FinanceiroController = {
     const { mes, ano } = querySchema.parse(request.query);
     const result = await financeiroService.getStatusGeral(mes, ano);
     return reply.send(result);
+  },
+
+  async getDashboardLote(request: FastifyRequest, reply: FastifyReply) {
+    const querySchema = z.object({
+        mes: z.coerce.number(),
+        ano: z.coerce.number()
+    });
+    const { mes, ano } = querySchema.parse(request.query);
+    const result = await financeiroService.getDashboardLote(mes, ano);
+    return reply.send(result);
   }
 };

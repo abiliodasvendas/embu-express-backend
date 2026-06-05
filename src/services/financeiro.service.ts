@@ -46,50 +46,25 @@ function formatFechamento<T extends { data_fechamento?: string; data_pagamento?:
 
 export const financeiroService = {
     /**
-     * Gera o extrato financeiro mensal de um colaborador.
-     * Consolida ganhos (contrato), descontos (adiantamento, ocorrências) e ajustes (pro-rata).
+     * Motor matemático do extrato.
      */
-    async getExtratoMensal(usuarioId: string, mes: number, ano: number): Promise<ExtratoMensal> {
-        // 1. Verificar se já existe um fechamento (Snapshot) para este mês
-        const { data: fechamentoExistente } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("*")
-            .eq("colaborador_id", usuarioId)
-            .eq("mes", mes)
-            .eq("ano", ano)
-            .maybeSingle();
-
-        if (fechamentoExistente) {
-            return {
-                ...(fechamentoExistente.resumo_json as ExtratoMensal),
-                status: FINANCEIRO_STATUS.PAGO,
-                id_fechamento: fechamentoExistente.id,
-                data_pagamento: toBRTime(fechamentoExistente.data_pagamento)
-            };
-        }
-
-        // 2. Cálculo Dinâmico (Rascunho)
-        const { data: usuario, error: userError } = await supabaseAdmin
-            .from("usuarios")
-            .select("valor_mei")
-            .eq("id", usuarioId)
-            .single();
-
-        if (userError) throw userError;
-
-        const { data: links, error: linkError } = await supabaseAdmin
-            .from("colaborador_clientes")
-            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
-            .eq("colaborador_id", usuarioId);
-
-        if (linkError) throw linkError;
+    _calcularMatematicaExtrato(dados: {
+        usuarioId: string;
+        mes: number;
+        ano: number;
+        usuario: { valor_mei: number | null } | null;
+        links: any[];
+        ocorrencias: Ocorrencia[];
+        fechamentoAnterior: { saldo_final: number } | null;
+        pontos: any[];
+        feriadosMes: Set<string>;
+        confirmacaoAdiantamento: any | null;
+    }): ExtratoMensal {
+        const { usuarioId, mes, ano, usuario, links, ocorrencias, fechamentoAnterior, pontos, feriadosMes, confirmacaoAdiantamento } = dados;
 
         const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
-
-        // Buscar ocorrências e pontos do período
-        const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioMesStr, data_fim: dataFimMesStr });
 
         // 3. Verificação de Saldo Devedor do Mês Anterior
         let mesAnterior = mes - 1;
@@ -98,15 +73,6 @@ export const financeiroService = {
             mesAnterior = 12;
             anoAnterior = ano - 1;
         }
-
-        const { data: fechamentoAnterior } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("saldo_final")
-            .eq("colaborador_id", usuarioId)
-            .eq("mes", mesAnterior)
-            .eq("ano", anoAnterior)
-            .eq("pago", true)
-            .maybeSingle();
 
         if (fechamentoAnterior && fechamentoAnterior.saldo_final < 0) {
             const valorDebito = Math.abs(fechamentoAnterior.saldo_final);
@@ -122,27 +88,6 @@ export const financeiroService = {
                 tipo: { descricao: "Saldo Devedor (Mês Anterior)" }
             } as Ocorrencia);
         }
-        const { data: pontos } = await supabaseAdmin
-            .from("registros_ponto")
-            .select("*")
-            .eq("usuario_id", usuarioId)
-            .gte("data_referencia", dataInicioMesStr)
-            .lte("data_referencia", dataFimMesStr);
-
-        const { data: feriadosData } = await supabaseAdmin
-            .from("feriados")
-            .select("data")
-            .gte("data", dataInicioMesStr)
-            .lte("data", dataFimMesStr);
-        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
-
-        const { data: confirmacaoAdiantamento } = await supabaseAdmin
-            .from("confirmacoes_adiantamento")
-            .select("*")
-            .eq("colaborador_id", usuarioId)
-            .eq("mes", mes)
-            .eq("ano", ano)
-            .maybeSingle();
 
         const adiantamentoConfirmado = !!confirmacaoAdiantamento;
 
@@ -160,21 +105,14 @@ export const financeiroService = {
             const calendarioVisual: any[] = [];
 
             // 1. Loop diário para análise de escala, vigência e status visual
-
             for (let d = 1; d <= ultimoDiaMes; d++) {
                 const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
                 const dataReferenciaStr = dataAtual.toISOString().split('T')[0];
                 const diaSemana = dataAtual.getUTCDay();
 
-                // O sistema agora é 100% dependente da escala flexível configurada.
-                // Dias não configurados na tabela de horários individuais não são considerados dias de escala.
                 const isDiaEscala = (link as any).horarios && (link as any).horarios.some((h: any) => h.dia_semana === diaSemana);
-
-                // Data para comparação de vigência
                 const dtComparacao = new Date(dataReferenciaStr + 'T12:00:00');
                 const isVigente = (!dataInicioTurno || dtComparacao >= dataInicioTurno) && (!dataFimTurno || dtComparacao <= dataFimTurno);
-
-                // Se o dia avaliado for hoje ou maior, é considerado "Futuro/Em aberto"
                 const isFuturoOuHoje = dtComparacao >= hojeInicioDia;
 
                 if (isDiaEscala) {
@@ -182,7 +120,6 @@ export const financeiroService = {
                     if (isVigente) diasEsperadosTurno++;
                 }
 
-                // Status Visual
                 let status: string = CALENDARIO_STATUS.NAO_VIGENTE;
                 if (isVigente) {
                     const temPonto = (pontos || []).some(p => p.data_referencia === dataReferenciaStr && p.colaborador_cliente_id === link.id);
@@ -204,7 +141,6 @@ export const financeiroService = {
                     }
                 }
 
-                // Só incluir se for dia de escala para visualização limpa
                 if (isDiaEscala) {
                     const diasSemanaNomes = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
                     const diasSemanaNomesLongos = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
@@ -223,7 +159,6 @@ export const financeiroService = {
 
             if (diasEscalaNoMesTotal === 0) return null;
 
-            // 2. Contar Pontos Efetivos (Trabalhados)
             const pontosDesteTurno = (pontos || []).filter(p => {
                 const dataPonto = new Date(p.data_referencia + 'T12:00:00');
                 if (p.colaborador_cliente_id !== link.id) return false;
@@ -233,16 +168,10 @@ export const financeiroService = {
             });
 
             const diasTrabalhados = pontosDesteTurno.length;
-
-            // 3. Regra de Bônus: Concede se não houve nenhuma ausência (Zero Falta)
-            // Permite bônus completo mesmo iniciando no meio do mês, desde que não tenha faltas
             const bonusEfetivo = (diasEsperadosTurno > 0 && ausenciasTurno === 0) ? (link.valor_bonus || 0) : 0;
-
             const valorAdiantamentoConfig = link.valor_adiantamento || 0;
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
 
-            // 4. Cálculo do Pro-rata (Contrato + Ajuda + Aluguel) - Adiantamento + Bônus (Não pro-rata)
-            // Nova lógica: O pro-rata é calculado sobre a base bruta. O adiantamento é subtraído do valor final proporcional.
             const baseBrutaFixa = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0);
             const diasParaPagamento = Math.max(0, diasEsperadosTurno - ausenciasTurno);
             const valorCalculadoProRata = (baseBrutaFixa / diasEscalaNoMesTotal) * diasParaPagamento;
@@ -252,7 +181,6 @@ export const financeiroService = {
             const virtualOcorrenciasTurno: Ocorrencia[] = [];
             const datasAusencia: string[] = [];
 
-            // 5. Coletar datas de ausência para gerar ocorrências virtuais
             calendarioVisual.forEach(dia => {
                 if (dia.status === CALENDARIO_STATUS.SEM_ATIVIDADE) {
                     datasAusencia.push(dia.data);
@@ -263,7 +191,7 @@ export const financeiroService = {
                         tipo_id: 0,
                         data_ocorrencia: dia.data,
                         valor: parseFloat(valorDia.toFixed(2)),
-                        impacto_financeiro: true, // Agora impacta para fins de exibição de saldo
+                        impacto_financeiro: true,
                         tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
                         observacao: `Sem Atividade - ${dia.dia_semana_curto}`,
                         tipo: { descricao: "Sem Atividade" }
@@ -279,14 +207,13 @@ export const financeiroService = {
                     tipo_id: 0,
                     data_ocorrencia: dataFimMesStr,
                     valor: valorAdiantamentoEfetivo,
-                    impacto_financeiro: true, // Agora impacta para fins de exibição de saldo
+                    impacto_financeiro: true,
                     tipo_lancamento: LANCAMENTO_TIPO.SAIDA,
                     observacao: "Adiantamento Mensal",
                     tipo: { descricao: "Adiantamento" }
                 });
             }
 
-            // Ocorrências REAIS + VIRTUAIS vinculadas a este turno
             const todasOcorrenciasTurno = [
                 ...ocorrencias.filter(o => o.colaborador_cliente_id === link.id && o.impacto_financeiro),
                 ...virtualOcorrenciasTurno
@@ -295,7 +222,6 @@ export const financeiroService = {
             const totalCreditosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
             const totalDebitosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
 
-            // O valor calculado agora é a BASE + BONUS + Saldo de Ocorrências (que já inclui as deduções virtuais)
             const valorFinalCalculado = baseBrutaFixa + bonusEfetivo + totalCreditosTurno - totalDebitosTurno;
 
             return {
@@ -326,12 +252,10 @@ export const financeiroService = {
                 debitos_ocorrencia: totalDebitosTurno,
                 valor_calculado: parseFloat(valorFinalCalculado.toFixed(2)),
                 datas_ausencia: datasAusencia,
-                _virtual_ocorrencias: virtualOcorrenciasTurno // Temporário para merge final
+                _virtual_ocorrencias: virtualOcorrenciasTurno
             };
         }).filter((r): r is Exclude<typeof r, null> => r !== null);
 
-        // 6. Consolidação Final de Ocorrências (Reais + Virtuais)
-        // Marcamos as ocorrências de feriado reais como virtuais se forem automáticas do sistema
         const ocorrenciasComFeriadoMarcado = (ocorrencias || []).map(o => {
             const ehAutomática = o.observacao?.includes("Inclusão automática:");
             if (ehAutomática) return { ...o, is_virtual: true };
@@ -341,43 +265,34 @@ export const financeiroService = {
         const virtualOcorrenciasGlobais = resumoClientes.flatMap(r => (r as any)._virtual_ocorrencias || []);
         const todasOcorrencias = [...ocorrenciasComFeriadoMarcado, ...virtualOcorrenciasGlobais].sort((a, b) => b.data_ocorrencia.localeCompare(a.data_ocorrencia));
 
-        // Limpar campo temporário
         resumoClientes.forEach(r => delete (r as any)._virtual_ocorrencias);
 
-        // 5. Consolidação MEI
         const valorMeiTotal = usuario?.valor_mei || 0;
         let proRataMeiFinal = 0;
         let diasAtivosUnicos: string[] = [];
-        let diasBaseReferencia = 26; // Padrão Seg-Sab caso não tenha turnos
+        let diasBaseReferencia = 26;
 
         if (valorMeiTotal > 0) {
-            // 1. Dias em que o colaborador de fato bateu ponto (Independente de onde)
             const datasComPonto = [...new Set((pontos || []).map(p => p.data_referencia))];
 
-            // 2. Dias que o colaborador DEVERIA ter trabalhado (União das escalas vigentes de todos os turnos)
             const datasEscalaEsperada = new Set<string>();
             resumoClientes.forEach(r => {
                 r.calendario_visual.forEach((dia: any) => {
-                    // Consideramos dias de escala onde o contrato estava vigente
                     if (dia.is_dia_escala && dia.status !== CALENDARIO_STATUS.NAO_VIGENTE) {
                         datasEscalaEsperada.add(dia.data);
                     }
                 });
             });
 
-            // Usamos a escala do primeiro turno como referência de base, ou 26 se vazio
             if (resumoClientes.length > 0) {
                 diasBaseReferencia = resumoClientes[0].dias_base_mes;
             }
 
-            // A partir de agora, não descontamos faltas para o cálculo do MEI.
-            // O valor é garantido pela vigência da escala no período em que houver contrato.
             const diasParaCobrancaMei = datasEscalaEsperada.size;
             proRataMeiFinal = (valorMeiTotal / diasBaseReferencia) * diasParaCobrancaMei;
 
             if (proRataMeiFinal > valorMeiTotal) proRataMeiFinal = valorMeiTotal;
 
-            // Para exibição no histórico de datas trabalhadas
             diasAtivosUnicos = datasComPonto.sort();
         }
 
@@ -417,6 +332,247 @@ export const financeiroService = {
             }
         };
     },
+
+    /**
+     * Gera o extrato financeiro mensal de um colaborador.
+     * Consolida ganhos (contrato), descontos (adiantamento, ocorrências) e ajustes (pro-rata).
+     */
+    async getExtratoMensal(usuarioId: string, mes: number, ano: number): Promise<ExtratoMensal> {
+        const { data: fechamentoExistente } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("*")
+            .eq("colaborador_id", usuarioId)
+            .eq("mes", mes)
+            .eq("ano", ano)
+            .maybeSingle();
+
+        if (fechamentoExistente) {
+            return {
+                ...(fechamentoExistente.resumo_json as ExtratoMensal),
+                status: FINANCEIRO_STATUS.PAGO,
+                id_fechamento: fechamentoExistente.id,
+                data_pagamento: toBRTime(fechamentoExistente.data_pagamento)
+            };
+        }
+
+        const { data: usuario, error: userError } = await supabaseAdmin
+            .from("usuarios")
+            .select("valor_mei")
+            .eq("id", usuarioId)
+            .single();
+
+        if (userError) throw userError;
+
+        const { data: links, error: linkError } = await supabaseAdmin
+            .from("colaborador_clientes")
+            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
+            .eq("colaborador_id", usuarioId);
+
+        if (linkError) throw linkError;
+
+        const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
+
+        const ocorrencias = await ocorrenciaService.listOcorrencias({ usuario_id: usuarioId, data_inicio: dataInicioMesStr, data_fim: dataFimMesStr });
+
+        let mesAnterior = mes - 1;
+        let anoAnterior = ano;
+        if (mesAnterior === 0) {
+            mesAnterior = 12;
+            anoAnterior = ano - 1;
+        }
+
+        const { data: fechamentoAnterior } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("saldo_final")
+            .eq("colaborador_id", usuarioId)
+            .eq("mes", mesAnterior)
+            .eq("ano", anoAnterior)
+            .eq("pago", true)
+            .maybeSingle();
+
+        const { data: pontos } = await supabaseAdmin
+            .from("registros_ponto")
+            .select("*")
+            .eq("usuario_id", usuarioId)
+            .gte("data_referencia", dataInicioMesStr)
+            .lte("data_referencia", dataFimMesStr);
+
+        const { data: feriadosData } = await supabaseAdmin
+            .from("feriados")
+            .select("data")
+            .gte("data", dataInicioMesStr)
+            .lte("data", dataFimMesStr);
+        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
+
+        const { data: confirmacaoAdiantamento } = await supabaseAdmin
+            .from("confirmacoes_adiantamento")
+            .select("*")
+            .eq("colaborador_id", usuarioId)
+            .eq("mes", mes)
+            .eq("ano", ano)
+            .maybeSingle();
+
+        return this._calcularMatematicaExtrato({
+            usuarioId,
+            mes,
+            ano,
+            usuario,
+            links: links || [],
+            ocorrencias: ocorrencias || [],
+            fechamentoAnterior,
+            pontos: pontos || [],
+            feriadosMes,
+            confirmacaoAdiantamento
+        });
+    },
+
+    /**
+     * Calcula dados agregados do dashboard financeiro para todos os colaboradores no mes/ano em lote.
+     */
+    async getDashboardLote(mes: number, ano: number) {
+        const { data: colaboradoresAtivos } = await supabaseAdmin
+            .from("usuarios")
+            .select("id, valor_mei")
+            .eq("status", "ATIVO");
+
+        if (!colaboradoresAtivos || colaboradoresAtivos.length === 0) {
+            return { totalFolha: 0, valorPago: 0, restaPagar: 0, pendentesCount: 0 };
+        }
+
+        const { data: fechamentos } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("colaborador_id, saldo_final")
+            .eq("mes", mes)
+            .eq("ano", ano)
+            .eq("pago", true);
+
+        const fechamentosMap = new Map();
+        let valorPago = 0;
+
+        (fechamentos || []).forEach(f => {
+            fechamentosMap.set(f.colaborador_id, f);
+            valorPago += f.saldo_final || 0;
+        });
+
+        const pendentes = colaboradoresAtivos.filter(c => !fechamentosMap.has(c.id));
+
+        if (pendentes.length === 0) {
+            return { totalFolha: valorPago, valorPago, restaPagar: 0, pendentesCount: 0 };
+        }
+
+        const pendentesIds = pendentes.map(p => p.id);
+        const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
+
+        // Busca em Lote: Vínculos
+        const { data: todosLinks } = await supabaseAdmin
+            .from("colaborador_clientes")
+            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
+            .in("colaborador_id", pendentesIds);
+
+        const linksPorUsuario = new Map();
+        (todosLinks || []).forEach(l => {
+            if (!linksPorUsuario.has(l.colaborador_id)) linksPorUsuario.set(l.colaborador_id, []);
+            linksPorUsuario.get(l.colaborador_id).push(l);
+        });
+
+        // Busca em Lote: Ocorrencias
+        const { data: todasOcorrenciasRaw } = await supabaseAdmin
+            .from("ocorrencias")
+            .select("*, tipo:tipos_ocorrencia(id, descricao)")
+            .in("colaborador_id", pendentesIds)
+            .gte("data_ocorrencia", dataInicioMesStr)
+            .lte("data_ocorrencia", dataFimMesStr);
+        
+        const ocorrenciasPorUsuario = new Map();
+        (todasOcorrenciasRaw || []).forEach(o => {
+            if (!ocorrenciasPorUsuario.has(o.colaborador_id)) ocorrenciasPorUsuario.set(o.colaborador_id, []);
+            ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
+        });
+
+        // Busca em Lote: Saldo Mês Anterior
+        let mesAnterior = mes - 1;
+        let anoAnterior = ano;
+        if (mesAnterior === 0) { mesAnterior = 12; anoAnterior = ano - 1; }
+        
+        const { data: fechamentosAnteriores } = await supabaseAdmin
+            .from("fechamentos_financeiros")
+            .select("colaborador_id, saldo_final")
+            .in("colaborador_id", pendentesIds)
+            .eq("mes", mesAnterior)
+            .eq("ano", anoAnterior)
+            .eq("pago", true);
+
+        const fechamentosAnterioresMap = new Map();
+        (fechamentosAnteriores || []).forEach(f => {
+            fechamentosAnterioresMap.set(f.colaborador_id, f);
+        });
+
+        // Busca em Lote: Pontos
+        const { data: todosPontos } = await supabaseAdmin
+            .from("registros_ponto")
+            .select("*")
+            .in("usuario_id", pendentesIds)
+            .gte("data_referencia", dataInicioMesStr)
+            .lte("data_referencia", dataFimMesStr);
+
+        const pontosPorUsuario = new Map();
+        (todosPontos || []).forEach(p => {
+            if (!pontosPorUsuario.has(p.usuario_id)) pontosPorUsuario.set(p.usuario_id, []);
+            pontosPorUsuario.get(p.usuario_id).push(p);
+        });
+
+        // Feriados Globais
+        const { data: feriadosData } = await supabaseAdmin
+            .from("feriados")
+            .select("data")
+            .gte("data", dataInicioMesStr)
+            .lte("data", dataFimMesStr);
+        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
+
+        // Busca em Lote: Confirmações Adiantamento
+        const { data: confirmacoes } = await supabaseAdmin
+            .from("confirmacoes_adiantamento")
+            .select("colaborador_id")
+            .in("colaborador_id", pendentesIds)
+            .eq("mes", mes)
+            .eq("ano", ano);
+        
+        const confirmacoesSet = new Set((confirmacoes || []).map(c => c.colaborador_id));
+
+        // Calcular vivos
+        let restaPagar = 0;
+
+        pendentes.forEach(usuario => {
+            const extrato = this._calcularMatematicaExtrato({
+                usuarioId: usuario.id,
+                mes,
+                ano,
+                usuario,
+                links: linksPorUsuario.get(usuario.id) || [],
+                ocorrencias: ocorrenciasPorUsuario.get(usuario.id) || [],
+                fechamentoAnterior: fechamentosAnterioresMap.get(usuario.id) || null,
+                pontos: pontosPorUsuario.get(usuario.id) || [],
+                feriadosMes,
+                confirmacaoAdiantamento: confirmacoesSet.has(usuario.id) ? true : null
+            });
+
+            restaPagar += extrato.totais.saldo_final || 0;
+        });
+
+        const totalFolha = valorPago + restaPagar;
+
+        return {
+            totalFolha: parseFloat(totalFolha.toFixed(2)),
+            valorPago: parseFloat(valorPago.toFixed(2)),
+            restaPagar: parseFloat(restaPagar.toFixed(2)),
+            pendentesCount: pendentes.length
+        };
+    },
+
 
     /**
      * Efetua o fechamento e pagamento em uma única ação.
