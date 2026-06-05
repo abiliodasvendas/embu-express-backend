@@ -232,7 +232,7 @@ export const financeiroService = {
                 return true;
             });
 
-            const diasTrabalhados = pontosDesteTurno.length;
+            const diasTrabalhados = new Set(pontosDesteTurno.map(p => p.data_referencia)).size;
 
             // 3. Regra de Bônus: Concede se não houve nenhuma ausência (Zero Falta)
             // Permite bônus completo mesmo iniciando no meio do mês, desde que não tenha faltas
@@ -295,8 +295,10 @@ export const financeiroService = {
             const totalCreditosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA).reduce((acc, o) => acc + (o.valor || 0), 0);
             const totalDebitosTurno = todasOcorrenciasTurno.filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.SAIDA).reduce((acc, o) => acc + (o.valor || 0), 0);
 
-            // O valor calculado agora é a BASE + BONUS + Saldo de Ocorrências (que já inclui as deduções virtuais)
-            const valorFinalCalculado = baseBrutaFixa + bonusEfetivo + totalCreditosTurno - totalDebitosTurno;
+            // O valor calculado agora parte da base proporcional ao período vigente (data_inicio e data_fim),
+            // e então somamos bônus/créditos e deduzimos os débitos (que já incluem as ausências como deduções virtuais).
+            const valorBrutoVigente = (baseBrutaFixa / diasEscalaNoMesTotal) * diasEsperadosTurno;
+            const valorFinalCalculado = valorBrutoVigente + bonusEfetivo + totalCreditosTurno - totalDebitosTurno;
 
             return {
                 cliente_id: link.cliente_id,
