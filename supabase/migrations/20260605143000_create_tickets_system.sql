@@ -71,3 +71,16 @@ ON CONFLICT DO NOTHING;
 
 -- SYNC SEQUENCES AVOID CONFLICTS
 SELECT setval('public.permissoes_id_seq', (SELECT MAX(id) FROM public.permissoes));
+
+-- STORAGE BUCKET E POLÍTICAS DE RLS DO STORAGE
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('ticket-attachments', 'ticket-attachments', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Permitir leitura pública de anexos de chamados" ON storage.objects;
+CREATE POLICY "Permitir leitura pública de anexos de chamados" ON storage.objects
+    FOR SELECT USING (bucket_id = 'ticket-attachments');
+
+DROP POLICY IF EXISTS "Permitir upload de anexos por usuários autenticados" ON storage.objects;
+CREATE POLICY "Permitir upload de anexos por usuários autenticados" ON storage.objects
+    FOR INSERT TO authenticated WITH CHECK (bucket_id = 'ticket-attachments');
