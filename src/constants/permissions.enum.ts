@@ -58,6 +58,12 @@ export const PERMISSIONS = {
         VER: 'equipamentos:ver',
         EDITAR: 'equipamentos:editar',
     },
+    CHAMADOS: {
+        VER: 'chamados:ver',
+        CRIAR: 'chamados:criar',
+        STATUS: 'chamados:status',
+        DELETAR: 'chamados:deletar',
+    },
 } as const;
 
 export const ROLES = {

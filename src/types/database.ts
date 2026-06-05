@@ -1,3 +1,5 @@
+import { TicketType, TicketStatus, TicketPriority } from "../constants/ticket.enum.js";
+
 export interface Perfil {
   id: number;
   nome: string;
@@ -283,4 +285,33 @@ export interface ColaboradorItem {
   item?: ItemEquipamento;
   colaborador?: { nome_completo: string; cpf: string };
   criado_por_usuario?: { nome_completo: string };
+}
+
+export interface Ticket {
+  id: string;
+  title: string;
+  description: string;
+  type: TicketType;
+  status: TicketStatus;
+  priority: TicketPriority;
+  author_id: string;
+  attachments: string[];
+  created_at?: string;
+  updated_at?: string;
+  author?: {
+    id: string;
+    nome_completo: string;
+  };
+}
+
+export interface TicketComment {
+  id: string;
+  ticket_id: string;
+  author_id: string;
+  content: string;
+  created_at?: string;
+  author?: {
+    id: string;
+    nome_completo: string;
+  };
 }

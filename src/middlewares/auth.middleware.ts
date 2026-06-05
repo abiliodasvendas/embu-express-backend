@@ -50,6 +50,13 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
 
             const perfilData = usuario.perfil as unknown as { nome: string, perfil_permissoes: { permissao: { nome_interno: string } }[] };
             const nomePerfil = perfilData?.nome;
+            const permissoesArray = perfilData?.perfil_permissoes?.map(
+                (pp) => pp.permissao.nome_interno
+            ) || [];
+
+            // Attach profile and permissions to request for further checks in handlers
+            (request as AuthenticatedRequest).user_profile = usuario as unknown as Usuario;
+            (request as AuthenticatedRequest).user_perms = permissoesArray;
 
             // 3. Super Admin Bypass
             if (nomePerfil === ROLES.SUPER_ADMIN) {
@@ -67,19 +74,11 @@ export function verifyPermissao(permissaoNecessaria: PermissionKey | PermissionK
             const requiredPerms = Array.isArray(permissaoNecessaria) ? permissaoNecessaria : [permissaoNecessaria];
 
             // 5. Check permissions
-            const permissoesArray = perfilData?.perfil_permissoes?.map(
-                (pp) => pp.permissao.nome_interno
-            ) || [];
-
             const hasPermission = requiredPerms.some((p) => permissoesArray.includes(p));
 
             if (!hasPermission) {
                 return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
             }
-
-            // Attach profile and permissions to request for further checks in handlers
-            (request as AuthenticatedRequest).user_profile = usuario as unknown as Usuario;
-            (request as AuthenticatedRequest).user_perms = permissoesArray;
 
             // If everything is fine, proceed
             return;
