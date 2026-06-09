@@ -16,6 +16,10 @@ export interface OcorrenciaDTO {
   tipo_lancamento: 'ENTRADA' | 'SAIDA';
   observacao?: string | null;
   created_at: string;
+  criado_por_usuario?: {
+    id: string;
+    nome_completo: string;
+  } | null;
   tipo?: {
     id: number;
     descricao: string;
@@ -52,7 +56,8 @@ export function toOcorrenciaDTO(o: any): OcorrenciaDTO {
     observacao: o.observacao,
     created_at: o.created_at,
     tipo: o.tipo,
-    colaborador: o.colaborador
+    colaborador: o.colaborador,
+    criado_por_usuario: o.criado_por_usuario
   };
 }
 
