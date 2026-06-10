@@ -18,6 +18,18 @@ export async function createApp(): Promise<FastifyInstance> {
       done();
     });
 
+    // HACK: Evita erro de 'Unsupported Media Type' no ambiente Vercel/Serverless para requisições sem corpo
+    app.addHook("onRequest", (request, reply, done) => {
+      if (!request.headers["content-type"]) {
+        const methodsWithoutBody = ["GET", "DELETE", "HEAD", "OPTIONS"];
+        if (methodsWithoutBody.includes(request.method.toUpperCase())) {
+          delete request.headers["content-length"];
+          delete request.headers["transfer-encoding"];
+        }
+      }
+      done();
+    });
+
     // Global Error Handler
     app.setErrorHandler(globalErrorHandler);
 
