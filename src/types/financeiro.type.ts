@@ -1,4 +1,4 @@
-import { Ocorrencia } from "./database.js";
+import { Ocorrencia, LancamentoConvenio } from "./database.js";
 
 export interface ExtratoMensal {
     periodo: { mes: number; ano: number };
@@ -8,6 +8,7 @@ export interface ExtratoMensal {
     mei_consolidado: MeiConsolidado;
     ocorrencias: Ocorrencia[];
     ocorrencias_avulsas: OcorrenciasAvulsas;
+    lancamentos_convenios: LancamentoConvenio[];
     totais: FinanceiroTotais;
     id_fechamento?: number;
     data_pagamento?: string;

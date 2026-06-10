@@ -315,3 +315,25 @@ export interface TicketComment {
     nome_completo: string;
   };
 }
+
+export interface Convenio {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  token: string;
+  created_at?: string;
+}
+
+export interface LancamentoConvenio {
+  id: string;
+  convenio_id: string;
+  colaborador_id: string | null;
+  data_lancamento: string;
+  valor: number;
+  descricao?: string;
+  moto_embu: boolean;
+  created_at?: string;
+  updated_at?: string;
+  convenio?: Convenio;
+  colaborador?: { id: string; nome_completo: string; cpf?: string };
+}

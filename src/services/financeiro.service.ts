@@ -59,8 +59,9 @@ export const financeiroService = {
         pontos: any[];
         feriadosMes: Set<string>;
         confirmacaoAdiantamento: any | null;
+        lancamentosConvenios: any[];
     }): ExtratoMensal {
-        const { usuarioId, mes, ano, usuario, links, ocorrencias, fechamentoAnterior, pontos, feriadosMes, confirmacaoAdiantamento } = dados;
+        const { usuarioId, mes, ano, usuario, links, ocorrencias, fechamentoAnterior, pontos, feriadosMes, confirmacaoAdiantamento, lancamentosConvenios } = dados;
 
         const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
@@ -309,7 +310,8 @@ export const financeiroService = {
 
         const totalTurnos = resumoClientes.reduce((acc, r) => acc + (r.valor_calculado || 0), 0);
         const totalAdiantamento = resumoClientes.reduce((acc, r) => acc + (r.valores_fixos.adiantamento_config || 0), 0);
-        const saldoFinal = totalTurnos + proRataMeiFinal + saldoAvulso;
+        const debitosConvenios = (lancamentosConvenios || []).reduce((acc, l) => acc + (l.valor || 0), 0);
+        const saldoFinal = totalTurnos + proRataMeiFinal + saldoAvulso - debitosConvenios;
 
         return {
             periodo: { mes, ano },
@@ -329,6 +331,7 @@ export const financeiroService = {
                 debitos: debitosAvulsos,
                 saldo: parseFloat(saldoAvulso.toFixed(2))
             },
+            lancamentos_convenios: lancamentosConvenios,
             totais: {
                 total_turnos: parseFloat(totalTurnos.toFixed(2)),
                 total_mei: parseFloat(proRataMeiFinal.toFixed(2)),
@@ -420,6 +423,14 @@ export const financeiroService = {
             .eq("ano", ano)
             .maybeSingle();
 
+        const { data: lancamentosConvenios } = await supabaseAdmin
+            .from("lancamentos_convenios")
+            .select("*, convenio:convenios(nome)")
+            .eq("colaborador_id", usuarioId)
+            .eq("moto_embu", false)
+            .gte("data_lancamento", dataInicioMesStr)
+            .lte("data_lancamento", dataFimMesStr);
+
         return this._calcularMatematicaExtrato({
             usuarioId,
             mes,
@@ -430,7 +441,8 @@ export const financeiroService = {
             fechamentoAnterior,
             pontos: pontos || [],
             feriadosMes,
-            confirmacaoAdiantamento
+            confirmacaoAdiantamento,
+            lancamentosConvenios: lancamentosConvenios || []
         });
     },
 
@@ -549,6 +561,21 @@ export const financeiroService = {
         
         const confirmacoesSet = new Set((confirmacoes || []).map(c => c.colaborador_id));
 
+        // Busca em Lote: Convênios
+        const { data: todosLancamentosConvenio } = await supabaseAdmin
+            .from("lancamentos_convenios")
+            .select("*, convenio:convenios(nome)")
+            .in("colaborador_id", pendentesIds)
+            .eq("moto_embu", false)
+            .gte("data_lancamento", dataInicioMesStr)
+            .lte("data_lancamento", dataFimMesStr);
+
+        const conveniosPorUsuario = new Map();
+        (todosLancamentosConvenio || []).forEach(l => {
+            if (!conveniosPorUsuario.has(l.colaborador_id)) conveniosPorUsuario.set(l.colaborador_id, []);
+            conveniosPorUsuario.get(l.colaborador_id).push(l);
+        });
+
         // Calcular vivos
         let restaPagar = 0;
 
@@ -563,7 +590,8 @@ export const financeiroService = {
                 fechamentoAnterior: fechamentosAnterioresMap.get(usuario.id) || null,
                 pontos: pontosPorUsuario.get(usuario.id) || [],
                 feriadosMes,
-                confirmacaoAdiantamento: confirmacoesSet.has(usuario.id) ? true : null
+                confirmacaoAdiantamento: confirmacoesSet.has(usuario.id) ? true : null,
+                lancamentosConvenios: conveniosPorUsuario.get(usuario.id) || []
             });
 
             restaPagar += extrato.totais.saldo_final || 0;
