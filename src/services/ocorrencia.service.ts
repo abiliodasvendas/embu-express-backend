@@ -146,15 +146,46 @@ export const ocorrenciaService = {
         return (data || []).map(formatOcorrencia);
     },
 
-    /**
-     * Cria uma nova ocorrência.
-     */
-    async createOcorrencia(data: OcorrenciaPayload): Promise<Ocorrencia> {
+    async createOcorrencia(data: OcorrenciaPayload): Promise<Ocorrencia | Ocorrencia[]> {
         logger.info({ data }, "[ocorrenciaService] Criando ocorrência");
+
+        const { is_parcelado, quantidade_parcelas, ...ocorrenciaData } = data;
+
+        if (is_parcelado && quantidade_parcelas && quantidade_parcelas > 1) {
+            const ocorrenciasToInsert = [];
+            const baseDate = new Date(ocorrenciaData.data_ocorrencia + "T12:00:00Z");
+
+            for (let i = 0; i < quantidade_parcelas; i++) {
+                const currentDate = new Date(baseDate);
+                const currentMonth = currentDate.getUTCMonth();
+                currentDate.setUTCMonth(currentMonth + i);
+                
+                // Adjust if month overflowed incorrectly (e.g. Jan 31 + 1 month = Mar 3)
+                if (currentDate.getUTCMonth() !== ((currentMonth + i) % 12)) {
+                    currentDate.setUTCDate(0); // Rollback to last day of previous month
+                }
+                
+                const dataString = currentDate.toISOString().split("T")[0];
+
+                ocorrenciasToInsert.push({
+                    ...ocorrenciaData,
+                    data_ocorrencia: dataString,
+                    observacao: `${ocorrenciaData.observacao} (Parcela ${i + 1}/${quantidade_parcelas})`
+                });
+            }
+
+            const { data: inserted, error } = await supabaseAdmin
+                .from("ocorrencias")
+                .insert(ocorrenciasToInsert)
+                .select();
+
+            if (error) throw error;
+            return inserted.map(formatOcorrencia);
+        }
 
         const { data: inserted, error } = await supabaseAdmin
             .from("ocorrencias")
-            .insert([data])
+            .insert([ocorrenciaData])
             .select()
             .single();
 
@@ -167,9 +198,13 @@ export const ocorrenciaService = {
      */
     async updateOcorrencia(id: number, data: Partial<OcorrenciaPayload>): Promise<Ocorrencia> {
         logger.info({ id, data }, "[ocorrenciaService] Atualizando ocorrência");
+
+        // Ignora propriedades virtuais de parcelamento na edição
+        const { is_parcelado, quantidade_parcelas, ...updateData } = data;
+
         const { data: updated, error } = await supabaseAdmin
             .from("ocorrencias")
-            .update(data)
+            .update(updateData)
             .eq("id", id)
             .select()
             .single();

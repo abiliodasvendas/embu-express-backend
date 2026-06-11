@@ -79,6 +79,8 @@ export const convenioController = {
             valor: data.valor,
             descricao: data.descricao,
             moto_embu: data.moto_embu,
+            is_parcelado: data.is_parcelado,
+            quantidade_parcelas: data.quantidade_parcelas,
         });
         return reply.send(result);
     },
@@ -92,6 +94,8 @@ export const convenioController = {
             valor: data.valor,
             descricao: data.descricao,
             moto_embu: data.moto_embu,
+            is_parcelado: data.is_parcelado,
+            quantidade_parcelas: data.quantidade_parcelas,
         });
         return reply.send(result);
     },
@@ -117,6 +121,8 @@ export const convenioController = {
             valor: data.valor,
             descricao: data.descricao,
             moto_embu: data.moto_embu,
+            is_parcelado: data.is_parcelado,
+            quantidade_parcelas: data.quantidade_parcelas,
         });
         return reply.send(result);
     },
@@ -130,6 +136,8 @@ export const convenioController = {
             valor: data.valor,
             descricao: data.descricao,
             moto_embu: data.moto_embu,
+            is_parcelado: data.is_parcelado,
+            quantidade_parcelas: data.quantidade_parcelas,
         });
         return reply.send(result);
     },

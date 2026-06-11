@@ -15,13 +15,9 @@ export const lancamentoConvenioSchema = z.object({
     data_lancamento: z.string().min(10, "Data inválida."),
     valor: z.number().positive("O valor deve ser positivo."),
     descricao: z.string().min(1, "A descrição é obrigatória."),
-    moto_embu: z.boolean().default(false)
+    moto_embu: z.boolean().default(false),
+    is_parcelado: z.boolean().optional().default(false),
+    quantidade_parcelas: z.number().int().min(2).optional(),
 });
 
-export const updateLancamentoConvenioSchema = z.object({
-    colaborador_id: z.string().uuid("Colaborador inválido.").optional(),
-    data_lancamento: z.string().min(10, "Data inválida.").optional(),
-    valor: z.number().positive("O valor deve ser positivo.").optional(),
-    descricao: z.string().min(1, "A descrição é obrigatória.").optional(),
-    moto_embu: z.boolean().optional()
-});
+export const updateLancamentoConvenioSchema = lancamentoConvenioSchema.partial();

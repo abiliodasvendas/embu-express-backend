@@ -46,6 +46,10 @@ export const OcorrenciaController = {
         ...data,
         criado_por: data.criado_por || userId
     });
+    
+    if (Array.isArray(result)) {
+        return reply.status(201).send(toOcorrenciaListDTO(result));
+    }
     return reply.status(201).send(toOcorrenciaDTO(result));
   },
 

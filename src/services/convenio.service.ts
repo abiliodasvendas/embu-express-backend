@@ -82,10 +82,45 @@ export const convenioService = {
         if (error) throw error;
     },
 
-    async createLancamentoAdmin(convenioId: string, payload: Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at">) {
+    async createLancamentoAdmin(convenioId: string, payload: Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at"> & { is_parcelado?: boolean; quantidade_parcelas?: number }) {
+        const { is_parcelado, quantidade_parcelas, ...lancamentoData } = payload;
+
+        if (is_parcelado && quantidade_parcelas && quantidade_parcelas > 1) {
+            const lancamentosToInsert = [];
+            const baseDate = new Date(lancamentoData.data_lancamento + "T12:00:00Z");
+
+            for (let i = 0; i < quantidade_parcelas; i++) {
+                const currentDate = new Date(baseDate);
+                const currentMonth = currentDate.getUTCMonth();
+                currentDate.setUTCMonth(currentMonth + i);
+                
+                // Adjust if month overflowed incorrectly
+                if (currentDate.getUTCMonth() !== ((currentMonth + i) % 12)) {
+                    currentDate.setUTCDate(0); // Rollback to last day of previous month
+                }
+                
+                const dataString = currentDate.toISOString().split("T")[0];
+
+                lancamentosToInsert.push({
+                    ...lancamentoData,
+                    convenio_id: convenioId,
+                    data_lancamento: dataString,
+                    descricao: `${lancamentoData.descricao} (Parcela ${i + 1}/${quantidade_parcelas})`
+                });
+            }
+
+            const { data, error } = await supabaseAdmin
+                .from("lancamentos_convenios")
+                .insert(lancamentosToInsert)
+                .select(`*, colaborador:usuarios(id, nome_completo, cpf)`);
+
+            if (error) throw error;
+            return data[0] as LancamentoConvenio;
+        }
+
         const { data, error } = await supabaseAdmin
             .from("lancamentos_convenios")
-            .insert({ ...payload, convenio_id: convenioId })
+            .insert({ ...lancamentoData, convenio_id: convenioId })
             .select(`*, colaborador:usuarios(id, nome_completo, cpf)`)
             .single();
 
@@ -93,10 +128,12 @@ export const convenioService = {
         return data as LancamentoConvenio;
     },
 
-    async updateLancamentoAdmin(convenioId: string, lancamentoId: string, payload: Partial<Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at">>) {
+    async updateLancamentoAdmin(convenioId: string, lancamentoId: string, payload: Partial<Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at"> & { is_parcelado?: boolean; quantidade_parcelas?: number }>) {
+        const { is_parcelado, quantidade_parcelas, ...updateData } = payload;
+
         const { data, error } = await supabaseAdmin
             .from("lancamentos_convenios")
-            .update({ ...payload, updated_at: new Date().toISOString() })
+            .update({ ...updateData, updated_at: new Date().toISOString() })
             .eq("id", lancamentoId)
             .eq("convenio_id", convenioId)
             .select(`*, colaborador:usuarios(id, nome_completo, cpf)`)
@@ -151,15 +188,50 @@ export const convenioService = {
         return data as LancamentoConvenio[];
     },
 
-    async createLancamentoToken(token: string, payload: Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at">) {
+    async createLancamentoToken(token: string, payload: Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at"> & { is_parcelado?: boolean; quantidade_parcelas?: number }) {
         const convenio = await this.getConvenioByToken(token);
         if (!convenio.ativo) {
             throw new AppError("Ações de escrita não são permitidas para convênios inativos.", 400);
         }
 
+        const { is_parcelado, quantidade_parcelas, ...lancamentoData } = payload;
+
+        if (is_parcelado && quantidade_parcelas && quantidade_parcelas > 1) {
+            const lancamentosToInsert = [];
+            const baseDate = new Date(lancamentoData.data_lancamento + "T12:00:00Z");
+
+            for (let i = 0; i < quantidade_parcelas; i++) {
+                const currentDate = new Date(baseDate);
+                const currentMonth = currentDate.getUTCMonth();
+                currentDate.setUTCMonth(currentMonth + i);
+                
+                // Adjust if month overflowed incorrectly
+                if (currentDate.getUTCMonth() !== ((currentMonth + i) % 12)) {
+                    currentDate.setUTCDate(0); // Rollback to last day of previous month
+                }
+                
+                const dataString = currentDate.toISOString().split("T")[0];
+
+                lancamentosToInsert.push({
+                    ...lancamentoData,
+                    convenio_id: convenio.id,
+                    data_lancamento: dataString,
+                    descricao: `${lancamentoData.descricao} (Parcela ${i + 1}/${quantidade_parcelas})`
+                });
+            }
+
+            const { data, error } = await supabaseAdmin
+                .from("lancamentos_convenios")
+                .insert(lancamentosToInsert)
+                .select(`*, colaborador:usuarios(id, nome_completo, cpf)`);
+
+            if (error) throw error;
+            return data[0] as LancamentoConvenio;
+        }
+
         const { data, error } = await supabaseAdmin
             .from("lancamentos_convenios")
-            .insert({ ...payload, convenio_id: convenio.id })
+            .insert({ ...lancamentoData, convenio_id: convenio.id })
             .select(`*, colaborador:usuarios(id, nome_completo, cpf)`)
             .single();
 
@@ -167,15 +239,17 @@ export const convenioService = {
         return data as LancamentoConvenio;
     },
 
-    async updateLancamentoToken(token: string, lancamentoId: string, payload: Partial<Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at">>) {
+    async updateLancamentoToken(token: string, lancamentoId: string, payload: Partial<Omit<LancamentoConvenio, "id" | "convenio_id" | "created_at" | "updated_at"> & { is_parcelado?: boolean; quantidade_parcelas?: number }>) {
         const convenio = await this.getConvenioByToken(token);
         if (!convenio.ativo) {
             throw new AppError("Ações de escrita não são permitidas para convênios inativos.", 400);
         }
 
+        const { is_parcelado, quantidade_parcelas, ...updateData } = payload;
+
         const { data, error } = await supabaseAdmin
             .from("lancamentos_convenios")
-            .update({ ...payload, updated_at: new Date().toISOString() })
+            .update({ ...updateData, updated_at: new Date().toISOString() })
             .eq("id", lancamentoId)
             .eq("convenio_id", convenio.id)
             .select(`*, colaborador:usuarios(id, nome_completo, cpf)`)

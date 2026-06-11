@@ -17,6 +17,8 @@ export const ocorrenciaSchema = z.object({
   tipo_lancamento: z.enum(["ENTRADA", "SAIDA"]).optional().default("SAIDA"),
   observacao: z.string().min(1, "Observação é obrigatória"),
   criado_por: z.string().uuid().optional(),
+  is_parcelado: z.boolean().optional().default(false),
+  quantidade_parcelas: z.number().int().min(2).optional(),
 });
 
 export const updateOcorrenciaSchema = ocorrenciaSchema.partial();
