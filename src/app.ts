@@ -21,12 +21,16 @@ export async function createApp(): Promise<FastifyInstance> {
     // HACK: Evita erro de 'Unsupported Media Type' no ambiente Vercel/Serverless para requisições sem corpo
     app.addHook("onRequest", (request, reply, done) => {
       if (!request.headers["content-type"]) {
-        const methodsWithoutBody = ["GET", "DELETE", "HEAD", "OPTIONS"];
-        if (methodsWithoutBody.includes(request.method.toUpperCase())) {
-          delete request.headers["content-length"];
-          delete request.headers["transfer-encoding"];
-        }
+        // Força application/json para requisições POST/PUT sem payload evitarem o erro Unsupported Media Type
+        request.headers["content-type"] = "application/json";
       }
+      
+      const methodsWithoutBody = ["GET", "DELETE", "HEAD", "OPTIONS"];
+      if (methodsWithoutBody.includes(request.method.toUpperCase())) {
+        delete request.headers["content-length"];
+        delete request.headers["transfer-encoding"];
+      }
+      
       done();
     });
 
