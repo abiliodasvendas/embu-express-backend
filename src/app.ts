@@ -18,17 +18,21 @@ export async function createApp(): Promise<FastifyInstance> {
       done();
     });
 
-    // HACK: Evita erro de 'Unsupported Media Type' no ambiente Vercel/Serverless para requisições sem corpo
+    // HACK: Evita erro de 'Unsupported Media Type' e 'Body cannot be empty' no ambiente Vercel/Serverless
     app.addHook("onRequest", (request, reply, done) => {
-      if (!request.headers["content-type"]) {
-        // Força application/json para requisições POST/PUT sem payload evitarem o erro Unsupported Media Type
-        request.headers["content-type"] = "application/json";
+      // 1. Para requisições que explicitamente não possuem corpo (content-length = 0),
+      // removemos os headers para evitar que o Fastify tente fazer o parse e falhe.
+      if (request.headers["content-length"] === "0") {
+        delete request.headers["content-length"];
+        delete request.headers["content-type"];
       }
-      
+
+      // 2. Para métodos que por definição não enviam corpo, removemos qualquer traço de payload
       const methodsWithoutBody = ["GET", "DELETE", "HEAD", "OPTIONS"];
       if (methodsWithoutBody.includes(request.method.toUpperCase())) {
         delete request.headers["content-length"];
         delete request.headers["transfer-encoding"];
+        delete request.headers["content-type"];
       }
       
       done();
