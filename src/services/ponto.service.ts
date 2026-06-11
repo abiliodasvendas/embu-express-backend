@@ -231,7 +231,7 @@ export const pontoService = {
 
         // Limpa ausência manual e ocorrência de "Sem Atividade" se houver registro de entrada
         if (inserted?.entrada_hora) {
-            await this.limparAusenciaManualEOcorrencia(inserted.usuario_id, inserted.data_referencia);
+            await this.limparAusenciaManualEOcorrencia(inserted.usuario_id, inserted.data_referencia, inserted.colaborador_cliente_id);
         }
 
         return formatPoint(inserted as unknown as RegistroPonto);
@@ -438,7 +438,7 @@ export const pontoService = {
 
         // Limpa ausência manual e ocorrência de "Sem Atividade" se houver registro de entrada
         if (registro?.entrada_hora) {
-            await this.limparAusenciaManualEOcorrencia(registro.usuario_id, registro.data_referencia);
+            await this.limparAusenciaManualEOcorrencia(registro.usuario_id, registro.data_referencia, registro.colaborador_cliente_id);
         }
 
         return formatPoint(updated as unknown as RegistroPonto);
@@ -930,7 +930,7 @@ export const pontoService = {
         return Object.values(grupos);
     },
 
-    async limparAusenciaManualEOcorrencia(usuarioId: string, dataReferencia: string): Promise<void> {
+    async limparAusenciaManualEOcorrencia(usuarioId: string, dataReferencia: string, colaboradorClienteId?: number | null): Promise<void> {
         try {
             await supabaseAdmin
                 .from("ausencias_manuais")
@@ -948,10 +948,16 @@ export const pontoService = {
             }
 
             if (tipoOcorrenciaId) {
-                await supabaseAdmin
+                let query = supabaseAdmin
                     .from("ocorrencias")
                     .delete()
                     .match({ colaborador_id: usuarioId, data_ocorrencia: dataReferencia, tipo_id: tipoOcorrenciaId });
+                
+                if (colaboradorClienteId) {
+                    query = query.eq("colaborador_cliente_id", colaboradorClienteId);
+                }
+
+                await query;
             }
         } catch (error) {
             console.error("Erro ao limpar ausência e ocorrência de Sem Atividade:", error);
