@@ -30,6 +30,7 @@ interface FechamentoFinanceiroDb {
 interface ColaboradorClienteDb {
     colaborador_id: string;
     valor_adiantamento: number | null;
+    data_fim: string | null;
     cliente: {
         nome_fantasia: string;
     }[] | null;
@@ -173,7 +174,8 @@ export const financeiroService = {
             // 3. Regra de Bônus: Concede se não houve nenhuma ausência (Zero Falta)
             // Permite bônus completo mesmo iniciando no meio do mês, desde que não tenha faltas
             const bonusEfetivo = (diasEsperadosTurno > 0 && ausenciasTurno === 0) ? (link.valor_bonus || 0) : 0;
-            const valorAdiantamentoConfig = link.valor_adiantamento || 0;
+            const isAtivo = !link.data_fim;
+            const valorAdiantamentoConfig = isAtivo ? (link.valor_adiantamento || 0) : 0;
             const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
 
             const baseBrutaFixa = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0);
@@ -734,7 +736,7 @@ export const financeiroService = {
 
         const { data: todosTurnos } = await supabaseAdmin
             .from("colaborador_clientes")
-            .select("colaborador_id, valor_adiantamento, cliente:clientes(nome_fantasia)");
+            .select("colaborador_id, valor_adiantamento, data_fim, cliente:clientes(nome_fantasia)");
 
         const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
         (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => {
@@ -762,7 +764,9 @@ export const financeiroService = {
             const adiantamentoConfirmado = !!confirmacao;
             const pago = !!fechamento;
 
-            const valorAdiantamentoConfigurado = turnos.reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
+            const valorAdiantamentoConfigurado = turnos
+                .filter(t => !t.data_fim)
+                .reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
 
             const valorFinal = fechamento ? (fechamento.saldo_final || 0) : 0;
 
