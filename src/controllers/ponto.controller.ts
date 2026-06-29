@@ -29,7 +29,7 @@ export const PontoController = {
   },
 
   async removeManualAbsence(request: FastifyRequest, reply: FastifyReply) {
-    const { date, userId } = manualAbsenceSchema.parse(request.body);
+    const { date, userId } = manualAbsenceSchema.parse(request.query);
     await ManualAbsenceService.remove(date, userId);
     return reply.status(200).send({ success: true });
   },
