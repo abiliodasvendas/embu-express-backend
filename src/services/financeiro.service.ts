@@ -487,63 +487,96 @@ export const financeiroService = {
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        // Busca em Lote: Vínculos
-        const { data: todosLinks } = await supabaseAdmin
-            .from("colaborador_clientes")
-            .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
-            .in("colaborador_id", pendentesIds);
-
+        // Loteamento para evitar erro de limite de 1000 rows do Supabase
+        const CHUNK_SIZE = 20;
         const linksPorUsuario = new Map();
-        (todosLinks || []).forEach(l => {
-            if (!linksPorUsuario.has(l.colaborador_id)) linksPorUsuario.set(l.colaborador_id, []);
-            linksPorUsuario.get(l.colaborador_id).push(l);
-        });
-
-        // Busca em Lote: Ocorrencias
-        const { data: todasOcorrenciasRaw } = await supabaseAdmin
-            .from("ocorrencias")
-            .select("*, tipo:tipos_ocorrencia(id, descricao)")
-            .in("colaborador_id", pendentesIds)
-            .gte("data_ocorrencia", dataInicioMesStr)
-            .lte("data_ocorrencia", dataFimMesStr);
-        
         const ocorrenciasPorUsuario = new Map();
-        (todasOcorrenciasRaw || []).forEach(o => {
-            if (!ocorrenciasPorUsuario.has(o.colaborador_id)) ocorrenciasPorUsuario.set(o.colaborador_id, []);
-            ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
-        });
+        const fechamentosAnterioresMap = new Map();
+        const pontosPorUsuario = new Map();
+        const confirmacoesSet = new Set();
+        const conveniosPorUsuario = new Map();
 
-        // Busca em Lote: Saldo Mês Anterior
         let mesAnterior = mes - 1;
         let anoAnterior = ano;
         if (mesAnterior === 0) { mesAnterior = 12; anoAnterior = ano - 1; }
-        
-        const { data: fechamentosAnteriores } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("colaborador_id, saldo_final")
-            .in("colaborador_id", pendentesIds)
-            .eq("mes", mesAnterior)
-            .eq("ano", anoAnterior)
-            .eq("pago", true);
 
-        const fechamentosAnterioresMap = new Map();
-        (fechamentosAnteriores || []).forEach(f => {
-            fechamentosAnterioresMap.set(f.colaborador_id, f);
-        });
+        for (let i = 0; i < pendentesIds.length; i += CHUNK_SIZE) {
+            const chunkIds = pendentesIds.slice(i, i + CHUNK_SIZE);
 
-        // Busca em Lote: Pontos
-        const { data: todosPontos } = await supabaseAdmin
-            .from("registros_ponto")
-            .select("*")
-            .in("usuario_id", pendentesIds)
-            .gte("data_referencia", dataInicioMesStr)
-            .lte("data_referencia", dataFimMesStr);
+            // Busca Vínculos
+            const { data: todosLinks } = await supabaseAdmin
+                .from("colaborador_clientes")
+                .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
+                .in("colaborador_id", chunkIds);
+            
+            (todosLinks || []).forEach(l => {
+                if (!linksPorUsuario.has(l.colaborador_id)) linksPorUsuario.set(l.colaborador_id, []);
+                linksPorUsuario.get(l.colaborador_id).push(l);
+            });
 
-        const pontosPorUsuario = new Map();
-        (todosPontos || []).forEach(p => {
-            if (!pontosPorUsuario.has(p.usuario_id)) pontosPorUsuario.set(p.usuario_id, []);
-            pontosPorUsuario.get(p.usuario_id).push(p);
-        });
+            // Busca Ocorrencias
+            const { data: todasOcorrenciasRaw } = await supabaseAdmin
+                .from("ocorrencias")
+                .select("*, tipo:tipos_ocorrencia(id, descricao)")
+                .in("colaborador_id", chunkIds)
+                .gte("data_ocorrencia", dataInicioMesStr)
+                .lte("data_ocorrencia", dataFimMesStr);
+            
+            (todasOcorrenciasRaw || []).forEach(o => {
+                if (!ocorrenciasPorUsuario.has(o.colaborador_id)) ocorrenciasPorUsuario.set(o.colaborador_id, []);
+                ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
+            });
+
+            // Busca Saldo Anterior
+            const { data: fechamentosAnteriores } = await supabaseAdmin
+                .from("fechamentos_financeiros")
+                .select("colaborador_id, saldo_final")
+                .in("colaborador_id", chunkIds)
+                .eq("mes", mesAnterior)
+                .eq("ano", anoAnterior)
+                .eq("pago", true);
+
+            (fechamentosAnteriores || []).forEach(f => {
+                fechamentosAnterioresMap.set(f.colaborador_id, f);
+            });
+
+            // Busca Pontos
+            const { data: todosPontos } = await supabaseAdmin
+                .from("registros_ponto")
+                .select("*")
+                .in("usuario_id", chunkIds)
+                .gte("data_referencia", dataInicioMesStr)
+                .lte("data_referencia", dataFimMesStr);
+
+            (todosPontos || []).forEach(p => {
+                if (!pontosPorUsuario.has(p.usuario_id)) pontosPorUsuario.set(p.usuario_id, []);
+                pontosPorUsuario.get(p.usuario_id).push(p);
+            });
+
+            // Busca Confirmações Adiantamento
+            const { data: confirmacoes } = await supabaseAdmin
+                .from("confirmacoes_adiantamento")
+                .select("colaborador_id")
+                .in("colaborador_id", chunkIds)
+                .eq("mes", mes)
+                .eq("ano", ano);
+            
+            (confirmacoes || []).forEach(c => confirmacoesSet.add(c.colaborador_id));
+
+            // Busca Convênios
+            const { data: todosLancamentosConvenio } = await supabaseAdmin
+                .from("lancamentos_convenios")
+                .select("*, convenio:convenios(nome)")
+                .in("colaborador_id", chunkIds)
+                .eq("moto_embu", false)
+                .gte("data_lancamento", dataInicioMesStr)
+                .lte("data_lancamento", dataFimMesStr);
+
+            (todosLancamentosConvenio || []).forEach(l => {
+                if (!conveniosPorUsuario.has(l.colaborador_id)) conveniosPorUsuario.set(l.colaborador_id, []);
+                conveniosPorUsuario.get(l.colaborador_id).push(l);
+            });
+        }
 
         // Feriados Globais
         const { data: feriadosData } = await supabaseAdmin
@@ -552,31 +585,6 @@ export const financeiroService = {
             .gte("data", dataInicioMesStr)
             .lte("data", dataFimMesStr);
         const feriadosMes = new Set((feriadosData || []).map(f => f.data));
-
-        // Busca em Lote: Confirmações Adiantamento
-        const { data: confirmacoes } = await supabaseAdmin
-            .from("confirmacoes_adiantamento")
-            .select("colaborador_id")
-            .in("colaborador_id", pendentesIds)
-            .eq("mes", mes)
-            .eq("ano", ano);
-        
-        const confirmacoesSet = new Set((confirmacoes || []).map(c => c.colaborador_id));
-
-        // Busca em Lote: Convênios
-        const { data: todosLancamentosConvenio } = await supabaseAdmin
-            .from("lancamentos_convenios")
-            .select("*, convenio:convenios(nome)")
-            .in("colaborador_id", pendentesIds)
-            .eq("moto_embu", false)
-            .gte("data_lancamento", dataInicioMesStr)
-            .lte("data_lancamento", dataFimMesStr);
-
-        const conveniosPorUsuario = new Map();
-        (todosLancamentosConvenio || []).forEach(l => {
-            if (!conveniosPorUsuario.has(l.colaborador_id)) conveniosPorUsuario.set(l.colaborador_id, []);
-            conveniosPorUsuario.get(l.colaborador_id).push(l);
-        });
 
         // Calcular vivos
         let restaPagar = 0;
