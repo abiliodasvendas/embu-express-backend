@@ -2,7 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { usuarioService } from "../services/usuario.service.js";
 import { createUsuarioSchema, updateUsuarioSchema, usuarioStatusSchema } from "../schemas/usuario.schema.js";
 import { createVinculoSchema, updateVinculoSchema } from "../types/dtos/colaborador-cliente.dto.js";
-import { toUsuarioDTO, toUsuarioListDTO } from "../types/dtos/usuario.dto.js";
+import { toUsuarioDTO, toUsuarioListDTO, toPaginatedUsuarioListDTO } from "../types/dtos/usuario.dto.js";
 import { z } from "zod";
 
 import { AuthenticatedRequest } from "../types/request.type.js";
@@ -35,11 +35,17 @@ export const UsuarioController = {
             perfil_id: z.string().optional().transform(val => val ? Number(val) : undefined),
             cliente_id: z.string().optional().transform(val => val ? Number(val) : undefined),
             empresa_id: z.string().optional().transform(val => val ? Number(val) : undefined),
-            status: z.string().optional()
+            status: z.string().optional(),
+            page: z.string().optional().transform(val => val ? Number(val) : undefined),
+            pageSize: z.string().optional().transform(val => val ? Number(val) : undefined),
+            all: z.string().optional().transform(val => val === "true")
         }).parse(request.query);
 
         const result = await usuarioService.listUsuarios(filtros);
-        return reply.status(200).send(toUsuarioListDTO(result));
+        if (Array.isArray(result)) {
+            return reply.status(200).send(toUsuarioListDTO(result));
+        }
+        return reply.status(200).send(toPaginatedUsuarioListDTO(result));
     },
 
     async delete(request: AuthenticatedRequest, reply: FastifyReply) {

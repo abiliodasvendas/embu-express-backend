@@ -204,16 +204,30 @@ export const usuarioService = {
         cliente_id?: number;
         empresa_id?: number;
         status?: string;
-    }): Promise<Usuario[]> {
+        page?: number;
+        pageSize?: number;
+        all?: boolean;
+    }): Promise<Usuario[] | { data: Usuario[]; total: number; page: number; pageSize: number }> {
+        const hasClienteFilter = Boolean(filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos');
+        const hasEmpresaFilter = Boolean(filtros?.empresa_id && filtros.empresa_id.toString() !== 'todos');
+        const isFilteredByLink = hasClienteFilter || hasEmpresaFilter;
+
+        const selectQuery = isFilteredByLink
+            ? "*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes!inner(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia), horarios:colaborador_cliente_horarios(*))"
+            : "*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia), horarios:colaborador_cliente_horarios(*))";
+
         let query = supabaseAdmin
             .from("usuarios")
-            .select("*, perfil:perfis(*, perfil_permissoes(*, permissao:permissoes(*))), links:colaborador_clientes(*, cliente:clientes(nome_fantasia), empresa:empresas(nome_fantasia), horarios:colaborador_cliente_horarios(*))")
+            .select(selectQuery, { count: "exact" })
             .order("nome_completo", { ascending: true });
 
         if (filtros?.searchTerm) {
-            query = query.or(
-                `nome_completo.ilike.%${filtros.searchTerm}%,email.ilike.%${filtros.searchTerm}%,cpf.ilike.%${filtros.searchTerm}%`
-            );
+            const term = filtros.searchTerm.trim();
+            if (term) {
+                query = query.or(
+                    `nome_completo.ilike.%${term}%,email.ilike.%${term}%,cpf.ilike.%${term}%`
+                );
+            }
         }
 
         if (filtros?.perfil_id) query = query.eq("perfil_id", filtros.perfil_id);
@@ -230,24 +244,39 @@ export const usuarioService = {
             }
         }
 
-        const { data: users, error } = await query;
+        if (hasClienteFilter) {
+            query = query.eq("links.cliente_id", filtros!.cliente_id);
+        }
+
+        if (hasEmpresaFilter) {
+            query = query.eq("links.empresa_id", filtros!.empresa_id);
+        }
+
+        const isPaginated = Boolean(filtros?.page && !filtros?.all);
+        const page = Math.max(1, filtros?.page || 1);
+        const pageSize = Math.max(1, filtros?.pageSize || 10);
+
+        if (isPaginated) {
+            const from = (page - 1) * pageSize;
+            const to = from + pageSize - 1;
+            query = query.range(from, to);
+        }
+
+        const { data: users, count, error } = await query;
         if (error) throw error;
 
-        let result = users || [];
+        const resultData = (users || []) as Usuario[];
 
-        if (filtros?.cliente_id && filtros.cliente_id.toString() !== 'todos') {
-            result = result.filter((u: Usuario) =>
-                u.links?.some((l) => l.cliente_id?.toString() === filtros.cliente_id?.toString())
-            );
+        if (isPaginated) {
+            return {
+                data: resultData,
+                total: count || 0,
+                page,
+                pageSize
+            };
         }
 
-        if (filtros?.empresa_id && filtros.empresa_id.toString() !== 'todos') {
-            result = result.filter((u: Usuario) =>
-                u.links?.some((l) => l.empresa_id?.toString() === filtros.empresa_id?.toString())
-            );
-        }
-
-        return (result || []) as Usuario[];
+        return resultData;
     },
 
     async deleteUsuario(id: string, executorId?: string): Promise<void> {
