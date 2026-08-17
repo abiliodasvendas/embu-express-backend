@@ -17,7 +17,7 @@ export const createUsuarioSchema = z.object({
   rg: z.string().optional().nullable(),
   data_nascimento: z.string().optional().nullable(),
   nome_mae: z.string().optional().nullable(),
-  endereco_completo: z.string().optional().nullable(),
+  endereco_completo: z.string().min(5, "Endereço obrigatório"),
   moto_modelo: z.string().optional().nullable(),
   moto_cor: z.string().optional().nullable(),
   moto_placa: z.string().optional().nullable(),

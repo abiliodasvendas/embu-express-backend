@@ -21,7 +21,7 @@ export const registerSchema = z.object({
   nome_completo: z.string().min(3, "Nome muito curto"),
   cpf: z.string().min(11, "CPF inválido").transform(onlyNumbers),
   rg: z.string().optional().nullable().transform(val => val ? onlyNumbers(val) : val),
-  telefone: z.string().optional().nullable().transform(val => val ? onlyNumbers(val) : val),
+  telefone: z.string().min(1, "Telefone obrigatório").transform(onlyNumbers),
   telefone_recado: z.string().optional().nullable().transform(val => val ? onlyNumbers(val) : val),
   data_nascimento: z.string().optional().nullable(),
   nome_mae: z.string().min(3, "Nome da mãe muito curto"),
