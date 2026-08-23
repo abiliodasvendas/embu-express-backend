@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
-import { getNowBR, toBRTime } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
 import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento } from "../types/financeiro.type.js";
@@ -11,6 +11,7 @@ interface ConfirmacaoAdiantamentoDb {
     colaborador_id: string;
     mes: number;
     ano: number;
+    valor?: number | null;
     confirmado_por: string;
     data_confirmacao: string;
 }
@@ -46,9 +47,6 @@ function formatFechamento<T extends { data_fechamento?: string; data_pagamento?:
 }
 
 export const financeiroService = {
-    /**
-     * Motor matemático do extrato.
-     */
     _calcularMatematicaExtrato(dados: {
         usuarioId: string;
         mes: number;
@@ -68,7 +66,6 @@ export const financeiroService = {
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        // 3. Verificação de Saldo Devedor do Mês Anterior
         let mesAnterior = mes - 1;
         let anoAnterior = ano;
         if (mesAnterior === 0) {
@@ -92,21 +89,27 @@ export const financeiroService = {
         }
 
         const adiantamentoConfirmado = !!confirmacaoAdiantamento;
+        const valorAdiantamentoCustom = (typeof confirmacaoAdiantamento === 'object' && confirmacaoAdiantamento !== null && 'valor' in confirmacaoAdiantamento && confirmacaoAdiantamento.valor !== null && confirmacaoAdiantamento.valor !== undefined)
+            ? Number(confirmacaoAdiantamento.valor)
+            : null;
 
-        const now = new Date();
-        const hojeLocalStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const linksAtivos = (links || []).filter(link => !link.data_fim);
+        const somaAdiantamentoConfigurado = linksAtivos.reduce((acc, link) => acc + (link.valor_adiantamento || 0), 0);
+        let valorAdiantamentoDistribuidoAcumulado = 0;
+
+        const hojeLocalStr = toLocalDateString();
         const hojeInicioDia = new Date(hojeLocalStr + 'T00:00:00');
+
 
         const resumoClientes = (links || []).map(link => {
             const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
             const dataFimTurno = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
 
-            let diasEscalaNoMesTotal = 0;   // Base (Divisor)
-            let diasEsperadosTurno = 0;     // Meta individual
-            let ausenciasTurno = 0;            // Contador de ausencias passadas
+            let diasEscalaNoMesTotal = 0;
+            let diasEsperadosTurno = 0;
+            let ausenciasTurno = 0;
             const calendarioVisual: any[] = [];
 
-            // 1. Loop diário para análise de escala, vigência e status visual
             for (let d = 1; d <= ultimoDiaMes; d++) {
                 const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
                 const dataReferenciaStr = dataAtual.toISOString().split('T')[0];
@@ -171,12 +174,38 @@ export const financeiroService = {
 
             const diasTrabalhados = new Set(pontosDesteTurno.map(p => p.data_referencia)).size;
 
-            // 3. Regra de Bônus: Concede se não houve nenhuma ausência (Zero Falta)
-            // Permite bônus completo mesmo iniciando no meio do mês, desde que não tenha faltas
             const bonusEfetivo = (diasEsperadosTurno > 0 && ausenciasTurno === 0) ? (link.valor_bonus || 0) : 0;
             const isAtivo = !link.data_fim;
             const valorAdiantamentoConfig = isAtivo ? (link.valor_adiantamento || 0) : 0;
-            const valorAdiantamentoEfetivo = adiantamentoConfirmado ? valorAdiantamentoConfig : 0;
+            let valorAdiantamentoEfetivo = 0;
+
+            if (adiantamentoConfirmado) {
+                if (valorAdiantamentoCustom !== null) {
+                    if (isAtivo) {
+                        const indexAtivo = linksAtivos.findIndex(l => l.id === link.id);
+                        const isUltimoAtivo = indexAtivo === linksAtivos.length - 1;
+
+                        if (somaAdiantamentoConfigurado > 0) {
+                            if (isUltimoAtivo) {
+                                valorAdiantamentoEfetivo = Math.max(0, parseFloat((valorAdiantamentoCustom - valorAdiantamentoDistribuidoAcumulado).toFixed(2)));
+                            } else {
+                                const proporcao = valorAdiantamentoConfig / somaAdiantamentoConfigurado;
+                                valorAdiantamentoEfetivo = parseFloat((valorAdiantamentoCustom * proporcao).toFixed(2));
+                                valorAdiantamentoDistribuidoAcumulado += valorAdiantamentoEfetivo;
+                            }
+                        } else {
+                            if (indexAtivo === 0) {
+                                valorAdiantamentoEfetivo = valorAdiantamentoCustom;
+                            } else {
+                                valorAdiantamentoEfetivo = 0;
+                            }
+                        }
+                    }
+                } else {
+                    valorAdiantamentoEfetivo = valorAdiantamentoConfig;
+                }
+            }
+
 
             const baseBrutaFixa = (link.valor_contrato || 0) + (link.ajuda_custo || 0) + (link.valor_aluguel || 0);
             const diasParaPagamento = Math.max(0, diasEsperadosTurno - ausenciasTurno);
@@ -311,9 +340,12 @@ export const financeiroService = {
         const saldoAvulso = creditosAvulsos - debitosAvulsos;
 
         const totalTurnos = resumoClientes.reduce((acc, r) => acc + (r.valor_calculado || 0), 0);
-        const totalAdiantamento = resumoClientes.reduce((acc, r) => acc + (r.valores_fixos.adiantamento_config || 0), 0);
+        const totalAdiantamento = adiantamentoConfirmado && valorAdiantamentoCustom !== null
+            ? valorAdiantamentoCustom
+            : resumoClientes.reduce((acc, r) => acc + (r.valores_fixos.adiantamento_config || 0), 0);
         const debitosConvenios = (lancamentosConvenios || []).reduce((acc, l) => acc + (l.valor || 0), 0);
         const saldoFinal = totalTurnos + proRataMeiFinal + saldoAvulso - debitosConvenios;
+
 
         return {
             periodo: { mes, ano },
@@ -487,13 +519,12 @@ export const financeiroService = {
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        // Loteamento para evitar erro de limite de 1000 rows do Supabase
         const CHUNK_SIZE = 20;
         const linksPorUsuario = new Map();
         const ocorrenciasPorUsuario = new Map();
         const fechamentosAnterioresMap = new Map();
         const pontosPorUsuario = new Map();
-        const confirmacoesSet = new Set();
+        const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
         const conveniosPorUsuario = new Map();
 
         let mesAnterior = mes - 1;
@@ -503,7 +534,6 @@ export const financeiroService = {
         for (let i = 0; i < pendentesIds.length; i += CHUNK_SIZE) {
             const chunkIds = pendentesIds.slice(i, i + CHUNK_SIZE);
 
-            // Busca Vínculos
             const { data: todosLinks } = await supabaseAdmin
                 .from("colaborador_clientes")
                 .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
@@ -514,7 +544,6 @@ export const financeiroService = {
                 linksPorUsuario.get(l.colaborador_id).push(l);
             });
 
-            // Busca Ocorrencias
             const { data: todasOcorrenciasRaw } = await supabaseAdmin
                 .from("ocorrencias")
                 .select("*, tipo:tipos_ocorrencia(id, descricao)")
@@ -527,7 +556,6 @@ export const financeiroService = {
                 ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
             });
 
-            // Busca Saldo Anterior
             const { data: fechamentosAnteriores } = await supabaseAdmin
                 .from("fechamentos_financeiros")
                 .select("colaborador_id, saldo_final")
@@ -540,7 +568,6 @@ export const financeiroService = {
                 fechamentosAnterioresMap.set(f.colaborador_id, f);
             });
 
-            // Busca Pontos
             const { data: todosPontos } = await supabaseAdmin
                 .from("registros_ponto")
                 .select("*")
@@ -553,17 +580,15 @@ export const financeiroService = {
                 pontosPorUsuario.get(p.usuario_id).push(p);
             });
 
-            // Busca Confirmações Adiantamento
             const { data: confirmacoes } = await supabaseAdmin
                 .from("confirmacoes_adiantamento")
-                .select("colaborador_id")
+                .select("*")
                 .in("colaborador_id", chunkIds)
                 .eq("mes", mes)
                 .eq("ano", ano);
             
-            (confirmacoes || []).forEach(c => confirmacoesSet.add(c.colaborador_id));
+            (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => confirmacoesMap.set(c.colaborador_id, c));
 
-            // Busca Convênios
             const { data: todosLancamentosConvenio } = await supabaseAdmin
                 .from("lancamentos_convenios")
                 .select("*, convenio:convenios(nome)")
@@ -578,7 +603,6 @@ export const financeiroService = {
             });
         }
 
-        // Feriados Globais
         const { data: feriadosData } = await supabaseAdmin
             .from("feriados")
             .select("data")
@@ -586,7 +610,6 @@ export const financeiroService = {
             .lte("data", dataFimMesStr);
         const feriadosMes = new Set((feriadosData || []).map(f => f.data));
 
-        // Calcular vivos
         let restaPagar = 0;
 
         pendentes.forEach(usuario => {
@@ -600,12 +623,13 @@ export const financeiroService = {
                 fechamentoAnterior: fechamentosAnterioresMap.get(usuario.id) || null,
                 pontos: pontosPorUsuario.get(usuario.id) || [],
                 feriadosMes,
-                confirmacaoAdiantamento: confirmacoesSet.has(usuario.id) ? true : null,
+                confirmacaoAdiantamento: confirmacoesMap.get(usuario.id) || null,
                 lancamentosConvenios: conveniosPorUsuario.get(usuario.id) || []
             });
 
             restaPagar += extrato.totais.saldo_final || 0;
         });
+
 
         const totalFolha = valorPago + restaPagar;
 
@@ -662,7 +686,7 @@ export const financeiroService = {
     /**
      * Confirma o pagamento do adiantamento para um colaborador no mês/ano.
      */
-    async confirmarAdiantamento(usuarioId: string, mes: number, ano: number, confirmadoPor: string): Promise<boolean> {
+    async confirmarAdiantamento(usuarioId: string, mes: number, ano: number, confirmadoPor: string, valor?: number | null): Promise<boolean> {
         const { data: existing } = await supabaseAdmin
             .from("confirmacoes_adiantamento")
             .select("id")
@@ -675,6 +699,7 @@ export const financeiroService = {
             colaborador_id: usuarioId,
             mes,
             ano,
+            valor: valor !== undefined ? valor : null,
             confirmado_por: confirmadoPor,
             data_confirmacao: getNowBR()
         };
@@ -683,7 +708,7 @@ export const financeiroService = {
             payload.id = existing.id;
         }
 
-        const { data, error } = await supabaseAdmin
+        const { error } = await supabaseAdmin
             .from("confirmacoes_adiantamento")
             .upsert(payload)
             .select()
@@ -693,9 +718,6 @@ export const financeiroService = {
         return true;
     },
 
-    /**
-     * Remove a confirmação do pagamento de adiantamento.
-     */
     async desconfirmarAdiantamento(usuarioId: string, mes: number, ano: number): Promise<void> {
         const { error } = await supabaseAdmin
             .from("confirmacoes_adiantamento")
@@ -707,9 +729,6 @@ export const financeiroService = {
         if (error) throw error;
     },
 
-    /**
-     * Remove o snapshot de pagamento, voltando o extrato ao estado de rascunho.
-     */
     async desfazerPagamento(usuarioId: string, mes: number, ano: number): Promise<void> {
         const { error } = await supabaseAdmin
             .from("fechamentos_financeiros")
@@ -776,6 +795,10 @@ export const financeiroService = {
                 .filter(t => !t.data_fim)
                 .reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
 
+            const valorAdiantamentoConfirmado = confirmacao
+                ? (confirmacao.valor !== null && confirmacao.valor !== undefined ? Number(confirmacao.valor) : valorAdiantamentoConfigurado)
+                : null;
+
             const valorFinal = fechamento ? (fechamento.saldo_final || 0) : 0;
 
             const clientes = turnos
@@ -798,9 +821,11 @@ export const financeiroService = {
                 pago,
                 data_pagamento: fechamento ? toBRTime(fechamento.data_pagamento) : null,
                 valor_adiantamento_configurado: valorAdiantamentoConfigurado,
+                valor_adiantamento_confirmado: valorAdiantamentoConfirmado,
                 valor_final: parseFloat(valorFinal.toFixed(2)),
                 clientes: clientesUnicos
             };
         });
     }
 };
+

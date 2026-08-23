@@ -84,6 +84,7 @@ export interface ConfirmacaoAdiantamentoPayload {
     colaborador_id: string;
     mes: number;
     ano: number;
+    valor?: number | null;
     confirmado_por: string;
     data_confirmacao: string;
 }
@@ -97,7 +98,9 @@ export interface StatusGeralFechamento {
     pago: boolean;
     data_pagamento: string | null;
     valor_adiantamento_configurado: number;
+    valor_adiantamento_confirmado?: number | null;
     valor_final: number;
     clientes: string[];
 }
+
 
