@@ -6,7 +6,7 @@ import { PONTO_STATUS } from "../constants/ponto.enum.js";
 import { AppError } from "../errors/AppError.js";
 import { ColaboradorCliente, PontoLocation as DatabasePontoLocation, Pausa, RegistroPonto, Usuario } from "../types/database.js";
 import { TimeRecordRules } from "../utils/timeRecordRules.js";
-import { formatPoint, getDayOfWeekBR, getNowBR, onlyNumbers, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { extractDateOnly, formatPoint, getDayOfWeekBR, getNowBR, onlyNumbers, toBRTime, toLocalDateString } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { parseTime, pontoCalculatorService } from "./ponto-calculator.service.js";
 
@@ -461,8 +461,7 @@ export const pontoService = {
             let userQuery = supabaseAdmin
                 .from("usuarios")
                 .select("*, perfil:perfis(*), links:colaborador_clientes!inner(*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*))")
-                .eq("status", CADASTRO_STATUS.ATIVO)
-                .or(`data_fim.is.null,data_fim.gte.${dataRef}`, { foreignTable: 'links' });
+                .eq("status", CADASTRO_STATUS.ATIVO);
 
             if (filtros.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) {
                 userQuery = userQuery.eq("links.cliente_id", filtros.cliente_id);
@@ -484,10 +483,11 @@ export const pontoService = {
             const activeLinks: (ColaboradorCliente & { usuario: Usuario })[] = [];
             users?.forEach(u => {
                 u.links?.forEach((link: ColaboradorCliente) => {
-                    const isVigente = !link.data_fim || link.data_fim >= dataRef;
+                    const dataInicio = extractDateOnly(link.data_inicio) || extractDateOnly(link.created_at);
+                    const dataFim = extractDateOnly(link.data_fim);
+                    const isVigente = (!dataInicio || dataInicio <= dataRef) && (!dataFim || dataFim >= dataRef);
                     const matchesCliente = !filtros.cliente_id || filtros.cliente_id === FilterOptions.TODOS || String(link.cliente_id) === String(filtros.cliente_id);
                     
-                    // O horário do dia no vínculo agora define a obrigação (substitui a escala do cliente)
                     const hConfig = link.horarios?.find(h => h.dia_semana === scaleDay);
                     const naEscala = !!hConfig;
 
@@ -497,16 +497,22 @@ export const pontoService = {
                 });
             });
 
-            if (activeLinks.length === 0) return [];
-            const userIds = [...new Set(activeLinks.map(l => l.usuario.id))];
-
-            const { data: pontos, error: pontoError } = await supabaseAdmin
+            let pontoQuery = supabaseAdmin
                 .from("registros_ponto")
-                .select("*, cliente:clientes(nome_fantasia), colaborador_cliente:colaborador_clientes(unidade:unidades_cliente(nome_unidade)), pausas:registros_pausas(*)")
-                .in("usuario_id", userIds)
+                .select("*, cliente:clientes(nome_fantasia), colaborador_cliente:colaborador_clientes(unidade:unidades_cliente(nome_unidade)), usuario:usuarios!registros_ponto_usuario_id_fkey(*), pausas:registros_pausas(*)")
                 .eq("data_referencia", dataRef);
 
+            if (filtros.usuario_id && filtros.usuario_id !== FilterOptions.TODOS) {
+                pontoQuery = pontoQuery.eq("usuario_id", filtros.usuario_id);
+            }
+            if (filtros.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) {
+                pontoQuery = pontoQuery.eq("cliente_id", filtros.cliente_id);
+            }
+
+            const { data: pontos, error: pontoError } = await pontoQuery;
             if (pontoError) throw pontoError;
+
+            if (activeLinks.length === 0 && (!pontos || pontos.length === 0)) return [];
 
             const [limiteAmarelo] = await Promise.all([
                 configuracaoService.getConfiguracao("tolerancia_amarelo_min").then(d => Number(d?.valor || 15))
@@ -653,6 +659,8 @@ export const pontoService = {
         if (filtros?.data_referencia) query = query.eq("data_referencia", filtros.data_referencia);
 
         if (filtros?.usuario_id && filtros.usuario_id !== FilterOptions.TODOS) query = query.eq("usuario_id", filtros.usuario_id);
+
+        if (filtros?.cliente_id && filtros.cliente_id !== FilterOptions.TODOS) query = query.eq("cliente_id", filtros.cliente_id);
 
         if (filtros?.searchTerm) {
             query = query.or(`usuario.nome_completo.ilike.%${filtros.searchTerm}%,usuario.cpf.ilike.%${filtros.searchTerm}%`);

@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
-import { getNowBR, toBRTime, toLocalDateString, formatPoint } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString, formatPoint, getDayOfWeekBR, extractDateOnly } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { parseTime } from "./ponto-calculator.service.js";
@@ -65,7 +65,6 @@ export const publicClientService = {
      * Controle de Ponto Público (Scoped by client)
      */
     async getControlePonto(clienteId: number, dataReferencia: string): Promise<RegistroPonto[]> {
-        // 1. Buscar todos os usuários ativos vinculados a este cliente
         const { data: users, error: userError } = await supabaseAdmin
             .from("usuarios")
             .select(`
@@ -82,31 +81,24 @@ export const publicClientService = {
 
         if (userError) throw userError;
 
-        // Determinar o dia da semana para o filtro de escala (1=Seg, ..., 7=Dom)
-        const dateObj = new Date(dataReferencia + "T12:00:00Z");
-        let dayOfWeek = dateObj.getUTCDay(); // 0=Dom
-        const scaleDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+        const scaleDay = getDayOfWeekBR(dataReferencia + "T12:00:00Z");
 
-        // 2. Explodir os links em registros base
         const activeLinks: (ColaboradorCliente & { usuario: Usuario })[] = [];
         users?.forEach((u) => {
             const userLinks = u.links as (ColaboradorCliente & { cliente: Client })[];
             userLinks?.forEach((link) => {
-                const isVigente = !link.data_fim || link.data_fim >= dataReferencia;
-                // O horário do dia no vínculo agora define a obrigação
+                const dataInicio = extractDateOnly(link.data_inicio) || extractDateOnly(link.created_at);
+                const dataFim = extractDateOnly(link.data_fim);
+                const isVigente = (!dataInicio || dataInicio <= dataReferencia) && (!dataFim || dataFim >= dataReferencia);
                 const hConfig = link.horarios?.find(h => h.dia_semana === scaleDay);
                 const naEscala = !!hConfig;
                 
-                // REVERSÃO: Só mostramos se estiver na escala (o mapeamento posterior cuida dos pontos fora da escala)
                 if (isVigente && naEscala) {
                     activeLinks.push({ ...link, usuario: u as unknown as Usuario });
                 }
             });
         });
 
-        if (activeLinks.length === 0) return [];
-
-        // 3. Buscar registros de ponto existentes para este cliente na data
         const { data: pontos, error: pontoError } = await supabaseAdmin
             .from("registros_ponto")
             .select(`
@@ -117,6 +109,8 @@ export const publicClientService = {
             .eq("data_referencia", dataReferencia);
 
         if (pontoError) throw pontoError;
+
+        if (activeLinks.length === 0 && (!pontos || pontos.length === 0)) return [];
 
         // 4. Buscar configurações globais para o cálculo dinâmico
         const [limiteAmarelo] = await Promise.all([

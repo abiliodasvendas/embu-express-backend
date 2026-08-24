@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { PONTO_STATUS } from "../constants/ponto.enum.js";
-import { getNowBR, toLocalDateString, getDayOfWeekBR } from "../utils/utils.js";
+import { getNowBR, toLocalDateString, getDayOfWeekBR, extractDateOnly } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { DetalhesCalculo, ColaboradorCliente } from "../types/database.js";
 
@@ -84,10 +84,13 @@ export const pontoCalculatorService = {
                 .select("*, unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
                 .eq("colaborador_id", usuarioId);
 
-            const dataRef = entrada.split('T')[0];
+            const dataRef = extractDateOnly(entrada);
             const turnosValidos = (todosOsTurnos || [])
-                .filter(t => !t.data_fim || t.data_fim >= dataRef)
-                // O sistema agora só aceita turnos com configuração flexível explícita (sem fallback de unidade)
+                .filter(t => {
+                    const dataInicio = extractDateOnly(t.data_inicio) || extractDateOnly(t.created_at);
+                    const dataFim = extractDateOnly(t.data_fim);
+                    return (!dataRef || ((!dataInicio || dataInicio <= dataRef) && (!dataFim || dataFim >= dataRef)));
+                })
                 .filter(t => t.horarios?.some((h: any) => h.dia_semana === dayOfWeek));
 
 

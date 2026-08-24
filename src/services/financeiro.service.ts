@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
-import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString, extractDateOnly } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
 import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento } from "../types/financeiro.type.js";
@@ -98,12 +98,16 @@ export const financeiroService = {
         let valorAdiantamentoDistribuidoAcumulado = 0;
 
         const hojeLocalStr = toLocalDateString();
-        const hojeInicioDia = new Date(hojeLocalStr + 'T00:00:00');
-
 
         const resumoClientes = (links || []).map(link => {
-            const dataInicioTurno = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
-            const dataFimTurno = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
+            const dataInicioStr = extractDateOnly(link.data_inicio) || extractDateOnly(link.created_at);
+            const dataFimStr = extractDateOnly(link.data_fim);
+
+            const isShiftInMonth = (!dataInicioStr || dataInicioStr <= dataFimMesStr) && (!dataFimStr || dataFimStr >= dataInicioMesStr);
+            const pontosDesteTurnoRaw = (pontos || []).filter(p => p.colaborador_cliente_id === link.id);
+            if (!isShiftInMonth && pontosDesteTurnoRaw.length === 0) {
+                return null;
+            }
 
             let diasEscalaNoMesTotal = 0;
             let diasEsperadosTurno = 0;
@@ -116,9 +120,8 @@ export const financeiroService = {
                 const diaSemana = dataAtual.getUTCDay();
 
                 const isDiaEscala = (link as any).horarios && (link as any).horarios.some((h: any) => h.dia_semana === diaSemana);
-                const dtComparacao = new Date(dataReferenciaStr + 'T12:00:00');
-                const isVigente = (!dataInicioTurno || dtComparacao >= dataInicioTurno) && (!dataFimTurno || dtComparacao <= dataFimTurno);
-                const isFuturoOuHoje = dtComparacao >= hojeInicioDia;
+                const isVigente = (!dataInicioStr || dataReferenciaStr >= dataInicioStr) && (!dataFimStr || dataReferenciaStr <= dataFimStr);
+                const isFuturoOuHoje = dataReferenciaStr >= hojeLocalStr;
 
                 if (isDiaEscala) {
                     diasEscalaNoMesTotal++;
@@ -163,12 +166,12 @@ export const financeiroService = {
             }
 
             if (diasEscalaNoMesTotal === 0) return null;
+            if (diasEsperadosTurno === 0 && pontosDesteTurnoRaw.length === 0) return null;
 
             const pontosDesteTurno = (pontos || []).filter(p => {
-                const dataPonto = new Date(p.data_referencia + 'T12:00:00');
                 if (p.colaborador_cliente_id !== link.id) return false;
-                if (dataInicioTurno && dataPonto < dataInicioTurno) return false;
-                if (dataFimTurno && dataPonto > dataFimTurno) return false;
+                if (dataInicioStr && p.data_referencia < dataInicioStr) return false;
+                if (dataFimStr && p.data_referencia > dataFimStr) return false;
                 return true;
             });
 

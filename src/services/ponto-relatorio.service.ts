@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
 import { parseTime } from "./ponto-calculator.service.js";
-import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { getNowBR, toBRTime, toLocalDateString, extractDateOnly } from "../utils/utils.js";
 
 export interface PontoDiarioRelatorio {
     data: string;
@@ -112,8 +112,14 @@ export const pontoRelatorioService = {
         const globalCalendarMap = new Map<number, PontoDiarioRelatorio>();
 
         for (const link of (links || [])) {
-            const startShift = link.data_inicio ? new Date(link.data_inicio + 'T00:00:00') : null;
-            const endShiftValue = link.data_fim ? new Date(link.data_fim + 'T23:59:59') : null;
+            const dataInicioStr = extractDateOnly(link.data_inicio) || extractDateOnly(link.created_at);
+            const dataFimStr = extractDateOnly(link.data_fim);
+            const shiftPoints = (allPoints || []).filter(p => p.colaborador_cliente_id === link.id);
+
+            const isShiftInMonth = (!dataInicioStr || dataInicioStr <= endOfMonth) && (!dataFimStr || dataFimStr >= startOfMonth);
+            if (!isShiftInMonth && shiftPoints.length === 0) {
+                continue;
+            }
 
             const shiftKpis = {
                 dias_base_mes: 0,
@@ -131,7 +137,6 @@ export const pontoRelatorioService = {
             };
 
             const calendar: PontoDiarioRelatorio[] = [];
-            const shiftPoints = (allPoints || []).filter(p => p.colaborador_cliente_id === link.id);
 
             for (let d = 1; d <= lastDayOfMonth; d++) {
                 const currentDate = new Date(Date.UTC(ano, mes - 1, d));
@@ -139,20 +144,17 @@ export const pontoRelatorioService = {
                 const weekDayNum = currentDate.getUTCDay();
                 const isFeriado = feriadosMes.has(refDateStr);
 
-                // RESOLUÇÃO DE ESCALA: Exclusivamente via Escala Flexível (Novo Modelo)
                 const shiftDayConfig = link.horarios?.find((h: any) => h.dia_semana === weekDayNum);
                 const hasShiftConfig = !!shiftDayConfig;
 
                 const dailyPoint = shiftPoints.find(p => p.data_referencia === refDateStr);
 
-                const dtCheck = new Date(refDateStr + 'T12:00:00');
-                const isDateInBounds = (!startShift || dtCheck >= startShift) && (!endShiftValue || dtCheck <= endShiftValue);
+                const isDateInBounds = (!dataInicioStr || refDateStr >= dataInicioStr) && (!dataFimStr || refDateStr <= dataFimStr);
                 const isActive = isDateInBounds || !!dailyPoint;
 
                 const isPastDate = refDateStr < todayStr;
                 const isToday = refDateStr === todayStr;
 
-                // Determinar se o turno já deveria ter sido encerrado
                 let hasShiftEnded = false;
                 if (hasShiftConfig) {
                     const [hEnd, mEnd] = parseTime(shiftDayConfig.hora_fim);
@@ -172,14 +174,10 @@ export const pontoRelatorioService = {
                     dayExpectedMin = Math.max(0, totalMin - tolPausa);
 
                     if (isFeriado) {
-                        dayExpectedMin = 0; // Feriados não geram débito de horas
+                        dayExpectedMin = 0;
                     }
 
                     if (isActive) {
-                        // Regra de Saldo Inteligente: 
-                        // 1. Se for um mês futuro, não conta nada (saldo 0).
-                        // 2. Se for o mês atual, conta até hoje (inclusive).
-                        // 3. Se for um mês passado, conta o mês inteiro.
                         const shouldCountTowardsBalance = !isFuturePeriod && (!isCurrentMonth || isPastDate || isToday);
 
                         if (shouldCountTowardsBalance) {
@@ -207,8 +205,6 @@ export const pontoRelatorioService = {
                         dayWorkedMin = h * 60 + m;
                     }
 
-                    // REFORÇO DE ARREDONDAMENTO (Dinâmico para o Relatório)
-                    // Se o colaborador entrou antes da escala, garantimos que esse tempo não conte no "Efetivo"
                     if (dailyPoint.entrada_hora && hasShiftConfig) {
                         const [hE, mE] = parseTime(dailyPoint.entrada_hora);
                         const [hT, mT] = parseTime(shiftDayConfig.hora_inicio);
@@ -216,18 +212,16 @@ export const pontoRelatorioService = {
                         const diffEntrada = diffEntradaRaw > 720 ? diffEntradaRaw - 1440 : (diffEntradaRaw < -720 ? diffEntradaRaw + 1440 : diffEntradaRaw);
                         
                         if (diffEntrada < 0) {
-                            // Subtrai o excesso da entrada antecipada do tempo trabalhado
                             dayWorkedMin = Math.max(0, dayWorkedMin + diffEntrada);
                         }
                     }
 
                     shiftKpis.horas_trabalhadas += dayWorkedMin;
                     dayWorkedKm = dailyPoint.detalhes_calculo?.resumo?.km_trabalhado || 0;
-                    shiftKpis.km_realizado += dayWorkedKm; // Soma cumulativa resiliente
+                    shiftKpis.km_realizado += dayWorkedKm;
                     dayStatus = CALENDARIO_STATUS.TRABALHADO;
                 } else if (isActive) {
                     const isStrictlyFuture = !isPastDate && !isToday;
-                    // SE não trabalhou, o status depende de ser estritamente futuro ou não
                     if (isStrictlyFuture) {
                         dayStatus = CALENDARIO_STATUS.FUTURO;
                     } else if (hasShiftConfig) {

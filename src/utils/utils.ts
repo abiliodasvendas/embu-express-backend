@@ -54,6 +54,15 @@ export const toLocalDateString = (date: Date = new Date()): string => {
   return `${find('year')}-${find('month')}-${find('day')}`;
 };
 
+export function extractDateOnly(dateInput: string | Date | null | undefined): string | null {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date) {
+    return toLocalDateString(dateInput);
+  }
+  const match = dateInput.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : null;
+}
+
 /**
  * Remove todos os caracteres que não são dígitos de uma string.
  * Útil para limpar CPFs, CNPJs, CEPs, etc antes de enviar para o banco.
