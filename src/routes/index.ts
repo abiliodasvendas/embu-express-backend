@@ -15,6 +15,14 @@ import { unidadeRoutes } from "./unidade.routes.js";
 import itemEquipamentoRoutes from "./item-equipamento.routes.js";
 import ticketRoutes from "./ticket.routes.js";
 import { convenioRoutes } from "./convenio.routes.js";
+import contaBancariaRoutes from "./conta-bancaria.routes.js";
+import faturamentoRoutes from "./faturamento.routes.js";
+import intercompanyRoutes from "./intercompany.routes.js";
+import despesaRoutes from "./despesa.routes.js";
+import dreRoutes from "./dre.routes.js";
+import fluxoCaixaRoutes from "./fluxo-caixa.routes.js";
+import retaguardaRoutes from "./retaguarda.routes.js";
+import movimentacoesAvulsasRoutes from "./movimentacoes-avulsas.routes.js";
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Embu Express Routes
@@ -34,6 +42,14 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(itemEquipamentoRoutes, { prefix: "/api/itens-equipamentos" });
   app.register(ticketRoutes, { prefix: "/api/tickets" });
   app.register(convenioRoutes, { prefix: "/api/convenios" });
+  app.register(contaBancariaRoutes, { prefix: "/api/contas-bancarias" });
+  app.register(faturamentoRoutes, { prefix: "/api/faturamento" });
+  app.register(intercompanyRoutes, { prefix: "/api/intercompany" });
+  app.register(despesaRoutes, { prefix: "/api/despesas" });
+  app.register(dreRoutes, { prefix: "/api/dre" });
+  app.register(fluxoCaixaRoutes, { prefix: "/api/fluxo-caixa" });
+  app.register(retaguardaRoutes, { prefix: "/api/retaguarda" });
+  app.register(movimentacoesAvulsasRoutes, { prefix: "/api/movimentacoes-avulsas" });
 };
 
 export default routes;

@@ -68,6 +68,29 @@ export const PERMISSIONS = {
         VER: 'convenios:ver',
         EDITAR: 'convenios:editar',
     },
+    FATURAMENTO: {
+        VER: 'faturamento:ver',
+        EDITAR: 'faturamento:editar',
+    },
+    DRE: {
+        VER: 'dre:ver',
+    },
+    FLUXO_CAIXA: {
+        VER: 'fluxo_caixa:ver',
+        EDITAR: 'fluxo_caixa:editar',
+    },
+    DESPESAS: {
+        VER: 'despesas:ver',
+        EDITAR: 'despesas:editar',
+    },
+    RETAGUARDA: {
+        VER: 'retaguarda:ver',
+        ALOCAR: 'retaguarda:alocar',
+    },
+    MOVIMENTACOES_AVULSAS: {
+        VER: 'movimentacoes_avulsas:ver',
+        EDITAR: 'movimentacoes_avulsas:editar',
+    },
 } as const;
 
 export const ROLES = {

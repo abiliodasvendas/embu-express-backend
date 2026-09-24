@@ -17,6 +17,7 @@ export const clientService = {
         if (!data.nome_fantasia) throw new AppError(messages.cliente.erro.nomeObrigatorio, 400);
 
         const clientData = {
+            ...data,
             nome_fantasia: cleanString(data.nome_fantasia),
             ativo: data.ativo ?? true,
         };

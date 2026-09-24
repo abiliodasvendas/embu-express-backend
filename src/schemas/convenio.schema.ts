@@ -21,3 +21,11 @@ export const lancamentoConvenioSchema = z.object({
 });
 
 export const updateLancamentoConvenioSchema = lancamentoConvenioSchema.partial();
+
+export const salvarBloqueiosColaboradorSchema = z.object({
+    bloqueio_geral: z.boolean(),
+    convenios_bloqueados_ids: z.array(z.string().uuid("ID de convênio inválido.")).default([]),
+    motivo: z.string().nullable().optional()
+});
+
+export type SalvarBloqueiosColaboradorDTO = z.infer<typeof salvarBloqueiosColaboradorSchema>;

@@ -6,7 +6,8 @@ import {
     createConvenioSchema,
     updateConvenioSchema,
     lancamentoConvenioSchema,
-    updateLancamentoConvenioSchema
+    updateLancamentoConvenioSchema,
+    salvarBloqueiosColaboradorSchema
 } from "../schemas/convenio.schema.js";
 
 export const convenioController = {
@@ -146,5 +147,45 @@ export const convenioController = {
         const { id: convenioId, lancamentoId } = z.object({ id: z.string().uuid(), lancamentoId: z.string().uuid() }).parse(request.params);
         await convenioService.deleteLancamentoAdmin(convenioId, lancamentoId);
         return reply.status(204).send();
+    },
+
+    async getBloqueiosColaborador(request: FastifyRequest, reply: FastifyReply) {
+        const { colaboradorId } = z.object({ colaboradorId: z.string().uuid() }).parse(request.params);
+        const result = await convenioService.getBloqueiosColaborador(colaboradorId);
+        return reply.send(result);
+    },
+
+    async salvarBloqueiosColaborador(request: FastifyRequest, reply: FastifyReply) {
+        const { colaboradorId } = z.object({ colaboradorId: z.string().uuid() }).parse(request.params);
+        const data = salvarBloqueiosColaboradorSchema.parse(request.body);
+        const usuarioLogado = (request as FastifyRequest & { user?: { id: string } }).user?.id;
+        const result = await convenioService.salvarBloqueiosColaborador(colaboradorId, data, usuarioLogado);
+        return reply.send(result);
+    },
+
+    async listAllBloqueios(request: FastifyRequest, reply: FastifyReply) {
+        const result = await convenioService.listarTodosBloqueios();
+        return reply.send(result);
+    },
+
+    async checkElegibilidade(request: FastifyRequest, reply: FastifyReply) {
+        const { colaboradorId, convenioId } = z.object({
+            colaboradorId: z.string().uuid(),
+            convenioId: z.string().uuid()
+        }).parse(request.params);
+        const { mes, ano, valor } = z.object({
+            mes: z.string().optional(),
+            ano: z.string().optional(),
+            valor: z.string().optional()
+        }).parse(request.query);
+
+        const result = await convenioService.verificarElegibilidadeConvenio(
+            colaboradorId,
+            convenioId,
+            mes ? parseInt(mes, 10) : undefined,
+            ano ? parseInt(ano, 10) : undefined,
+            valor ? parseFloat(valor) : 0
+        );
+        return reply.send(result);
     }
 };

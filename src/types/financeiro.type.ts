@@ -103,4 +103,18 @@ export interface StatusGeralFechamento {
     clientes: string[];
 }
 
-
+export interface DashboardLoteResultado {
+    totalFolha: number;
+    valorPago: number;
+    restaPagar: number;
+    pendentesCount: number;
+    pagosCount: number;
+    totalColaboradores: number;
+    totalFolhaBruta: number;
+    totalDescontoFaltas: number;
+    totalDescontoConvenios: number;
+    totalAdiantamentoPago: number;
+    totalAdiantamentoPrevisto: number;
+    colaboradoresAdiantamentoCount: number;
+    saldoFinalFolha: number;
+}

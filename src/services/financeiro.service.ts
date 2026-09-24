@@ -1,9 +1,11 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
+import { ROLES } from "../constants/permissions.enum.js";
 import { getNowBR, toBRTime, toLocalDateString, extractDateOnly } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 
-import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento } from "../types/financeiro.type.js";
+import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento, DashboardLoteResultado } from "../types/financeiro.type.js";
 import { Ocorrencia } from "../types/database.js";
 
 interface ConfirmacaoAdiantamentoDb {
@@ -44,6 +46,27 @@ function formatFechamento<T extends { data_fechamento?: string; data_pagamento?:
     if (result.data_pagamento) result.data_pagamento = toBRTime(result.data_pagamento);
     if (result.created_at) result.created_at = toBRTime(result.created_at);
     return result;
+}
+
+interface DashboardLoteCacheItem {
+    timestamp: number;
+    data: {
+        totalFolha: number;
+        valorPago: number;
+        restaPagar: number;
+        pendentesCount: number;
+    };
+}
+
+const dashboardLoteCache = new Map<string, DashboardLoteCacheItem>();
+const DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+
+export function invalidateDashboardLoteCache(mes?: number, ano?: number) {
+    if (mes && ano) {
+        dashboardLoteCache.delete(`${mes}-${ano}`);
+    } else {
+        dashboardLoteCache.clear();
+    }
 }
 
 export const financeiroService = {
@@ -343,9 +366,11 @@ export const financeiroService = {
         const saldoAvulso = creditosAvulsos - debitosAvulsos;
 
         const totalTurnos = resumoClientes.reduce((acc, r) => acc + (r.valor_calculado || 0), 0);
-        const totalAdiantamento = adiantamentoConfirmado && valorAdiantamentoCustom !== null
-            ? valorAdiantamentoCustom
-            : resumoClientes.reduce((acc, r) => acc + (r.valores_fixos.adiantamento_config || 0), 0);
+        const totalAdiantamento = adiantamentoConfirmado
+            ? (valorAdiantamentoCustom !== null
+                ? valorAdiantamentoCustom
+                : resumoClientes.reduce((acc, r) => acc + (r.valores_fixos.adiantamento || 0), 0))
+            : 0;
         const debitosConvenios = (lancamentosConvenios || []).reduce((acc, l) => acc + (l.valor || 0), 0);
         const saldoFinal = totalTurnos + proRataMeiFinal + saldoAvulso - debitosConvenios;
 
@@ -487,42 +512,165 @@ export const financeiroService = {
      * Calcula dados agregados do dashboard financeiro para todos os colaboradores no mes/ano em lote.
      */
     async getDashboardLote(mes: number, ano: number) {
+        const cacheKey = `${mes}-${ano}`;
+        const cached = dashboardLoteCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < DASHBOARD_CACHE_TTL_MS) {
+            return cached.data;
+        }
+
+        const { data: perfilMotoboy } = await supabaseAdmin
+            .from("perfis")
+            .select("id")
+            .ilike("nome", ROLES.MOTOBOY)
+            .maybeSingle();
+
+        const perfilMotoboyId = perfilMotoboy?.id || 3;
+
         const { data: colaboradoresAtivos } = await supabaseAdmin
             .from("usuarios")
             .select("id, valor_mei")
-            .eq("status", "ATIVO");
+            .eq("status", CADASTRO_STATUS.ATIVO)
+            .eq("perfil_id", perfilMotoboyId);
+
+        const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
         if (!colaboradoresAtivos || colaboradoresAtivos.length === 0) {
-            return { totalFolha: 0, valorPago: 0, restaPagar: 0, pendentesCount: 0 };
+            const emptyResult: DashboardLoteResultado = {
+                totalFolha: 0,
+                valorPago: 0,
+                restaPagar: 0,
+                pendentesCount: 0,
+                pagosCount: 0,
+                totalColaboradores: 0,
+                totalFolhaBruta: 0,
+                totalDescontoFaltas: 0,
+                totalDescontoConvenios: 0,
+                totalAdiantamentoPago: 0,
+                totalAdiantamentoPrevisto: 0,
+                colaboradoresAdiantamentoCount: 0,
+                saldoFinalFolha: 0
+            };
+            dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: emptyResult });
+            return emptyResult;
         }
 
-        const { data: fechamentos } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("colaborador_id, saldo_final")
-            .eq("mes", mes)
-            .eq("ano", ano)
-            .eq("pago", true);
+        const [fechamentosRes, todosTurnosRes, todasConfirmacoesRes] = await Promise.all([
+            supabaseAdmin
+                .from("fechamentos_financeiros")
+                .select("colaborador_id, saldo_final, resumo_json")
+                .eq("mes", mes)
+                .eq("ano", ano)
+                .eq("pago", true),
+            supabaseAdmin
+                .from("colaborador_clientes")
+                .select("colaborador_id, valor_adiantamento, data_fim")
+                .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`),
+            supabaseAdmin
+                .from("confirmacoes_adiantamento")
+                .select("colaborador_id, valor")
+                .eq("mes", mes)
+                .eq("ano", ano)
+        ]);
+
+        const fechamentos = fechamentosRes.data || [];
+        const todosTurnos = todosTurnosRes.data || [];
+        const todasConfirmacoes = todasConfirmacoesRes.data || [];
+
+        const totalAdiantamentoPrevisto = todosTurnos.reduce((acc, t) => acc + Number(t.valor_adiantamento || 0), 0);
+        const colaboradoresAdiantamentoCount = todasConfirmacoes.length;
 
         const fechamentosMap = new Map();
         let valorPago = 0;
+        let totalFolhaBruta = 0;
+        let totalDescontoFaltas = 0;
+        let totalDescontoConvenios = 0;
+        let totalAdiantamentoPago = 0;
 
-        (fechamentos || []).forEach(f => {
+        function extrairComponentes(r: any) {
+            let colabBruto = 0;
+            let colabFaltas = 0;
+            let colabAdi = 0;
+
+            (r.resumo_por_cliente || []).forEach((c: any) => {
+                const v = c.valores_fixos || {};
+                const baseBrutaFixa = Number(v.contrato || 0) + Number(v.ajuda_custo || 0) + Number(v.aluguel || 0);
+                const diasBase = Number(c.dias_base_mes) || 26;
+                const diasEsperados = Number(c.dias_esperados_turno) || diasBase;
+                const brutoVigente = (baseBrutaFixa / diasBase) * diasEsperados;
+                colabBruto += brutoVigente + Number(v.bonus || 0) + Number(c.creditos_ocorrencia || 0);
+
+                const adi = Number(v.adiantamento || 0);
+                colabAdi += adi;
+                const ausencias = Math.max(0, Number(c.debitos_ocorrencia || 0) - adi);
+                colabFaltas += ausencias;
+            });
+
+            const mei = Number(r.mei_consolidado?.valor_calculado || 0);
+            const credAvulso = Number(r.ocorrencias_avulsas?.creditos || 0);
+            const debAvulso = Number(r.ocorrencias_avulsas?.debitos || 0);
+            const conv = (r.lancamentos_convenios || []).reduce((acc: number, l: any) => acc + Number(l.valor || 0), 0);
+
+            return {
+                bruto: colabBruto + mei + credAvulso,
+                faltas: colabFaltas + debAvulso,
+                convenios: conv,
+                adiantamentoPago: colabAdi
+            };
+        }
+
+        fechamentos.forEach(f => {
             fechamentosMap.set(f.colaborador_id, f);
-            valorPago += f.saldo_final || 0;
+            valorPago += Number(f.saldo_final || 0);
+
+            const r = f.resumo_json as any;
+            if (r) {
+                const comp = extrairComponentes(r);
+                totalFolhaBruta += comp.bruto;
+                totalDescontoFaltas += comp.faltas;
+                totalDescontoConvenios += comp.convenios;
+                totalAdiantamentoPago += comp.adiantamentoPago;
+            }
         });
 
         const pendentes = colaboradoresAtivos.filter(c => !fechamentosMap.has(c.id));
 
         if (pendentes.length === 0) {
-            return { totalFolha: valorPago, valorPago, restaPagar: 0, pendentesCount: 0 };
+            const totalDescontosTotalPaid = totalDescontoFaltas + totalDescontoConvenios;
+            const folhaBrutaReconciliadaPaid = valorPago + totalDescontosTotalPaid + totalAdiantamentoPago;
+
+            const allPaidResult: DashboardLoteResultado = {
+                totalFolha: parseFloat(valorPago.toFixed(2)),
+                valorPago: parseFloat(valorPago.toFixed(2)),
+                restaPagar: 0,
+                pendentesCount: 0,
+                pagosCount: fechamentos.length,
+                totalColaboradores: fechamentos.length,
+                totalFolhaBruta: parseFloat(folhaBrutaReconciliadaPaid.toFixed(2)),
+                totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
+                totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
+                totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
+                totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevisto.toFixed(2)),
+                colaboradoresAdiantamentoCount,
+                saldoFinalFolha: parseFloat(valorPago.toFixed(2))
+            };
+            dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: allPaidResult });
+            return allPaidResult;
         }
 
         const pendentesIds = pendentes.map(p => p.id);
-        const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
-        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        const CHUNK_SIZE = 20;
+        let mesAnterior = mes - 1;
+        let anoAnterior = ano;
+        if (mesAnterior === 0) { mesAnterior = 12; anoAnterior = ano - 1; }
+
+        const CHUNK_SIZE = 50;
+        const chunks: string[][] = [];
+        for (let i = 0; i < pendentesIds.length; i += CHUNK_SIZE) {
+            chunks.push(pendentesIds.slice(i, i + CHUNK_SIZE));
+        }
+
         const linksPorUsuario = new Map();
         const ocorrenciasPorUsuario = new Map();
         const fechamentosAnterioresMap = new Map();
@@ -530,88 +678,90 @@ export const financeiroService = {
         const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
         const conveniosPorUsuario = new Map();
 
-        let mesAnterior = mes - 1;
-        let anoAnterior = ano;
-        if (mesAnterior === 0) { mesAnterior = 12; anoAnterior = ano - 1; }
+        const [feriadosRes] = await Promise.all([
+            supabaseAdmin
+                .from("feriados")
+                .select("data")
+                .gte("data", dataInicioMesStr)
+                .lte("data", dataFimMesStr),
+            ...chunks.map(async (chunkIds) => {
+                const [
+                    linksRes,
+                    ocorrenciasRes,
+                    fechamentosAntRes,
+                    pontosRes,
+                    confirmacoesRes,
+                    conveniosRes
+                ] = await Promise.all([
+                    supabaseAdmin
+                        .from("colaborador_clientes")
+                        .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
+                        .in("colaborador_id", chunkIds),
+                    supabaseAdmin
+                        .from("ocorrencias")
+                        .select("*, tipo:tipos_ocorrencia(id, descricao)")
+                        .in("colaborador_id", chunkIds)
+                        .gte("data_ocorrencia", dataInicioMesStr)
+                        .lte("data_ocorrencia", dataFimMesStr),
+                    supabaseAdmin
+                        .from("fechamentos_financeiros")
+                        .select("colaborador_id, saldo_final")
+                        .in("colaborador_id", chunkIds)
+                        .eq("mes", mesAnterior)
+                        .eq("ano", anoAnterior)
+                        .eq("pago", true),
+                    supabaseAdmin
+                        .from("registros_ponto")
+                        .select("*")
+                        .in("usuario_id", chunkIds)
+                        .gte("data_referencia", dataInicioMesStr)
+                        .lte("data_referencia", dataFimMesStr),
+                    supabaseAdmin
+                        .from("confirmacoes_adiantamento")
+                        .select("*")
+                        .in("colaborador_id", chunkIds)
+                        .eq("mes", mes)
+                        .eq("ano", ano),
+                    supabaseAdmin
+                        .from("lancamentos_convenios")
+                        .select("*, convenio:convenios(nome)")
+                        .in("colaborador_id", chunkIds)
+                        .eq("moto_embu", false)
+                        .gte("data_lancamento", dataInicioMesStr)
+                        .lte("data_lancamento", dataFimMesStr)
+                ]);
 
-        for (let i = 0; i < pendentesIds.length; i += CHUNK_SIZE) {
-            const chunkIds = pendentesIds.slice(i, i + CHUNK_SIZE);
+                (linksRes.data || []).forEach(l => {
+                    if (!linksPorUsuario.has(l.colaborador_id)) linksPorUsuario.set(l.colaborador_id, []);
+                    linksPorUsuario.get(l.colaborador_id).push(l);
+                });
 
-            const { data: todosLinks } = await supabaseAdmin
-                .from("colaborador_clientes")
-                .select("*, cliente:clientes(*), unidade:unidades_cliente(*), horarios:colaborador_cliente_horarios(*)")
-                .in("colaborador_id", chunkIds);
-            
-            (todosLinks || []).forEach(l => {
-                if (!linksPorUsuario.has(l.colaborador_id)) linksPorUsuario.set(l.colaborador_id, []);
-                linksPorUsuario.get(l.colaborador_id).push(l);
-            });
+                (ocorrenciasRes.data || []).forEach(o => {
+                    if (!ocorrenciasPorUsuario.has(o.colaborador_id)) ocorrenciasPorUsuario.set(o.colaborador_id, []);
+                    ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
+                });
 
-            const { data: todasOcorrenciasRaw } = await supabaseAdmin
-                .from("ocorrencias")
-                .select("*, tipo:tipos_ocorrencia(id, descricao)")
-                .in("colaborador_id", chunkIds)
-                .gte("data_ocorrencia", dataInicioMesStr)
-                .lte("data_ocorrencia", dataFimMesStr);
-            
-            (todasOcorrenciasRaw || []).forEach(o => {
-                if (!ocorrenciasPorUsuario.has(o.colaborador_id)) ocorrenciasPorUsuario.set(o.colaborador_id, []);
-                ocorrenciasPorUsuario.get(o.colaborador_id).push(o);
-            });
+                (fechamentosAntRes.data || []).forEach(f => {
+                    fechamentosAnterioresMap.set(f.colaborador_id, f);
+                });
 
-            const { data: fechamentosAnteriores } = await supabaseAdmin
-                .from("fechamentos_financeiros")
-                .select("colaborador_id, saldo_final")
-                .in("colaborador_id", chunkIds)
-                .eq("mes", mesAnterior)
-                .eq("ano", anoAnterior)
-                .eq("pago", true);
+                (pontosRes.data || []).forEach(p => {
+                    if (!pontosPorUsuario.has(p.usuario_id)) pontosPorUsuario.set(p.usuario_id, []);
+                    pontosPorUsuario.get(p.usuario_id).push(p);
+                });
 
-            (fechamentosAnteriores || []).forEach(f => {
-                fechamentosAnterioresMap.set(f.colaborador_id, f);
-            });
+                (confirmacoesRes.data as ConfirmacaoAdiantamentoDb[] || []).forEach(c => {
+                    confirmacoesMap.set(c.colaborador_id, c);
+                });
 
-            const { data: todosPontos } = await supabaseAdmin
-                .from("registros_ponto")
-                .select("*")
-                .in("usuario_id", chunkIds)
-                .gte("data_referencia", dataInicioMesStr)
-                .lte("data_referencia", dataFimMesStr);
+                (conveniosRes.data || []).forEach(l => {
+                    if (!conveniosPorUsuario.has(l.colaborador_id)) conveniosPorUsuario.set(l.colaborador_id, []);
+                    conveniosPorUsuario.get(l.colaborador_id).push(l);
+                });
+            })
+        ]);
 
-            (todosPontos || []).forEach(p => {
-                if (!pontosPorUsuario.has(p.usuario_id)) pontosPorUsuario.set(p.usuario_id, []);
-                pontosPorUsuario.get(p.usuario_id).push(p);
-            });
-
-            const { data: confirmacoes } = await supabaseAdmin
-                .from("confirmacoes_adiantamento")
-                .select("*")
-                .in("colaborador_id", chunkIds)
-                .eq("mes", mes)
-                .eq("ano", ano);
-            
-            (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => confirmacoesMap.set(c.colaborador_id, c));
-
-            const { data: todosLancamentosConvenio } = await supabaseAdmin
-                .from("lancamentos_convenios")
-                .select("*, convenio:convenios(nome)")
-                .in("colaborador_id", chunkIds)
-                .eq("moto_embu", false)
-                .gte("data_lancamento", dataInicioMesStr)
-                .lte("data_lancamento", dataFimMesStr);
-
-            (todosLancamentosConvenio || []).forEach(l => {
-                if (!conveniosPorUsuario.has(l.colaborador_id)) conveniosPorUsuario.set(l.colaborador_id, []);
-                conveniosPorUsuario.get(l.colaborador_id).push(l);
-            });
-        }
-
-        const { data: feriadosData } = await supabaseAdmin
-            .from("feriados")
-            .select("data")
-            .gte("data", dataInicioMesStr)
-            .lte("data", dataFimMesStr);
-        const feriadosMes = new Set((feriadosData || []).map(f => f.data));
+        const feriadosMes = new Set((feriadosRes.data || []).map(f => f.data));
 
         let restaPagar = 0;
 
@@ -630,18 +780,39 @@ export const financeiroService = {
                 lancamentosConvenios: conveniosPorUsuario.get(usuario.id) || []
             });
 
-            restaPagar += extrato.totais.saldo_final || 0;
+            const saldo = Number(extrato.totais.saldo_final || 0);
+            restaPagar += saldo;
+
+            const comp = extrairComponentes(extrato);
+            totalFolhaBruta += comp.bruto;
+            totalDescontoFaltas += comp.faltas;
+            totalDescontoConvenios += comp.convenios;
+            totalAdiantamentoPago += comp.adiantamentoPago;
         });
 
-
         const totalFolha = valorPago + restaPagar;
+        const totalDescontosTotal = totalDescontoFaltas + totalDescontoConvenios;
+        const folhaBrutaReconciliada = totalFolha + totalDescontosTotal + totalAdiantamentoPago;
 
-        return {
+        const resultadoFinal: DashboardLoteResultado = {
             totalFolha: parseFloat(totalFolha.toFixed(2)),
             valorPago: parseFloat(valorPago.toFixed(2)),
             restaPagar: parseFloat(restaPagar.toFixed(2)),
-            pendentesCount: pendentes.length
+            pendentesCount: pendentes.length,
+            pagosCount: fechamentos.length,
+            totalColaboradores: fechamentos.length + pendentes.length,
+            totalFolhaBruta: parseFloat(folhaBrutaReconciliada.toFixed(2)),
+            totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
+            totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
+            totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
+            totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevisto.toFixed(2)),
+            colaboradoresAdiantamentoCount,
+            saldoFinalFolha: parseFloat(totalFolha.toFixed(2))
         };
+
+        dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: resultadoFinal });
+
+        return resultadoFinal;
     },
 
 
@@ -683,6 +854,7 @@ export const financeiroService = {
             .single();
 
         if (error) throw error;
+        invalidateDashboardLoteCache(mes, ano);
         return formatFechamento(data);
     },
 
@@ -718,6 +890,7 @@ export const financeiroService = {
             .single();
 
         if (error) throw error;
+        invalidateDashboardLoteCache(mes, ano);
         return true;
     },
 
@@ -730,6 +903,7 @@ export const financeiroService = {
             .eq("ano", ano);
 
         if (error) throw error;
+        invalidateDashboardLoteCache(mes, ano);
     },
 
     async desfazerPagamento(usuarioId: string, mes: number, ano: number): Promise<void> {
@@ -741,32 +915,52 @@ export const financeiroService = {
             .eq("ano", ano);
 
         if (error) throw error;
+        invalidateDashboardLoteCache(mes, ano);
     },
 
     async getStatusGeral(mes: number, ano: number): Promise<StatusGeralFechamento[]> {
-        const { data: colaboradores, error: colabError } = await supabaseAdmin
-            .from("usuarios")
-            .select("id, nome_completo, email, status")
-            .eq("status", "ATIVO")
-            .order("nome_completo", { ascending: true });
+        const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
 
-        if (colabError) throw colabError;
+        const { data: perfilMotoboy } = await supabaseAdmin
+            .from("perfis")
+            .select("id")
+            .ilike("nome", ROLES.MOTOBOY)
+            .maybeSingle();
 
-        const { data: confirmacoes } = await supabaseAdmin
-            .from("confirmacoes_adiantamento")
-            .select("*")
-            .eq("mes", mes)
-            .eq("ano", ano);
+        const perfilMotoboyId = perfilMotoboy?.id || 3;
 
-        const { data: fechamentos } = await supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("*")
-            .eq("mes", mes)
-            .eq("ano", ano);
+        const [colabRes, confirmacoesRes, fechamentosRes, turnosRes] = await Promise.all([
+            supabaseAdmin
+                .from("usuarios")
+                .select("id, nome_completo, email, status")
+                .eq("status", CADASTRO_STATUS.ATIVO)
+                .eq("perfil_id", perfilMotoboyId)
+                .order("nome_completo", { ascending: true }),
+            supabaseAdmin
+                .from("confirmacoes_adiantamento")
+                .select("*")
+                .eq("mes", mes)
+                .eq("ano", ano),
+            supabaseAdmin
+                .from("fechamentos_financeiros")
+                .select("*")
+                .eq("mes", mes)
+                .eq("ano", ano),
+            supabaseAdmin
+                .from("colaborador_clientes")
+                .select("colaborador_id, valor_adiantamento, data_fim, cliente:clientes(nome_fantasia)")
+                .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`)
+        ]);
 
-        const { data: todosTurnos } = await supabaseAdmin
-            .from("colaborador_clientes")
-            .select("colaborador_id, valor_adiantamento, data_fim, cliente:clientes(nome_fantasia)");
+        if (colabRes.error) throw colabRes.error;
+        if (confirmacoesRes.error) throw confirmacoesRes.error;
+        if (fechamentosRes.error) throw fechamentosRes.error;
+        if (turnosRes.error) throw turnosRes.error;
+
+        const colaboradores = colabRes.data;
+        const confirmacoes = confirmacoesRes.data;
+        const fechamentos = fechamentosRes.data;
+        const todosTurnos = turnosRes.data;
 
         const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
         (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => {

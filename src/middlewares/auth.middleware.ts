@@ -121,7 +121,54 @@ export function verifyOperacional() {
             const nomePerfil = (usuario.perfil as unknown as { nome: string })?.nome;
 
             if (nomePerfil === ROLES.SUPER_ADMIN || nomePerfil !== ROLES.CLIENTE) {
-                return; // Todos exceto CLIENTE têm acesso operacional.
+                return;
+            }
+
+            return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
+        } catch (error) {
+            return reply.status(500).send({ error: messages.sistema.erro.interno });
+        }
+    };
+}
+
+export function verifyAdminOnly() {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const token = request.headers.authorization?.replace('Bearer ', '');
+            if (!token) {
+                return reply.status(401).send({ error: messages.auth.erro.tokenAusente });
+            }
+
+            const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+            if (authError || !user) {
+                return reply.status(401).send({ error: messages.auth.erro.tokenInvalido });
+            }
+
+            (request as AuthenticatedRequest).user = user as AuthUser;
+
+            const { data: usuario, error: dbError } = await supabaseAdmin
+                .from("usuarios")
+                .select(`
+                    status,
+                    perfil:perfis(nome)
+                `)
+                .eq("id", user.id)
+                .single();
+
+            if (dbError || !usuario) {
+                return reply.status(403).send({ error: messages.auth.erro.usuarioNaoEncontrado });
+            }
+
+            if (usuario.status !== CADASTRO_STATUS.ATIVO) {
+                return reply.status(403).send({ error: messages.auth.erro.acessoNegado });
+            }
+
+            const perfilData = usuario.perfil as unknown as { nome: string };
+            const nomePerfil = perfilData?.nome;
+
+            if (nomePerfil === ROLES.SUPER_ADMIN || nomePerfil === ROLES.ADMIN) {
+                (request as AuthenticatedRequest).user_profile = usuario as unknown as Usuario;
+                return;
             }
 
             return reply.status(403).send({ error: messages.sistema.erro.naoAutorizado });
