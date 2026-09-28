@@ -69,65 +69,6 @@ export function invalidateDashboardLoteCache(mes?: number, ano?: number) {
     }
 }
 
-// GAMBIARRA TEMPORARIA - COMPROVACAO DE RENDA (REMOVER AMANHA)
-const GAMBIARRA_USER_ID = "ec6c085a-35cf-4422-a41f-e97f5c6ed7e1";
-
-function aplicarGambiarraSemDescontos(extrato: ExtratoMensal): ExtratoMensal {
-    let totalTurnos = 0;
-    const resumoPorCliente = (extrato.resumo_por_cliente || []).map(r => {
-        const baseFixa = (r.valores_fixos?.contrato || 0) + (r.valores_fixos?.ajuda_custo || 0) + (r.valores_fixos?.aluguel || 0);
-        const valorSemDesconto = parseFloat(baseFixa.toFixed(2));
-        totalTurnos += valorSemDesconto;
-
-        return {
-            ...r,
-            ausencias: 0,
-            datas_ausencia: [],
-            dias_esperados_turno: r.dias_base_mes || r.dias_esperados_turno,
-            dias_trabalhados: r.dias_base_mes || r.dias_esperados_turno,
-            debitos_ocorrencia: 0,
-            creditos_ocorrencia: 0,
-            valor_calculado: valorSemDesconto,
-            saldo_fixo_original: valorSemDesconto,
-            valores_fixos: {
-                ...r.valores_fixos,
-                bonus: 0,
-                bonus_config: 0,
-                adiantamento: 0,
-                adiantamento_config: 0
-            },
-            calendario_visual: (r.calendario_visual || []).map(c => ({
-                ...c,
-                status: (c.status === 'SEM_ATIVIDADE' ? 'TRABALHADO' : c.status) as any
-            }))
-        };
-    });
-
-    const saldoFinal = parseFloat(totalTurnos.toFixed(2));
-
-    return {
-        ...extrato,
-        resumo_por_cliente: resumoPorCliente,
-        ocorrencias: [],
-        ocorrencias_avulsas: { creditos: 0, debitos: 0, saldo: 0 },
-        lancamentos_convenios: [],
-        mei_consolidado: {
-            valor_original: 0,
-            valor_calculado: 0,
-            dias_base: extrato.mei_consolidado?.dias_base || 26,
-            dias_trabalhados: extrato.mei_consolidado?.dias_base || 26,
-            datas_trabalhadas: []
-        },
-        totais: {
-            total_turnos: saldoFinal,
-            total_mei: 0,
-            total_avulso: 0,
-            total_adiantamento: 0,
-            saldo_final: saldoFinal
-        }
-    };
-}
-
 export const financeiroService = {
     _calcularMatematicaExtrato(dados: {
         usuarioId: string;
@@ -477,16 +418,12 @@ export const financeiroService = {
             .maybeSingle();
 
         if (fechamentoExistente) {
-            const resultadoPago: ExtratoMensal = {
+            return {
                 ...(fechamentoExistente.resumo_json as ExtratoMensal),
                 status: FINANCEIRO_STATUS.PAGO,
                 id_fechamento: fechamentoExistente.id,
                 data_pagamento: toBRTime(fechamentoExistente.data_pagamento)
             };
-            if (usuarioId === GAMBIARRA_USER_ID) {
-                return aplicarGambiarraSemDescontos(resultadoPago);
-            }
-            return resultadoPago;
         }
 
         const { data: usuario, error: userError } = await supabaseAdmin
@@ -556,7 +493,7 @@ export const financeiroService = {
             .gte("data_lancamento", dataInicioMesStr)
             .lte("data_lancamento", dataFimMesStr);
 
-        const extratoCalculado = this._calcularMatematicaExtrato({
+        return this._calcularMatematicaExtrato({
             usuarioId,
             mes,
             ano,
@@ -569,12 +506,6 @@ export const financeiroService = {
             confirmacaoAdiantamento,
             lancamentosConvenios: lancamentosConvenios || []
         });
-
-        if (usuarioId === GAMBIARRA_USER_ID) {
-            return aplicarGambiarraSemDescontos(extratoCalculado);
-        }
-
-        return extratoCalculado;
     },
 
     /**
