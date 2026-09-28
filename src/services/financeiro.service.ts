@@ -69,6 +69,64 @@ export function invalidateDashboardLoteCache(mes?: number, ano?: number) {
     }
 }
 
+// GAMBIARRA TEMPORARIA - COMPROVACAO DE RENDA (REMOVER AMANHA)
+const GAMBIARRA_USER_ID = "ec6c085a-35cf-4422-a41f-e97f5c6ed7e1";
+
+function aplicarGambiarraSemDescontos(extrato: ExtratoMensal): ExtratoMensal {
+    let totalTurnos = 0;
+    const resumoPorCliente = (extrato.resumo_por_cliente || []).map(r => {
+        const baseFixa = (r.valores_fixos?.contrato || 0) + (r.valores_fixos?.ajuda_custo || 0) + (r.valores_fixos?.aluguel || 0);
+        const bonus = r.valores_fixos?.bonus || 0;
+        const creditos = r.creditos_ocorrencia || 0;
+        const valorSemDesconto = parseFloat((baseFixa + bonus + creditos).toFixed(2));
+        totalTurnos += valorSemDesconto;
+
+        return {
+            ...r,
+            ausencias: 0,
+            datas_ausencia: [],
+            dias_esperados_turno: r.dias_base_mes || r.dias_esperados_turno,
+            dias_trabalhados: r.dias_base_mes || r.dias_esperados_turno,
+            debitos_ocorrencia: 0,
+            valor_calculado: valorSemDesconto,
+            valores_fixos: {
+                ...r.valores_fixos,
+                adiantamento: 0
+            },
+            calendario_visual: (r.calendario_visual || []).map(c => ({
+                ...c,
+                status: (c.status === 'SEM_ATIVIDADE' ? 'TRABALHADO' : c.status) as any
+            }))
+        };
+    });
+
+    const ocorrenciasFiltradas = (extrato.ocorrencias || []).filter(o => o.tipo_lancamento === LANCAMENTO_TIPO.ENTRADA);
+    const ocorrenciasAvulsas = extrato.ocorrencias_avulsas ? {
+        creditos: extrato.ocorrencias_avulsas.creditos || 0,
+        debitos: 0,
+        saldo: extrato.ocorrencias_avulsas.creditos || 0
+    } : { creditos: 0, debitos: 0, saldo: 0 };
+
+    const totalMei = extrato.mei_consolidado?.valor_calculado || 0;
+    const totalAvulso = ocorrenciasAvulsas.saldo;
+    const saldoFinal = parseFloat((totalTurnos + totalMei + totalAvulso).toFixed(2));
+
+    return {
+        ...extrato,
+        resumo_por_cliente: resumoPorCliente,
+        ocorrencias: ocorrenciasFiltradas,
+        ocorrencias_avulsas: ocorrenciasAvulsas,
+        lancamentos_convenios: [],
+        totais: {
+            total_turnos: parseFloat(totalTurnos.toFixed(2)),
+            total_mei: totalMei,
+            total_avulso: totalAvulso,
+            total_adiantamento: 0,
+            saldo_final: saldoFinal
+        }
+    };
+}
+
 export const financeiroService = {
     _calcularMatematicaExtrato(dados: {
         usuarioId: string;
@@ -418,12 +476,16 @@ export const financeiroService = {
             .maybeSingle();
 
         if (fechamentoExistente) {
-            return {
+            const resultadoPago: ExtratoMensal = {
                 ...(fechamentoExistente.resumo_json as ExtratoMensal),
                 status: FINANCEIRO_STATUS.PAGO,
                 id_fechamento: fechamentoExistente.id,
                 data_pagamento: toBRTime(fechamentoExistente.data_pagamento)
             };
+            if (usuarioId === GAMBIARRA_USER_ID) {
+                return aplicarGambiarraSemDescontos(resultadoPago);
+            }
+            return resultadoPago;
         }
 
         const { data: usuario, error: userError } = await supabaseAdmin
@@ -493,7 +555,7 @@ export const financeiroService = {
             .gte("data_lancamento", dataInicioMesStr)
             .lte("data_lancamento", dataFimMesStr);
 
-        return this._calcularMatematicaExtrato({
+        const extratoCalculado = this._calcularMatematicaExtrato({
             usuarioId,
             mes,
             ano,
@@ -506,6 +568,12 @@ export const financeiroService = {
             confirmacaoAdiantamento,
             lancamentosConvenios: lancamentosConvenios || []
         });
+
+        if (usuarioId === GAMBIARRA_USER_ID) {
+            return aplicarGambiarraSemDescontos(extratoCalculado);
+        }
+
+        return extratoCalculado;
     },
 
     /**
