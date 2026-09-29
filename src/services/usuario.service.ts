@@ -246,10 +246,12 @@ export const usuarioService = {
 
         if (hasClienteFilter) {
             query = query.eq("links.cliente_id", filtros!.cliente_id);
+            query = query.is("links.data_fim", null);
         }
 
         if (hasEmpresaFilter) {
             query = query.eq("links.empresa_id", filtros!.empresa_id);
+            query = query.is("links.data_fim", null);
         }
 
         const isPaginated = Boolean(filtros?.page && !filtros?.all);
