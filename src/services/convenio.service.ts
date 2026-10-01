@@ -488,56 +488,40 @@ export const convenioService = {
         if (error) throw error;
         if (!usuarios || usuarios.length === 0) return [];
 
-        const hoje = new Date();
-        const mesAtual = hoje.getMonth() + 1;
-        const anoAtual = hoje.getFullYear();
-
-        const { data: bloqueios } = await supabaseAdmin
+        const { data: bloqueios, error: bloqueiosError } = await supabaseAdmin
             .from("bloqueios_convenios")
-            .select("*");
+            .select("colaborador_id, convenio_id, motivo");
 
-        const bloqueiosMap = new Map<string, { bloqueado: boolean }>();
+        if (bloqueiosError) throw bloqueiosError;
+
+        const bloqueiosMap = new Map<string, { bloqueado: boolean; motivo?: string | null }>();
         ((bloqueios || []) as BloqueioConvenio[]).forEach((b) => {
             if (b.convenio_id === null || b.convenio_id === convenio.id) {
                 bloqueiosMap.set(b.colaborador_id, {
-                    bloqueado: true
+                    bloqueado: true,
+                    motivo: b.motivo
                 });
             }
         });
 
-        const mensagemBloqueio = "Este colaborador está com o convênio suspenso no momento. Não realize o serviço pelo convênio.";
+        const mensagemBloqueioPadrao = "Este colaborador está com o convênio suspenso no momento. Não realize o serviço pelo convênio.";
 
-        const resultado = await Promise.all(
-            usuarios.map(async (u) => {
-                const manual = bloqueiosMap.get(u.id);
-                if (manual) {
-                    return {
-                        id: u.id,
-                        nome_completo: u.nome_completo,
-                        bloqueado: true,
-                        motivo_bloqueio: mensagemBloqueio
-                    };
-                }
+        return usuarios.map((u) => {
+            const manual = bloqueiosMap.get(u.id);
+            if (manual) {
+                return {
+                    id: u.id,
+                    nome_completo: u.nome_completo,
+                    bloqueado: true,
+                    motivo_bloqueio: manual.motivo || mensagemBloqueioPadrao
+                };
+            }
 
-                try {
-                    const eleg = await this.verificarElegibilidadeConvenio(u.id, convenio.id, mesAtual, anoAtual, 0);
-                    return {
-                        id: u.id,
-                        nome_completo: u.nome_completo,
-                        bloqueado: eleg.bloqueado,
-                        motivo_bloqueio: eleg.bloqueado ? mensagemBloqueio : undefined,
-                        saldo_disponivel: eleg.saldo_disponivel
-                    };
-                } catch {
-                    return {
-                        id: u.id,
-                        nome_completo: u.nome_completo,
-                        bloqueado: false
-                    };
-                }
-            })
-        );
-
-        return resultado;
+            return {
+                id: u.id,
+                nome_completo: u.nome_completo,
+                bloqueado: false
+            };
+        });
     }
 };

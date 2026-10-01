@@ -187,5 +187,27 @@ export const convenioController = {
             valor ? parseFloat(valor) : 0
         );
         return reply.send(result);
+    },
+
+    async checkElegibilidadePublic(request: FastifyRequest, reply: FastifyReply) {
+        const { token, colaboradorId } = z.object({
+            token: z.string(),
+            colaboradorId: z.string().uuid()
+        }).parse(request.params);
+        const { mes, ano, valor } = z.object({
+            mes: z.string().optional(),
+            ano: z.string().optional(),
+            valor: z.string().optional()
+        }).parse(request.query);
+
+        const convenio = await convenioService.getConvenioByToken(token);
+        const result = await convenioService.verificarElegibilidadeConvenio(
+            colaboradorId,
+            convenio.id,
+            mes ? parseInt(mes, 10) : undefined,
+            ano ? parseInt(ano, 10) : undefined,
+            valor ? parseFloat(valor) : 0
+        );
+        return reply.send(result);
     }
 };

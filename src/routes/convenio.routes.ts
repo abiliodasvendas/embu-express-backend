@@ -10,6 +10,7 @@ export async function convenioRoutes(fastify: FastifyInstance) {
     // --------------------------------------------------
     fastify.get("/public/:token", convenioController.getPublicInfo);
     fastify.get("/public/:token/colaboradores", convenioController.listColaboradoresPublic);
+    fastify.get("/public/:token/colaboradores/:colaboradorId/elegibilidade", convenioController.checkElegibilidadePublic);
     fastify.get("/public/:token/lancamentos", convenioController.listLancamentosMes);
     fastify.post("/public/:token/lancamentos", convenioController.createLancamento);
     fastify.put("/public/:token/lancamentos/:id", convenioController.updateLancamento);
