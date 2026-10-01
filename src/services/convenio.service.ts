@@ -513,7 +513,7 @@ export const convenioService = {
                     id: u.id,
                     nome_completo: u.nome_completo,
                     bloqueado: true,
-                    motivo_bloqueio: manual.motivo || mensagemBloqueioPadrao
+                    motivo_bloqueio: mensagemBloqueioPadrao
                 };
             }
 

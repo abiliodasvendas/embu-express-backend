@@ -208,6 +208,12 @@ export const convenioController = {
             ano ? parseInt(ano, 10) : undefined,
             valor ? parseFloat(valor) : 0
         );
-        return reply.send(result);
+
+        return reply.send({
+            bloqueado: result.bloqueado,
+            motivo: result.bloqueado
+                ? "Este colaborador está com o convênio suspenso no momento. Não realize o serviço pelo convênio."
+                : undefined
+        });
     }
 };
