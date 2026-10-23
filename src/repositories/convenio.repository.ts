@@ -192,7 +192,7 @@ export const convenioRepository = {
   } | null> {
     const { data, error } = await supabaseAdmin
       .from("usuarios")
-      .select("id, status, valor_mei, links:colaborador_cliente(valor_contrato, data_fim)")
+      .select("id, status, valor_mei, links:colaborador_clientes(valor_contrato, data_fim)")
       .eq("id", colaboradorId)
       .single();
 
