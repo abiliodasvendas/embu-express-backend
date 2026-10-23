@@ -1,5 +1,8 @@
-import { supabaseAdmin } from "../config/supabase.js";
+import { dreRepository } from "../repositories/dre.repository.js";
+import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
 import { financeiroService } from "./financeiro.service.js";
+import { faturamentoService } from "./faturamento.service.js";
+import { despesaService } from "./despesa.service.js";
 import {
   CATEGORIA_DESPESA,
   STATUS_DESPESA,
@@ -14,6 +17,7 @@ export interface DreItem {
 
 export interface DreConsolidado {
   periodo: { mes: number; ano: number };
+  tipo_visao?: "realizado" | "projetado";
   empresa_id?: number | null;
   empresa_nome?: string;
   faturamento_bruto: number;
@@ -46,25 +50,40 @@ export interface DreConsolidado {
 }
 
 export const dreService = {
-  async getDRE(mes: number, ano: number, empresaId?: number): Promise<DreConsolidado> {
+  async getDRE(
+    mes: number,
+    ano: number,
+    empresaId?: number,
+    tipoVisao: "realizado" | "projetado" = "projetado"
+  ): Promise<DreConsolidado> {
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-    const { data: todasFaturasHolding } = await supabaseAdmin
-      .from("faturas_clientes")
-      .select("empresa_id, valor_faturado")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano)
-      .neq("status", STATUS_FATURA.CANCELADA);
+    const faturasList = await faturamentoService.listFaturas({ mes, ano });
+    const todasFaturasHolding = faturasList.filter(f => {
+      if (f.status === STATUS_FATURA.CANCELADA) return false;
+      if (tipoVisao === "realizado" && f.is_previsao) return false;
+      return true;
+    });
 
-    const totalFaturamentoHolding = (todasFaturasHolding || []).reduce((acc, f) => acc + Number(f.valor_faturado || 0), 0);
+    const totalFaturamentoHolding = (todasFaturasHolding || []).reduce((acc, f) => {
+      const v = tipoVisao === "realizado" && f.valor_pago && f.status === STATUS_FATURA.LIQUIDADA
+        ? Number(f.valor_pago)
+        : Number(f.valor_faturado || 0);
+      return acc + v;
+    }, 0);
 
     const faturasEmpresa = empresaId
       ? (todasFaturasHolding || []).filter(f => Number(f.empresa_id) === Number(empresaId))
       : (todasFaturasHolding || []);
 
-    const faturamentoBruto = faturasEmpresa.reduce((acc, f) => acc + Number(f.valor_faturado || 0), 0);
+    const faturamentoBruto = faturasEmpresa.reduce((acc, f) => {
+      const v = tipoVisao === "realizado" && f.valor_pago && f.status === STATUS_FATURA.LIQUIDADA
+        ? Number(f.valor_pago)
+        : Number(f.valor_faturado || 0);
+      return acc + v;
+    }, 0);
 
     const shareEmpresa = totalFaturamentoHolding > 0 && empresaId
       ? faturamentoBruto / totalFaturamentoHolding
@@ -72,34 +91,55 @@ export const dreService = {
 
     let empresaNome = "Consolidado (Holding)";
     if (empresaId) {
-      const { data: emp } = await supabaseAdmin.from("empresas").select("nome_fantasia").eq("id", empresaId).single();
-      if (emp) empresaNome = emp.nome_fantasia;
+      const nomeFantasia = await dreRepository.getEmpresaNomeFantasia(empresaId);
+      if (nomeFantasia) empresaNome = nomeFantasia;
     }
 
     const dashboardFolha = await financeiroService.getDashboardLote(mes, ano);
-    let custoPessoalFolha = Number(dashboardFolha.totalFolha || 0);
+    let custoPessoalFolha = tipoVisao === "realizado"
+      ? Number(dashboardFolha.valorPago || 0) + Number(dashboardFolha.totalAdiantamentoPago || 0)
+      : Number(dashboardFolha.totalFolha || 0);
 
     if (empresaId && totalFaturamentoHolding > 0) {
       custoPessoalFolha = custoPessoalFolha * shareEmpresa;
     }
 
-    const { data: conveniosProprios } = await supabaseAdmin
-      .from("lancamentos_convenios")
-      .select("valor, colaborador_id")
-      .eq("moto_embu", true)
-      .gte("data_lancamento", dataInicioStr)
-      .lte("data_lancamento", dataFimStr);
+    const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";
+    const [conveniosLancamentos, faturasConvenios] = await Promise.all([
+      convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioStr, dataFimStr),
+      convenioAuditoriaRepository.listFaturasPorCompetencia(mes, ano),
+    ]);
 
-    let manutencaoFrotaPropria = (conveniosProprios || []).reduce((acc, c) => acc + Number(c.valor || 0), 0);
+    let manutencaoFrotaPropria = 0;
+    (conveniosLancamentos || []).forEach(c => {
+      const isDavidOuMotoEmbu = c.moto_embu || c.colaborador_id === DAVID_CAITITE_ID;
+      if (isDavidOuMotoEmbu) {
+        manutencaoFrotaPropria += Number(c.valor || 0);
+      }
+    });
+
+    const totalMotoboysLancamentos = (conveniosLancamentos || [])
+      .filter(c => !c.moto_embu && c.colaborador_id !== DAVID_CAITITE_ID && c.colaborador_id)
+      .reduce((acc, c) => acc + Number(c.valor || 0), 0);
+
+    const totalFaturas = (faturasConvenios || []).reduce((acc, f) => {
+      if (tipoVisao === "realizado" && f.status !== "PAGA") return acc;
+      const v = f.valor_pago && f.status === "PAGA" ? Number(f.valor_pago) : Number(f.valor_total_fatura || 0);
+      return acc + v;
+    }, 0);
+
+    if (totalFaturas > 0) {
+      const saldoExcedenteFatura = Math.max(0, totalFaturas - totalMotoboysLancamentos);
+      if (saldoExcedenteFatura > manutencaoFrotaPropria) {
+        manutencaoFrotaPropria = saldoExcedenteFatura;
+      }
+    }
+
     if (empresaId && totalFaturamentoHolding > 0) {
       manutencaoFrotaPropria = manutencaoFrotaPropria * shareEmpresa;
     }
 
-    const { data: movAvulsas } = await supabaseAdmin
-      .from("movimentacoes_avulsas")
-      .select("*")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano);
+    const movAvulsas = await dreRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
 
     const movAvulsasFiltradas = empresaId
       ? (movAvulsas || []).filter(m => Number(m.empresa_id) === Number(empresaId))
@@ -126,12 +166,12 @@ export const dreService = {
       ? (lucroBruto / receitaOperacionalTotal) * 100
       : 0;
 
-    const { data: despesas } = await supabaseAdmin
-      .from("despesas_operacionais")
-      .select("*")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano)
-      .neq("status", STATUS_DESPESA.CANCELADO);
+    const despesasList = await despesaService.list({ mes, ano });
+    const despesas = despesasList.filter(d => {
+      if (d.status === STATUS_DESPESA.CANCELADO) return false;
+      if (tipoVisao === "realizado" && d.status !== STATUS_DESPESA.PAGO) return false;
+      return true;
+    });
 
     let despesasFixasDiretas = despesasAvulsas;
     let despesasFixasHolding = 0;
@@ -225,6 +265,7 @@ export const dreService = {
 
     return {
       periodo: { mes, ano },
+      tipo_visao: tipoVisao,
       empresa_id: empresaId || null,
       empresa_nome: empresaNome,
       faturamento_bruto: parseFloat(faturamentoBruto.toFixed(2)),

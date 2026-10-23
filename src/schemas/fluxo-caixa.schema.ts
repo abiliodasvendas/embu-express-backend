@@ -9,4 +9,5 @@ export const fechamentoCaixaMensalSchema = z.object({
 export const fluxoCaixaQuerySchema = z.object({
   mes: z.coerce.number().int().min(1).max(12),
   ano: z.coerce.number().int().min(2020),
+  empresa_id: z.coerce.number().optional(),
 });

@@ -3,10 +3,14 @@ export const FINANCEIRO_STATUS = {
     PAGO: 'PAGO',
 } as const;
 
+export type FinanceiroStatus = keyof typeof FINANCEIRO_STATUS;
+
 export const LANCAMENTO_TIPO = {
     ENTRADA: 'ENTRADA',
     SAIDA: 'SAIDA',
 } as const;
+
+export type LancamentoTipo = keyof typeof LANCAMENTO_TIPO;
 
 export const PIX_TYPES = {
     CPF: 'CPF',
@@ -26,16 +30,32 @@ export const CALENDARIO_STATUS = {
     FERIADO: 'FERIADO',
 } as const;
 
+export type CalendarioStatus = keyof typeof CALENDARIO_STATUS;
+
 export const STATUS_FATURA = {
-    EM_MEDICAO: 'EM_MEDICAO',
-    AGUARDANDO_APROVACAO: 'AGUARDANDO_APROVACAO',
-    EMITIDA_PENDENTE: 'EMITIDA_PENDENTE',
+    PENDENTE: 'PENDENTE',
     PAGO_PARCIAL: 'PAGO_PARCIAL',
     LIQUIDADA: 'LIQUIDADA',
     CANCELADA: 'CANCELADA',
 } as const;
 
 export type StatusFaturaType = typeof STATUS_FATURA[keyof typeof STATUS_FATURA];
+
+export const PERIODICIDADE_FATURAMENTO = {
+    QUINZENAL: 'QUINZENAL',
+    MENSAL: 'MENSAL',
+    SEMANAL: 'SEMANAL',
+} as const;
+
+export type PeriodicidadeFaturamentoType = typeof PERIODICIDADE_FATURAMENTO[keyof typeof PERIODICIDADE_FATURAMENTO];
+
+export const TIPO_PERIODO_FATURA = {
+    QUINZENAL: 'QUINZENAL',
+    MENSAL: 'MENSAL',
+    SEMANAL: 'SEMANAL',
+} as const;
+
+export type TipoPeriodoFaturaType = typeof TIPO_PERIODO_FATURA[keyof typeof TIPO_PERIODO_FATURA];
 
 export const STATUS_INTERCOMPANY = {
     PENDENTE_ACERTO: 'PENDENTE_ACERTO',

@@ -4,8 +4,8 @@ import { fechamentoCaixaMensalSchema, fluxoCaixaQuerySchema } from "../schemas/f
 
 export const fluxoCaixaController = {
   async get(request: FastifyRequest, reply: FastifyReply) {
-    const { mes, ano } = fluxoCaixaQuerySchema.parse(request.query);
-    const result = await fluxoCaixaService.getFluxoCaixa(mes, ano);
+    const { mes, ano, empresa_id } = fluxoCaixaQuerySchema.parse(request.query);
+    const result = await fluxoCaixaService.getFluxoCaixa(mes, ano, empresa_id);
     return reply.send(result);
   },
 

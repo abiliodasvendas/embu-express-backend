@@ -1,10 +1,16 @@
-import { supabaseAdmin } from "../config/supabase.js";
+import { fluxoCaixaRepository } from "../repositories/fluxo-caixa.repository.js";
+import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
+import { intercompanyRepository } from "../repositories/intercompany.repository.js";
 import { financeiroService } from "./financeiro.service.js";
+import { despesaService } from "./despesa.service.js";
+import { faturamentoService } from "./faturamento.service.js";
+import { configuracaoService } from "./configuracao.service.js";
 import {
   STATUS_DESPESA,
   STATUS_FATURA,
   TIPO_MOVIMENTACAO_AVULSA,
 } from "../constants/financeiro.enum.js";
+import { DespesaOperacional } from "../types/database.js";
 
 export interface PontoFluxoDia {
   dia: number;
@@ -20,6 +26,7 @@ export interface PontoFluxoDia {
 
 export interface FluxoCaixaResponse {
   periodo: { mes: number; ano: number };
+  empresa_id?: number | null;
   saldo_inicial: number;
   saldo_retido_convenios: number;
   total_entradas_projetadas: number;
@@ -29,22 +36,38 @@ export interface FluxoCaixaResponse {
   saldo_final_projetado: number;
   saldo_final_realizado: number;
   curva_diaria: PontoFluxoDia[];
+  config_dias?: {
+    dia_salarios: number;
+    dia_convenios: number;
+    dia_vales: number;
+  };
 }
 
 export const fluxoCaixaService = {
-  async getFluxoCaixa(mes: number, ano: number): Promise<FluxoCaixaResponse> {
+  async getFluxoCaixa(mes: number, ano: number, empresaId?: number): Promise<FluxoCaixaResponse> {
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-    const { data: fechamentoCaixa } = await supabaseAdmin
-      .from("fechamentos_caixa_mensal")
-      .select("saldo_inicial_consolidado")
-      .eq("mes", mes)
-      .eq("ano", ano)
-      .maybeSingle();
+    const fechamentoCaixa = await fluxoCaixaRepository.getFechamentoCaixa(mes, ano);
 
-    const saldoInicial = Number(fechamentoCaixa?.saldo_inicial_consolidado || 0);
+    const faturasList = await faturamentoService.listFaturas({ mes, ano });
+    const todasFaturasHolding = (faturasList || []).filter(f => f.status !== STATUS_FATURA.CANCELADA);
+    const totalFaturamentoHolding = todasFaturasHolding.reduce((acc, f) => acc + Number(f.valor_faturado || 0), 0);
+
+    const faturas = empresaId
+      ? todasFaturasHolding.filter(f => Number(f.empresa_id) === Number(empresaId))
+      : todasFaturasHolding;
+
+    const faturamentoBruto = faturas.reduce((acc, f) => acc + Number(f.valor_faturado || 0), 0);
+    const shareEmpresa = totalFaturamentoHolding > 0 && empresaId
+      ? faturamentoBruto / totalFaturamentoHolding
+      : 1;
+
+    let saldoInicial = Number(fechamentoCaixa?.saldo_inicial_consolidado || 0);
+    if (empresaId) {
+      saldoInicial = saldoInicial * shareEmpresa;
+    }
 
     let mesAnterior = mes - 1;
     let anoAnterior = ano;
@@ -57,32 +80,65 @@ export const fluxoCaixaService = {
     const dataFimMesAntStr = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-${String(ultimoDiaMesAnterior).padStart(2, '0')}`;
 
     const dashboardFolhaAnt = await financeiroService.getDashboardLote(mesAnterior, anoAnterior);
-    const desembolsoSalariosDia07 = Number(dashboardFolhaAnt.restaPagar || dashboardFolhaAnt.totalFolha || 0);
+    let desembolsoSalarios = Number(dashboardFolhaAnt.restaPagar || dashboardFolhaAnt.totalFolha || 0);
+    if (empresaId) {
+      desembolsoSalarios = desembolsoSalarios * shareEmpresa;
+    }
 
-    // B) Convênios fechados do mês anterior a pagar no Dia 15/16
-    const { data: conveniosAnt } = await supabaseAdmin
-      .from("lancamentos_convenios")
-      .select("valor, moto_embu")
-      .gte("data_lancamento", dataInicioMesAntStr)
-      .lte("data_lancamento", dataFimMesAntStr);
-
-    const totalConveniosDia15 = (conveniosAnt || []).reduce((acc, c) => acc + Number(c.valor || 0), 0);
-    const saldoRetidoConvenios = (conveniosAnt || []).filter(c => !c.moto_embu).reduce((acc, c) => acc + Number(c.valor || 0), 0);
-
-    const [confirmacoesRes, linksAtivosRes] = await Promise.all([
-      supabaseAdmin
-        .from("confirmacoes_adiantamento")
-        .select("colaborador_id, valor")
-        .eq("mes", mes)
-        .eq("ano", ano),
-      supabaseAdmin
-        .from("colaborador_clientes")
-        .select("colaborador_id, valor_adiantamento")
-        .is("data_fim", null)
+    const [conveniosAnt, faturasConveniosAnt] = await Promise.all([
+      convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioMesAntStr, dataFimMesAntStr),
+      convenioAuditoriaRepository.listFaturasPorCompetencia(mesAnterior, anoAnterior),
     ]);
 
-    const confirmacoesAtual = confirmacoesRes.data || [];
-    const linksAtivos = linksAtivosRes.data || [];
+    const faturasAntMap = new Map<string, { valor_total: number; valor_pago: number | null; status: string }>();
+    faturasConveniosAnt.forEach(f => {
+      faturasAntMap.set(f.convenio_id, {
+        valor_total: Number(f.valor_total_fatura || 0),
+        valor_pago: f.valor_pago ? Number(f.valor_pago) : null,
+        status: f.status,
+      });
+    });
+
+    const consumoPorConvenioMap = new Map<string, number>();
+    conveniosAnt.forEach(c => {
+      const v = Number(c.valor || 0);
+      consumoPorConvenioMap.set(c.convenio_id, (consumoPorConvenioMap.get(c.convenio_id) || 0) + v);
+    });
+
+    const allConvenioIds = new Set([...faturasAntMap.keys(), ...consumoPorConvenioMap.keys()]);
+    let totalConveniosDia15Projetado = 0;
+    let totalConveniosDia15Realizado = 0;
+
+    allConvenioIds.forEach(cId => {
+      const fatura = faturasAntMap.get(cId);
+      const consumo = consumoPorConvenioMap.get(cId) || 0;
+      const valorProj = fatura ? fatura.valor_total : consumo;
+      totalConveniosDia15Projetado += valorProj;
+
+      if (fatura && fatura.status === "PAGA") {
+        totalConveniosDia15Realizado += (fatura.valor_pago ?? fatura.valor_total);
+      }
+    });
+
+    let saldoRetidoConvenios = conveniosAnt.filter(c => !c.moto_embu).reduce((acc, c) => acc + Number(c.valor || 0), 0);
+
+    if (empresaId) {
+      totalConveniosDia15Projetado = totalConveniosDia15Projetado * shareEmpresa;
+      totalConveniosDia15Realizado = totalConveniosDia15Realizado * shareEmpresa;
+      saldoRetidoConvenios = saldoRetidoConvenios * shareEmpresa;
+    }
+
+    const [confirmacoesAtual, linksAtivos, configSalarios, configConvenios, configVales] = await Promise.all([
+      fluxoCaixaRepository.listConfirmacoesAdiantamento(mes, ano),
+      fluxoCaixaRepository.listColaboradorClientesAtivos(),
+      configuracaoService.getConfiguracao("dia_desembolso_salarios"),
+      configuracaoService.getConfiguracao("dia_desembolso_convenios"),
+      configuracaoService.getConfiguracao("dia_desembolso_vales"),
+    ]);
+
+    const diaSalarios = Math.min(Math.max(parseInt(configSalarios?.valor || "7", 10) || 7, 1), ultimoDiaMes);
+    const diaConvenios = Math.min(Math.max(parseInt(configConvenios?.valor || "15", 10) || 15, 1), ultimoDiaMes);
+    const diaVales = Math.min(Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1), ultimoDiaMes);
 
     const hoje = new Date();
     const anoAtual = hoje.getFullYear();
@@ -91,8 +147,8 @@ export const fluxoCaixaService = {
 
     const isMesPassado = anoAtual > ano || (anoAtual === ano && mesAtual > mes);
     const isMesAtual = anoAtual === ano && mesAtual === mes;
-    const isPosDia20 = isMesPassado || (isMesAtual && diaAtual > 20);
-    const isDia20OuApos = isPosDia20 || (isMesAtual && diaAtual === 20);
+    const isPosDiaVales = isMesPassado || (isMesAtual && diaAtual > diaVales);
+    const isDiaValesOuApos = isPosDiaVales || (isMesAtual && diaAtual === diaVales);
 
     const confirmacoesMap = new Map<string, number>();
     confirmacoesAtual.forEach(c => {
@@ -121,33 +177,45 @@ export const fluxoCaixaService = {
       }
     });
 
-    const valesDia20Projetado = isPosDia20
+    let valesDiaValesProjetado = isPosDiaVales
       ? totalValesConfirmados
       : totalValesConfirmados + totalValesPendentesTeoricos;
 
-    const valesDia20Realizado = isDia20OuApos
+    let valesDiaValesRealizado = isDiaValesOuApos
       ? totalValesConfirmados
       : 0;
 
-    const { data: despesas } = await supabaseAdmin
-      .from("despesas_operacionais")
-      .select("*")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano)
-      .neq("status", STATUS_DESPESA.CANCELADO);
+    if (empresaId) {
+      valesDiaValesProjetado = valesDiaValesProjetado * shareEmpresa;
+      valesDiaValesRealizado = valesDiaValesRealizado * shareEmpresa;
+    }
 
-    const { data: faturas } = await supabaseAdmin
-      .from("faturas_clientes")
-      .select("*, recebimentos:fatura_recebimentos(*)")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano)
-      .neq("status", STATUS_FATURA.CANCELADA);
+    const despesasList = await despesaService.list({ mes, ano });
+    const despesasValidas = despesasList.filter(d => d.status !== STATUS_DESPESA.CANCELADO);
 
-    const { data: movAvulsas } = await supabaseAdmin
-      .from("movimentacoes_avulsas")
-      .select("*")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano);
+    const despesas = empresaId
+      ? (despesasValidas.map(d => {
+          if (d.empresa_id && Number(d.empresa_id) === Number(empresaId)) return d;
+          if (!d.empresa_id) {
+            return {
+              ...d,
+              valor_previsto: Number(d.valor_previsto || 0) * shareEmpresa,
+              valor_pago: d.valor_pago !== null && d.valor_pago !== undefined ? Number(d.valor_pago) * shareEmpresa : null,
+              descricao: `${d.descricao} (Rateio)`,
+            };
+          }
+          return null;
+        }).filter(Boolean) as DespesaOperacional[])
+      : despesasValidas;
+
+    const todasMovAvulsas = await fluxoCaixaRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
+    const movAvulsas = empresaId
+      ? todasMovAvulsas.filter(m => Number(m.empresa_id) === Number(empresaId))
+      : todasMovAvulsas;
+
+    const transferenciasIntercompany = empresaId
+      ? await intercompanyRepository.listTransferencias()
+      : [];
 
     const mapaDias = new Map<number, {
       entradas_proj: number;
@@ -167,25 +235,25 @@ export const fluxoCaixaService = {
       });
     }
 
-    const dia07Obj = mapaDias.get(7);
-    if (dia07Obj && desembolsoSalariosDia07 > 0) {
-      dia07Obj.saidas_proj += desembolsoSalariosDia07;
-      dia07Obj.saidas_real += desembolsoSalariosDia07;
-      dia07Obj.eventos.push("Pagamento do Salário Restante dos Motoboys");
+    const diaSalariosObj = mapaDias.get(diaSalarios);
+    if (diaSalariosObj && desembolsoSalarios > 0) {
+      diaSalariosObj.saidas_proj += desembolsoSalarios;
+      diaSalariosObj.saidas_real += desembolsoSalarios;
+      diaSalariosObj.eventos.push("Pagamento do Salário Restante dos Motoboys");
     }
 
-    const dia15Obj = mapaDias.get(15);
-    if (dia15Obj && totalConveniosDia15 > 0) {
-      dia15Obj.saidas_proj += totalConveniosDia15;
-      dia15Obj.saidas_real += totalConveniosDia15;
-      dia15Obj.eventos.push("Pagamento dos Postos e Oficinas (Convênios)");
+    const diaConveniosObj = mapaDias.get(diaConvenios);
+    if (diaConveniosObj && (totalConveniosDia15Projetado > 0 || totalConveniosDia15Realizado > 0)) {
+      diaConveniosObj.saidas_proj += totalConveniosDia15Projetado;
+      diaConveniosObj.saidas_real += totalConveniosDia15Realizado;
+      diaConveniosObj.eventos.push("Pagamento dos Postos e Oficinas (Convênios)");
     }
 
-    const dia20Obj = mapaDias.get(20);
-    if (dia20Obj && (valesDia20Projetado > 0 || valesDia20Realizado > 0)) {
-      dia20Obj.saidas_proj += valesDia20Projetado;
-      dia20Obj.saidas_real += valesDia20Realizado;
-      dia20Obj.eventos.push("Pagamento do Vale (Adiantamento) e Impostos");
+    const diaValesObj = mapaDias.get(diaVales);
+    if (diaValesObj && (valesDiaValesProjetado > 0 || valesDiaValesRealizado > 0)) {
+      diaValesObj.saidas_proj += valesDiaValesProjetado;
+      diaValesObj.saidas_real += valesDiaValesRealizado;
+      diaValesObj.eventos.push("Pagamento do Vale (Adiantamento) e Impostos");
     }
 
     (despesas || []).forEach(desp => {
@@ -238,6 +306,35 @@ export const fluxoCaixaService = {
       }
     });
 
+    if (empresaId) {
+      transferenciasIntercompany.forEach(t => {
+        const dataRef = t.data_acerto || t.data_fato_gerador;
+        if (!dataRef) return;
+        const [tAno, tMes, tDia] = dataRef.split("-").map(Number);
+        if (tAno === ano && tMes === mes) {
+          const diaObj = mapaDias.get(tDia);
+          if (diaObj) {
+            const valor = Number(t.valor || 0);
+            if (Number(t.empresa_credora_id) === Number(empresaId)) {
+              diaObj.entradas_proj += valor;
+              if (t.status === "COMPENSADO") {
+                diaObj.entradas_real += valor;
+              }
+              const nomeDevedora = t.empresa_devedora?.nome_fantasia || "Empresa do Grupo";
+              diaObj.eventos.push(`[ACERTO INTERCOMPANY] Entrada de ${nomeDevedora} (R$ ${valor.toFixed(2)})`);
+            } else if (Number(t.empresa_devedora_id) === Number(empresaId)) {
+              diaObj.saidas_proj += valor;
+              if (t.status === "COMPENSADO") {
+                diaObj.saidas_real += valor;
+              }
+              const nomeCredora = t.empresa_credora?.nome_fantasia || "Empresa do Grupo";
+              diaObj.eventos.push(`[ACERTO INTERCOMPANY] Saída para ${nomeCredora} (R$ ${valor.toFixed(2)})`);
+            }
+          }
+        }
+      });
+    }
+
     let saldoProjetadoAcum = saldoInicial;
     let saldoRealizadoAcum = saldoInicial;
 
@@ -275,6 +372,7 @@ export const fluxoCaixaService = {
 
     return {
       periodo: { mes, ano },
+      empresa_id: empresaId || null,
       saldo_inicial: parseFloat(saldoInicial.toFixed(2)),
       saldo_retido_convenios: parseFloat(saldoRetidoConvenios.toFixed(2)),
       total_entradas_projetadas: parseFloat(totalEntradasProjetadas.toFixed(2)),
@@ -284,22 +382,20 @@ export const fluxoCaixaService = {
       saldo_final_projetado: parseFloat(saldoProjetadoAcum.toFixed(2)),
       saldo_final_realizado: parseFloat(saldoRealizadoAcum.toFixed(2)),
       curva_diaria: curvaDiaria,
+      config_dias: {
+        dia_salarios: diaSalarios,
+        dia_convenios: diaConvenios,
+        dia_vales: diaVales,
+      },
     };
   },
 
   async setSaldoInicial(mes: number, ano: number, saldoInicial: number, fechadoPor?: string) {
-    const { data: updated, error } = await supabaseAdmin
-      .from("fechamentos_caixa_mensal")
-      .upsert({
-        mes,
-        ano,
-        saldo_inicial_consolidado: saldoInicial,
-        fechado_por: fechadoPor || null,
-      }, { onConflict: "mes,ano" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return updated;
+    return fluxoCaixaRepository.upsertFechamentoCaixa({
+      mes,
+      ano,
+      saldo_inicial_consolidado: saldoInicial,
+      fechado_por: fechadoPor || null,
+    });
   },
 };

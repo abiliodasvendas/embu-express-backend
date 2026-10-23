@@ -1,0 +1,4 @@
+-- --- MIGRATION: REMOVE COMPROVANTE URL FROM LOTES RECEBIMENTO ---
+-- Timestamp: 20261021190000
+
+ALTER TABLE public.lotes_recebimento DROP COLUMN IF EXISTS comprovante_url;

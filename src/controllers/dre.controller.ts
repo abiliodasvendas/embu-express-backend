@@ -4,13 +4,14 @@ import { z } from "zod";
 
 export const dreController = {
   async get(request: FastifyRequest, reply: FastifyReply) {
-    const { mes, ano, empresa_id } = z.object({
+    const { mes, ano, empresa_id, tipo_visao } = z.object({
       mes: z.coerce.number().int().min(1).max(12),
       ano: z.coerce.number().int().min(2020),
       empresa_id: z.coerce.number().optional(),
+      tipo_visao: z.enum(["realizado", "projetado"]).optional().default("projetado"),
     }).parse(request.query);
 
-    const result = await dreService.getDRE(mes, ano, empresa_id);
+    const result = await dreService.getDRE(mes, ano, empresa_id, tipo_visao);
     return reply.send(result);
   },
 };

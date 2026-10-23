@@ -16,8 +16,12 @@ export const clientService = {
     async createClient(data: CreateClientDTO): Promise<Client> {
         if (!data.nome_fantasia) throw new AppError(messages.cliente.erro.nomeObrigatorio, 400);
 
+        const valorFinal = data.valor_contrato_mensal ?? data.valor_base ?? 0;
         const clientData = {
             ...data,
+            tipo_cobranca: data.tipo_cobranca || 'FIXO_MENSAL',
+            valor_contrato_mensal: valorFinal,
+            valor_base: valorFinal,
             nome_fantasia: cleanString(data.nome_fantasia),
             ativo: data.ativo ?? true,
         };
@@ -43,6 +47,11 @@ export const clientService = {
 
         const clientData: Partial<Client> = { ...data } as Partial<Client>;
         if (data.nome_fantasia) clientData.nome_fantasia = cleanString(data.nome_fantasia);
+        if (data.valor_contrato_mensal !== undefined || data.valor_base !== undefined) {
+            const valorFinal = data.valor_contrato_mensal ?? data.valor_base ?? 0;
+            clientData.valor_contrato_mensal = valorFinal;
+            clientData.valor_base = valorFinal;
+        }
 
         const { data: updated, error } = await supabaseAdmin
             .from("clientes")
@@ -71,7 +80,7 @@ export const clientService = {
     async getClient(id: number): Promise<Client> {
         const { data, error } = await supabaseAdmin
             .from("clientes")
-            .select("*, unidades:unidades_cliente(*)")
+            .select("*, unidades:unidades_cliente(*), empresa_emissora_padrao:empresas(*)")
             .eq("id", id)
             .single();
         if (error) throw error;
@@ -81,7 +90,7 @@ export const clientService = {
     async listClients(filtros?: ListClientDTO): Promise<Client[]> {
         let query = supabaseAdmin
             .from("clientes")
-            .select("*")
+            .select("*, empresa_emissora_padrao:empresas(*)")
             .order("nome_fantasia", { ascending: true });
 
         if (filtros?.searchTerm) {

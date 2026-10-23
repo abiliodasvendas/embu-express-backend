@@ -5,9 +5,6 @@ import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { PERMISSIONS } from "../constants/permissions.enum.js";
 
 export async function convenioRoutes(fastify: FastifyInstance) {
-    // --------------------------------------------------
-    // ROTAS PÚBLICAS (PARCEIRO VIA LINK/TOKEN)
-    // --------------------------------------------------
     fastify.get("/public/:token", convenioController.getPublicInfo);
     fastify.get("/public/:token/colaboradores", convenioController.listColaboradoresPublic);
     fastify.get("/public/:token/colaboradores/:colaboradorId/elegibilidade", convenioController.checkElegibilidadePublic);
@@ -16,12 +13,11 @@ export async function convenioRoutes(fastify: FastifyInstance) {
     fastify.put("/public/:token/lancamentos/:id", convenioController.updateLancamento);
     fastify.delete("/public/:token/lancamentos/:id", convenioController.deleteLancamento);
 
-    // --------------------------------------------------
-    // ROTAS ADMINISTRATIVAS (EMBU EXPRESS)
-    // --------------------------------------------------
     fastify.register(async function (protectedRoutes) {
         protectedRoutes.get("/", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioController.list);
         protectedRoutes.get("/resumo-geral", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioAuditoriaController.getResumoGeral);
+        protectedRoutes.post("/liquidar-fatura", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.EDITAR)] }, convenioAuditoriaController.liquidarFatura);
+
         protectedRoutes.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioController.get);
         protectedRoutes.get("/:id/lancamentos", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioController.listLancamentos);
         protectedRoutes.get("/:id/auditoria", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioAuditoriaController.getAuditoria);
@@ -34,7 +30,6 @@ export async function convenioRoutes(fastify: FastifyInstance) {
         protectedRoutes.post("/:id/fatura-fornecedor", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.EDITAR)] }, convenioAuditoriaController.salvarFatura);
         protectedRoutes.patch("/:id/fatura-fornecedor/:faturaId/status", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.EDITAR)] }, convenioAuditoriaController.atualizarStatus);
 
-        // Bloqueios de Convênios
         protectedRoutes.get("/bloqueios", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioController.listAllBloqueios);
         protectedRoutes.get("/colaboradores/:colaboradorId/bloqueios", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.VER)] }, convenioController.getBloqueiosColaborador);
         protectedRoutes.put("/colaboradores/:colaboradorId/bloqueios", { preHandler: [verifyPermissao(PERMISSIONS.CONVENIOS.EDITAR)] }, convenioController.salvarBloqueiosColaborador);

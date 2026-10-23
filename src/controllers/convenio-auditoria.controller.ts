@@ -3,6 +3,7 @@ import { z } from "zod";
 import { convenioAuditoriaService } from "../services/convenio-auditoria.service.js";
 import {
   faturaFornecedorConvenioSchema,
+  liquidarFaturaConvenioSchema,
   updateStatusFaturaFornecedorSchema,
 } from "../schemas/convenio-auditoria.schema.js";
 
@@ -42,6 +43,13 @@ export const convenioAuditoriaController = {
 
     const userId = request.user?.id;
     const fatura = await convenioAuditoriaService.salvarFaturaFornecedor(data, userId);
+    return reply.status(200).send(fatura);
+  },
+
+  async liquidarFatura(request: AuthenticatedRequest, reply: FastifyReply) {
+    const data = liquidarFaturaConvenioSchema.parse(request.body);
+    const userId = request.user?.id;
+    const fatura = await convenioAuditoriaService.liquidarFaturaFornecedor(data, userId);
     return reply.status(200).send(fatura);
   },
 

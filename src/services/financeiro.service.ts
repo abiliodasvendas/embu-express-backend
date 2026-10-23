@@ -50,12 +50,7 @@ function formatFechamento<T extends { data_fechamento?: string; data_pagamento?:
 
 interface DashboardLoteCacheItem {
     timestamp: number;
-    data: {
-        totalFolha: number;
-        valorPago: number;
-        restaPagar: number;
-        pendentesCount: number;
-    };
+    data: DashboardLoteResultado;
 }
 
 const dashboardLoteCache = new Map<string, DashboardLoteCacheItem>();
@@ -511,7 +506,7 @@ export const financeiroService = {
     /**
      * Calcula dados agregados do dashboard financeiro para todos os colaboradores no mes/ano em lote.
      */
-    async getDashboardLote(mes: number, ano: number) {
+    async getDashboardLote(mes: number, ano: number): Promise<DashboardLoteResultado> {
         const cacheKey = `${mes}-${ano}`;
         const cached = dashboardLoteCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < DASHBOARD_CACHE_TTL_MS) {
@@ -1025,4 +1020,6 @@ export const financeiroService = {
         });
     }
 };
+
+
 

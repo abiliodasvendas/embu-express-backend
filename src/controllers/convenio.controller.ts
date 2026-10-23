@@ -12,7 +12,8 @@ import {
 
 export const convenioController = {
     async list(request: FastifyRequest, reply: FastifyReply) {
-        const result = await convenioService.listConvenios();
+        const { ativo } = z.object({ ativo: z.string().optional() }).parse(request.query);
+        const result = await convenioService.listConvenios(ativo);
         return reply.send(result);
     },
 

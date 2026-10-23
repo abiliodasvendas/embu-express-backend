@@ -15,7 +15,7 @@ export const despesaController = {
   },
 
   async get(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const result = await despesaService.getById(id);
     return reply.send(result);
   },
@@ -28,20 +28,20 @@ export const despesaController = {
   },
 
   async update(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const data = updateDespesaOperacionalSchema.parse(request.body);
     const result = await despesaService.update(id, data);
     return reply.send(result);
   },
 
   async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     await despesaService.delete(id);
     return reply.status(204).send();
   },
 
   async marcarPaga(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const body = z.object({
       data_pagamento: z.string().min(1),
       valor_pago: z.number().nonnegative().optional(),
@@ -52,7 +52,7 @@ export const despesaController = {
   },
 
   async adiar(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const result = await despesaService.adiarDespesa(id);
     return reply.send(result);
   },

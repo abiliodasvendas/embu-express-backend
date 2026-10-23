@@ -6,8 +6,16 @@ export const tipoMovimentacaoAvulsaEnum = z.enum([
 ]);
 
 export const categoriaMovimentacaoAvulsaEnum = z.enum([
-  "CLIENTE_A_VISTA",
+  "FRETE_ESPORADICO",
   "RENDIMENTO_APLICACAO",
+  "REEMBOLSO_CLIENTE",
+  "DOACAO_APORTE",
+  "OUTRAS_ENTRADAS",
+  "DESPESA_OPERACIONAL_AVULSA",
+  "REEMBOLSO_DESPESA",
+  "TARIFA_BANCARIA",
+  "OUTRAS_SAIDAS",
+  "CLIENTE_A_VISTA",
   "REEMBOLSO",
   "OUTRAS_RECEITAS",
   "OUTRAS_DESPESAS",

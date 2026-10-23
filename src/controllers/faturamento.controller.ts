@@ -5,6 +5,7 @@ import {
   updateFaturaClienteSchema,
   sugestaoMedicaoQuerySchema,
   loteRecebimentoSchema,
+  liquidarFaturaIndividualSchema,
   faturaStatusEnum,
 } from "../schemas/faturamento.schema.js";
 import { z } from "zod";
@@ -23,6 +24,8 @@ export const faturamentoController = {
       query.cliente_id,
       query.mes,
       query.ano,
+      query.tipo_periodo,
+      query.numero_periodo,
       query.quinzena
     );
     return reply.send(result);
@@ -33,6 +36,8 @@ export const faturamentoController = {
       mes: z.coerce.number().optional(),
       ano: z.coerce.number().optional(),
       quinzena: z.coerce.number().optional(),
+      tipo_periodo: z.string().optional(),
+      numero_periodo: z.coerce.number().optional(),
       empresa_id: z.coerce.number().optional(),
       cliente_id: z.coerce.number().optional(),
       status: faturaStatusEnum.optional(),
@@ -43,7 +48,7 @@ export const faturamentoController = {
   },
 
   async get(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const result = await faturamentoService.getFaturaById(id);
     return reply.send(result);
   },
@@ -56,16 +61,24 @@ export const faturamentoController = {
   },
 
   async update(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const data = updateFaturaClienteSchema.parse(request.body);
     const result = await faturamentoService.updateFatura(id, data);
     return reply.send(result);
   },
 
   async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     await faturamentoService.deleteFatura(id);
     return reply.status(204).send();
+  },
+
+  async liquidarIndividual(request: AuthenticatedRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const data = liquidarFaturaIndividualSchema.parse(request.body);
+    const userId = request.user?.id;
+    const result = await faturamentoService.liquidarFaturaIndividual(id, data, userId);
+    return reply.status(200).send(result);
   },
 
   async processarRecebimentoLote(request: AuthenticatedRequest, reply: FastifyReply) {
