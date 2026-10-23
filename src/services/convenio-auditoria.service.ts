@@ -2,6 +2,7 @@ import { AppError } from "../errors/AppError.js";
 import {
   AuditoriaConvenioResultado,
   FaturaFornecedorConvenio,
+  FaturaFornecedorPagamento,
   LancamentoConvenio,
   StatusFaturaFornecedorConvenio,
   ConvenioResumoItem,
@@ -160,52 +161,60 @@ export const convenioAuditoriaService = {
     criadoPor?: string
   ): Promise<FaturaFornecedorConvenio> {
     const faturaId = payload.fatura_id;
+    let fatura: FaturaFornecedorConvenio | null = null;
 
     if (faturaId && !faturaId.startsWith("prev-")) {
-      return convenioAuditoriaRepository.updateFatura(faturaId, {
-        valor_total_fatura: payload.valor_total_fatura,
-        valor_pago: payload.valor_pago,
+      fatura = await convenioAuditoriaRepository.getFaturaById(faturaId);
+    }
+
+    if (!fatura) {
+      fatura = await convenioAuditoriaRepository.getFaturaPorCompetencia(
+        payload.convenio_id,
+        payload.mes_competencia,
+        payload.ano_competencia
+      );
+    }
+
+    if (!fatura) {
+      fatura = await convenioAuditoriaRepository.insertFatura({
+        convenio_id: payload.convenio_id,
+        mes_competencia: payload.mes_competencia,
+        ano_competencia: payload.ano_competencia,
         data_vencimento: payload.data_vencimento,
-        data_pagamento: payload.data_pagamento,
+        valor_total_fatura: payload.valor_total_fatura,
+        valor_pago: 0,
+        status: "PENDENTE",
         empresa_id: payload.empresa_id,
         conta_bancaria_id: payload.conta_bancaria_id,
-        status: "PAGA",
-        observacoes: payload.observacoes || null,
+        criado_por: criadoPor || null,
       });
     }
 
-    const existente = await convenioAuditoriaRepository.getFaturaPorCompetencia(
-      payload.convenio_id,
-      payload.mes_competencia,
-      payload.ano_competencia
-    );
-
-    if (existente) {
-      return convenioAuditoriaRepository.updateFatura(existente.id, {
-        valor_total_fatura: payload.valor_total_fatura,
-        valor_pago: payload.valor_pago,
-        data_vencimento: payload.data_vencimento,
-        data_pagamento: payload.data_pagamento,
-        empresa_id: payload.empresa_id,
-        conta_bancaria_id: payload.conta_bancaria_id,
-        status: "PAGA",
-        observacoes: payload.observacoes || null,
-      });
-    }
-
-    return convenioAuditoriaRepository.insertFatura({
-      convenio_id: payload.convenio_id,
-      mes_competencia: payload.mes_competencia,
-      ano_competencia: payload.ano_competencia,
-      data_vencimento: payload.data_vencimento,
-      valor_total_fatura: payload.valor_total_fatura,
+    await convenioAuditoriaRepository.createPagamento({
+      fatura_fornecedor_id: fatura.id,
+      conta_bancaria_id: payload.conta_bancaria_id,
+      empresa_id: payload.empresa_id,
+      data_pagamento: payload.data_pagamento,
       valor_pago: payload.valor_pago,
+      observacao: payload.observacoes || null,
+      criado_por: criadoPor || null,
+    });
+
+    const valorPagoAtual = Number(fatura.valor_pago || 0);
+    const novoValorPago = parseFloat((valorPagoAtual + payload.valor_pago).toFixed(2));
+    const valorTotalFatura = Number(payload.valor_total_fatura || fatura.valor_total_fatura);
+    const novoStatus: StatusFaturaFornecedorConvenio =
+      novoValorPago >= valorTotalFatura ? "PAGA" : "PAGO_PARCIAL";
+
+    return convenioAuditoriaRepository.updateFatura(fatura.id, {
+      valor_total_fatura: valorTotalFatura,
+      valor_pago: novoValorPago,
+      data_vencimento: payload.data_vencimento,
       data_pagamento: payload.data_pagamento,
       empresa_id: payload.empresa_id,
       conta_bancaria_id: payload.conta_bancaria_id,
-      status: "PAGA",
-      observacoes: payload.observacoes || null,
-      criado_por: criadoPor || null,
+      status: novoStatus,
+      observacoes: payload.observacoes || fatura.observacoes || null,
     });
   },
 
@@ -346,6 +355,7 @@ export const convenioAuditoriaService = {
           valor_pago: fatura.valor_pago ? Number(fatura.valor_pago) : null,
           data_pagamento: fatura.data_pagamento || null,
           is_previsao: false,
+          pagamentos: (fatura.pagamentos || []) as FaturaFornecedorPagamento[],
         };
       } else if (totalConsumido > 0) {
         const mesVenc = mes === 12 ? 1 : mes + 1;
@@ -364,6 +374,7 @@ export const convenioAuditoriaService = {
           valor_pago: null,
           data_pagamento: null,
           is_previsao: true,
+          pagamentos: [],
         };
       }
 

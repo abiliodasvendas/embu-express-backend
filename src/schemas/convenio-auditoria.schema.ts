@@ -6,7 +6,7 @@ export const faturaFornecedorConvenioSchema = z.object({
   ano_competencia: z.number().int().min(2020),
   data_vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar no formato YYYY-MM-DD"),
   valor_total_fatura: z.number().nonnegative("Valor da fatura deve ser positivo"),
-  status: z.enum(["PENDENTE", "PAGA"]).default("PENDENTE"),
+  status: z.enum(["PENDENTE", "PAGO_PARCIAL", "PAGA", "CANCELADA"]).default("PENDENTE"),
   empresa_id: z.number().int().positive().nullable().optional(),
   conta_bancaria_id: z.string().uuid().nullable().optional(),
   data_pagamento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar no formato YYYY-MM-DD").nullable().optional(),
@@ -20,7 +20,7 @@ export const updateFaturaFornecedorConvenioSchema = faturaFornecedorConvenioSche
 });
 
 export const updateStatusFaturaFornecedorSchema = z.object({
-  status: z.enum(["PENDENTE", "PAGA"]),
+  status: z.enum(["PENDENTE", "PAGO_PARCIAL", "PAGA", "CANCELADA"]),
   observacoes: z.string().nullable().optional(),
 });
 

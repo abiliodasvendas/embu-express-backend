@@ -549,7 +549,30 @@ export interface AlocacaoTemporaria {
   unidade?: Unidade;
 }
 
-export type StatusFaturaFornecedorConvenio = 'PENDENTE' | 'PAGA';
+export type StatusFaturaFornecedorConvenio =
+  | 'PENDENTE'
+  | 'PAGO_PARCIAL'
+  | 'PAGA'
+  | 'CANCELADA'
+  | 'EM_AUDITORIA'
+  | 'APROVADA'
+  | 'GLOSADA';
+
+export interface FaturaFornecedorPagamento {
+  id: string;
+  fatura_fornecedor_id: string;
+  conta_bancaria_id?: string | null;
+  empresa_id?: number | null;
+  data_pagamento: string;
+  valor_pago: number;
+  observacao?: string | null;
+  comprovante_url?: string | null;
+  criado_por?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  conta_bancaria?: ContaBancaria;
+  empresa?: Empresa;
+}
 
 export interface FaturaFornecedorConvenio {
   id: string;
@@ -569,6 +592,7 @@ export interface FaturaFornecedorConvenio {
   created_at?: string;
   updated_at?: string;
   convenio?: Convenio;
+  pagamentos?: FaturaFornecedorPagamento[];
 }
 
 export interface AuditoriaConvenioResultado {
@@ -617,6 +641,7 @@ export interface ConvenioResumoItem {
     valor_pago?: number | null;
     data_pagamento?: string | null;
     is_previsao?: boolean;
+    pagamentos?: FaturaFornecedorPagamento[];
   } | null;
 }
 

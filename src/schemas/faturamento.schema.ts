@@ -60,12 +60,23 @@ export const loteRecebimentoSchema = z.object({
   itens: z.array(itemRecebimentoSchema).min(1, "Ao menos uma fatura deve ser selecionada para recebimento"),
 });
 
-export const liquidarFaturaIndividualSchema = z.object({
-  conta_bancaria_id: z.string().uuid("Conta bancária é obrigatória"),
-  data_pagamento: z.string().min(1, "Data do pagamento é obrigatória"),
-  valor_pago: z.number().positive("Valor pago deve ser maior que zero"),
-  observacao: z.string().optional().nullable(),
-});
+export const liquidarFaturaIndividualSchema = z
+  .object({
+    conta_bancaria_id: z.string().uuid("Conta bancária é obrigatória"),
+    data_pagamento: z.string().optional(),
+    data_recebimento: z.string().optional(),
+    valor_pago: z.number().positive("Valor pago deve ser maior que zero"),
+    observacao: z.string().optional().nullable(),
+  })
+  .transform((data) => ({
+    conta_bancaria_id: data.conta_bancaria_id,
+    data_pagamento:
+      data.data_pagamento ||
+      data.data_recebimento ||
+      new Date().toISOString().split("T")[0],
+    valor_pago: data.valor_pago,
+    observacao: data.observacao,
+  }));
 
 export const acertoIntercompanySchema = z.object({
   transferencia_id: z.string().uuid("ID da transferência intercompany inválido"),
