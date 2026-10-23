@@ -1,15 +1,44 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
-import { verifyAdminOnly } from "../middlewares/auth.middleware.js";
+import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { despesaController } from "../controllers/despesa.controller.js";
+import { PERMISSIONS } from "../constants/permissions.enum.js";
 
 const despesaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-  app.get("/", { preHandler: [verifyAdminOnly()] }, despesaController.list);
-  app.get("/:id", { preHandler: [verifyAdminOnly()] }, despesaController.get);
-  app.post("/", { preHandler: [verifyAdminOnly()] }, despesaController.create);
-  app.put("/:id", { preHandler: [verifyAdminOnly()] }, despesaController.update);
-  app.delete("/:id", { preHandler: [verifyAdminOnly()] }, despesaController.delete);
-  app.patch("/:id/pagar", { preHandler: [verifyAdminOnly()] }, despesaController.marcarPaga);
-  app.patch("/:id/adiar", { preHandler: [verifyAdminOnly()] }, despesaController.adiar);
+  app.get(
+    "/",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.VER)] },
+    despesaController.list
+  );
+  app.get(
+    "/:id",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.VER)] },
+    despesaController.get
+  );
+  app.post(
+    "/",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.create
+  );
+  app.put(
+    "/:id",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.update
+  );
+  app.delete(
+    "/:id",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.delete
+  );
+  app.patch(
+    "/:id/pagar",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.marcarPaga
+  );
+  app.patch(
+    "/:id/adiar",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.adiar
+  );
 };
 
 export default despesaRoutes;

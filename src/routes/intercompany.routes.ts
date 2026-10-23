@@ -1,11 +1,45 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
-import { verifyAdminOnly } from "../middlewares/auth.middleware.js";
+import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { intercompanyController } from "../controllers/intercompany.controller.js";
+import { PERMISSIONS } from "../constants/permissions.enum.js";
 
 const intercompanyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-  app.get("/", { preHandler: [verifyAdminOnly()] }, intercompanyController.list);
-  app.get("/matriz", { preHandler: [verifyAdminOnly()] }, intercompanyController.getMatrizSaldos);
-  app.post("/acerto", { preHandler: [verifyAdminOnly()] }, intercompanyController.registrarAcerto);
+  app.get(
+    "/",
+    {
+      preHandler: [
+        verifyPermissao([
+          PERMISSIONS.FATURAMENTO.VER,
+          PERMISSIONS.DESPESAS.VER,
+        ]),
+      ],
+    },
+    intercompanyController.list
+  );
+  app.get(
+    "/matriz",
+    {
+      preHandler: [
+        verifyPermissao([
+          PERMISSIONS.FATURAMENTO.VER,
+          PERMISSIONS.DESPESAS.VER,
+        ]),
+      ],
+    },
+    intercompanyController.getMatrizSaldos
+  );
+  app.post(
+    "/acerto",
+    {
+      preHandler: [
+        verifyPermissao([
+          PERMISSIONS.FATURAMENTO.EDITAR,
+          PERMISSIONS.DESPESAS.EDITAR,
+        ]),
+      ],
+    },
+    intercompanyController.registrarAcerto
+  );
 };
 
 export default intercompanyRoutes;
