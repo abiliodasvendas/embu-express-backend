@@ -1,5 +1,6 @@
 import { AppError } from "../errors/AppError.js";
 import { DespesaOperacional, CategoriaDespesa, StatusDespesa } from "../types/database.js";
+import { STATUS_DESPESA } from "../constants/financeiro.enum.js";
 import { z } from "zod";
 import { despesaOperacionalSchema, updateDespesaOperacionalSchema } from "../schemas/despesa.schema.js";
 import { despesaRepository, ListDespesasFilters } from "../repositories/despesa.repository.js";
@@ -39,7 +40,7 @@ export const despesaService = {
       valor_pago: 0,
       data_vencimento: novoVencimento,
       data_pagamento: null,
-      status: "PENDENTE",
+      status: STATUS_DESPESA.PENDENTE,
       is_holding: master.is_holding,
       recorrencia_origem_id: master.id,
       is_recorrente: true,
@@ -57,7 +58,7 @@ export const despesaService = {
     const shouldFetchRecorrentes = Boolean(
       mes &&
       ano &&
-      (!filtros.status || filtros.status === "PENDENTE")
+      (!filtros.status || filtros.status === STATUS_DESPESA.PENDENTE)
     );
 
     const [reais, recorrentesBrutas] = await Promise.all([
@@ -111,7 +112,7 @@ export const despesaService = {
         valor_pago: 0,
         data_vencimento: novoVencimento,
         data_pagamento: null,
-        status: "PENDENTE",
+        status: STATUS_DESPESA.PENDENTE,
         is_holding: rec.is_holding,
         grupo_parcelamento_id: null,
         numero_parcela: null,
@@ -167,7 +168,7 @@ export const despesaService = {
           valor_pago: i === 1 ? data.valor_pago : 0,
           data_vencimento: novoVencimento,
           data_pagamento: i === 1 ? data.data_pagamento : null,
-          status: i === 1 ? data.status : "PENDENTE",
+          status: i === 1 ? data.status : STATUS_DESPESA.PENDENTE,
           is_holding: data.is_holding,
           grupo_parcelamento_id: grupoId,
           numero_parcela: i,
@@ -237,27 +238,29 @@ export const despesaService = {
     await despesaRepository.delete(id);
   },
 
-  async marcarPaga(id: string, dataPagamento: string, valorPago?: number): Promise<DespesaOperacional> {
+  async marcarPaga(id: string, dataPagamento: string, valorPago?: number, contaBancariaId?: string): Promise<DespesaOperacional> {
     if (id.startsWith("prev_desp_")) {
       return this._materializarPrevisaoDespesa(id, {
-        status: "PAGO",
+        status: STATUS_DESPESA.PAGO,
         data_pagamento: dataPagamento,
         valor_pago: valorPago,
+        conta_bancaria_id: contaBancariaId || null,
       });
     }
     const despesa = await this.getById(id);
     const valor = valorPago !== undefined ? valorPago : despesa.valor_previsto;
 
     return despesaRepository.update(id, {
-      status: "PAGO",
+      status: STATUS_DESPESA.PAGO,
       data_pagamento: dataPagamento,
       valor_pago: valor,
+      conta_bancaria_id: contaBancariaId || despesa.conta_bancaria_id || null,
     });
   },
 
   async adiarDespesa(id: string): Promise<DespesaOperacional> {
     const exists = await despesaRepository.getById(id);
     if (!exists) throw new AppError("Despesa não encontrada", 404);
-    return despesaRepository.update(id, { status: "ADIADA" });
+    return despesaRepository.update(id, { status: STATUS_DESPESA.ADIADA });
   },
 };

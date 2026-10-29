@@ -4,6 +4,17 @@ import { contaBancariaSchema, updateContaBancariaSchema } from "../schemas/conta
 import { z } from "zod";
 
 export const contaBancariaController = {
+  async listComSaldos(request: FastifyRequest, reply: FastifyReply) {
+    const { empresa_id, mes, ano } = z.object({
+      empresa_id: z.coerce.number().optional(),
+      mes: z.coerce.number().optional(),
+      ano: z.coerce.number().optional(),
+    }).parse(request.query);
+
+    const result = await contaBancariaService.listComSaldos(empresa_id, mes, ano);
+    return reply.send(result);
+  },
+
   async list(request: FastifyRequest, reply: FastifyReply) {
     const { empresa_id } = z.object({
       empresa_id: z.coerce.number().optional(),

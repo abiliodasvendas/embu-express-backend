@@ -3,7 +3,6 @@ import {
   AuditoriaConvenioResultado,
   FaturaFornecedorConvenio,
   FaturaFornecedorPagamento,
-  LancamentoConvenio,
   StatusFaturaFornecedorConvenio,
   ConvenioResumoItem,
   ResumoGeralConveniosResultado,
@@ -14,19 +13,11 @@ import {
   LiquidarFaturaConvenioInput,
 } from "../schemas/convenio-auditoria.schema.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
+import { configuracaoService } from "./configuracao.service.js";
+import { DIA_DESEMBOLSO_CONVENIOS_PADRAO, STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
+import { convenioRegrasService } from "./convenio-regras.service.js";
 
 type FaturaFornecedorDTO = z.infer<typeof faturaFornecedorConvenioSchema>;
-
-const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";
-
-const isDavidOuMotoEmbu = (l: {
-  moto_embu: boolean;
-  colaborador_id: string | null;
-  colaborador?: { nome_completo?: string | null } | null;
-}) =>
-  l.moto_embu ||
-  l.colaborador_id === DAVID_CAITITE_ID ||
-  Boolean(l.colaborador?.nome_completo && l.colaborador.nome_completo.toUpperCase().includes("DAVID CAITIT"));
 
 export const convenioAuditoriaService = {
   async getAuditoriaMensal(
@@ -48,62 +39,51 @@ export const convenioAuditoriaService = {
       convenioAuditoriaRepository.listLancamentosAuditoria(convenioId, dataInicioMesStr, dataFimMesStr),
     ]);
 
-    const lancamentosFrotaPropria = lancamentos.filter(isDavidOuMotoEmbu);
-    const lancamentosMotoboys = lancamentos.filter((l) => !isDavidOuMotoEmbu(l) && l.colaborador_id);
-    const lancamentosSemVinculo = lancamentos.filter((l) => !isDavidOuMotoEmbu(l) && !l.colaborador_id);
-
-    const totalDescontadoMotoboys = parseFloat(
-      lancamentosMotoboys.reduce((acc, l) => acc + Number(l.valor || 0), 0).toFixed(2)
-    );
-    const totalFrotaPropria = parseFloat(
-      lancamentosFrotaPropria.reduce((acc, l) => acc + Number(l.valor || 0), 0).toFixed(2)
-    );
-    const totalSemVinculo = parseFloat(
-      lancamentosSemVinculo.reduce((acc, l) => acc + Number(l.valor || 0), 0).toFixed(2)
-    );
-    const totalGeralLancamentos = parseFloat(
-      (totalDescontadoMotoboys + totalFrotaPropria + totalSemVinculo).toFixed(2)
-    );
+    const {
+      frotaPropria: lancamentosFrotaPropria,
+      motoboys: lancamentosMotoboys,
+      semVinculo: lancamentosSemVinculo,
+      totalFrotaPropria,
+      totalMotoboys: totalDescontadoMotoboys,
+      totalSemVinculo,
+      totalGeral: totalGeralLancamentos,
+    } = convenioRegrasService.classificarLancamentosConvenio(lancamentos);
 
     const valorBaseFatura = fatura ? Number(fatura.valor_total_fatura) : totalGeralLancamentos;
 
     let faturaResultado = fatura;
     if (!faturaResultado && totalGeralLancamentos > 0) {
-      const mesVenc = mes === 12 ? 1 : mes + 1;
-      const anoVenc = mes === 12 ? ano + 1 : ano;
-      const dataVencimentoPrevisao = `${anoVenc}-${String(mesVenc).padStart(2, "0")}-15`;
-      faturaResultado = {
-        id: `prev-${convenio.id}-${mes}-${ano}`,
-        convenio_id: convenio.id,
-        mes_competencia: mes,
-        ano_competencia: ano,
-        data_vencimento: dataVencimentoPrevisao,
-        valor_total_fatura: totalGeralLancamentos,
-        status: "PENDENTE",
-        empresa_id: convenio.empresa_id || null,
-        conta_bancaria_id: convenio.conta_bancaria_id || null,
-        valor_pago: null,
-        data_pagamento: null,
-        observacoes: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        criado_por: null,
-        is_previsao: true,
-      };
+      const configDia = await configuracaoService.getConfiguracao("dia_desembolso_convenios");
+      const diaConvenios = Math.min(
+        Math.max(
+          parseInt(configDia?.valor || String(DIA_DESEMBOLSO_CONVENIOS_PADRAO), 10) ||
+            DIA_DESEMBOLSO_CONVENIOS_PADRAO,
+          1
+        ),
+        31
+      );
+      faturaResultado = convenioRegrasService.gerarFaturaPrevisao({
+        convenioId: convenio.id,
+        mes,
+        ano,
+        diaVencimento: diaConvenios,
+        valorTotal: totalGeralLancamentos,
+        empresaId: convenio.empresa_id,
+        contaBancariaId: convenio.conta_bancaria_id,
+      });
     }
 
-    const totalFaturaFornecedor = valorBaseFatura;
-    const saldoACargoEmbu = parseFloat(
-      Math.max(0, totalFaturaFornecedor - totalDescontadoMotoboys).toFixed(2)
+    const {
+      saldoACargoEmbu,
+      diferencaNaoIdentificada,
+      temRiscoDivergencia,
+      mensagemRisco,
+    } = convenioRegrasService.calcularConciliacaoFatura(
+      valorBaseFatura,
+      totalDescontadoMotoboys,
+      totalFrotaPropria,
+      totalSemVinculo
     );
-    const diferencaNaoIdentificada = parseFloat(
-      (saldoACargoEmbu - totalFrotaPropria).toFixed(2)
-    );
-
-    const temRiscoDivergencia = totalSemVinculo > 0 || Math.abs(diferencaNaoIdentificada) > 0.05;
-    const mensagemRisco = temRiscoDivergencia
-      ? `Atenção à conciliação: Foi identificada uma divergência de R$ ${Math.abs(diferencaNaoIdentificada).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} entre o saldo a cargo da Embu e as despesas da frota própria, ou lançamentos sem vínculo. Verifique os lançamentos antes da quitação.`
-      : null;
 
     return {
       convenio_id: convenio.id,
@@ -111,7 +91,7 @@ export const convenioAuditoriaService = {
       mes_competencia: mes,
       ano_competencia: ano,
       fatura_fornecedor: faturaResultado,
-      total_fatura_fornecedor: totalFaturaFornecedor,
+      total_fatura_fornecedor: valorBaseFatura,
       total_descontado_motoboys: totalDescontadoMotoboys,
       total_frota_propria: totalFrotaPropria,
       total_sem_vinculo: totalSemVinculo,
@@ -183,7 +163,7 @@ export const convenioAuditoriaService = {
         data_vencimento: payload.data_vencimento,
         valor_total_fatura: payload.valor_total_fatura,
         valor_pago: 0,
-        status: "PENDENTE",
+        status: STATUS_FATURA_CONVENIO.PENDENTE,
         empresa_id: payload.empresa_id,
         conta_bancaria_id: payload.conta_bancaria_id,
         criado_por: criadoPor || null,
@@ -204,7 +184,7 @@ export const convenioAuditoriaService = {
     const novoValorPago = parseFloat((valorPagoAtual + payload.valor_pago).toFixed(2));
     const valorTotalFatura = Number(payload.valor_total_fatura || fatura.valor_total_fatura);
     const novoStatus: StatusFaturaFornecedorConvenio =
-      novoValorPago >= valorTotalFatura ? "PAGA" : "PAGO_PARCIAL";
+      novoValorPago >= valorTotalFatura ? STATUS_FATURA_CONVENIO.PAGA : STATUS_FATURA_CONVENIO.PAGO_PARCIAL;
 
     return convenioAuditoriaRepository.updateFatura(fatura.id, {
       valor_total_fatura: valorTotalFatura,
@@ -234,11 +214,21 @@ export const convenioAuditoriaService = {
     const dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
     const dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    const [convenios, faturas, lancamentos] = await Promise.all([
+    const [convenios, faturas, lancamentos, configDiaConvenios] = await Promise.all([
       convenioAuditoriaRepository.listConveniosParaResumo(),
       convenioAuditoriaRepository.listFaturasPorCompetencia(mes, ano),
       convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioMesStr, dataFimMesStr),
+      configuracaoService.getConfiguracao("dia_desembolso_convenios"),
     ]);
+
+    const diaConveniosPadrao = Math.min(
+      Math.max(
+        parseInt(configDiaConvenios?.valor || String(DIA_DESEMBOLSO_CONVENIOS_PADRAO), 10) ||
+          DIA_DESEMBOLSO_CONVENIOS_PADRAO,
+        1
+      ),
+      31
+    );
 
     const faturasMap = new Map<string, FaturaFornecedorConvenio>();
     faturas.forEach((f) => faturasMap.set(f.convenio_id, f));
@@ -267,73 +257,29 @@ export const convenioAuditoriaService = {
     const conveniosNomeMap = new Map<string, string>();
     convenios.forEach((c) => conveniosNomeMap.set(c.id, c.nome));
 
-    const colaboradoresMap = new Map<
-      string,
-      {
-        colaborador_id: string;
-        nome_completo: string;
-        total_gasto: number;
-        quantidade_lancamentos: number;
-        convenios_utilizados: Set<string>;
-      }
-    >();
-
-    lancamentos.forEach((l) => {
-      if (l.colaborador_id && !isDavidOuMotoEmbu(l)) {
-        const cId = l.colaborador_id;
-        const nome = l.colaborador?.nome_completo || "Colaborador";
-        const convNome = conveniosNomeMap.get(l.convenio_id) || "Convênio";
-
-        if (!colaboradoresMap.has(cId)) {
-          colaboradoresMap.set(cId, {
-            colaborador_id: cId,
-            nome_completo: nome,
-            total_gasto: 0,
-            quantidade_lancamentos: 0,
-            convenios_utilizados: new Set<string>(),
-          });
-        }
-
-        const cData = colaboradoresMap.get(cId)!;
-        cData.total_gasto += Number(l.valor || 0);
-        cData.quantidade_lancamentos += 1;
-        cData.convenios_utilizados.add(convNome);
-      }
-    });
-
-    const topColaboradores = Array.from(colaboradoresMap.values())
-      .map((c) => ({
-        colaborador_id: c.colaborador_id,
-        nome_completo: c.nome_completo,
-        total_gasto: parseFloat(c.total_gasto.toFixed(2)),
-        quantidade_lancamentos: c.quantidade_lancamentos,
-        convenios_utilizados: Array.from(c.convenios_utilizados),
-      }))
-      .sort((a, b) => b.total_gasto - a.total_gasto)
-      .slice(0, 10);
+    const topColaboradores = convenioRegrasService.extrairTopColaboradores(
+      lancamentos,
+      conveniosNomeMap,
+      10
+    );
 
     const conveniosItens: ConvenioResumoItem[] = convenios.map((conv) => {
       const convLancamentos = lancamentosPorConvenio.get(conv.id) || [];
       const fatura = faturasMap.get(conv.id);
 
-      let totalConsumido = 0;
-      let totalMotoboys = 0;
-      let totalMotoEmbuDavid = 0;
-      let totalSemVinculo = 0;
-      const distinctColabs = new Set<string>();
+      const {
+        motoboys,
+        totalFrotaPropria: totalMotoEmbuDavid,
+        totalMotoboys,
+        totalSemVinculo,
+        totalGeral: totalConsumido,
+      } = convenioRegrasService.classificarLancamentosConvenio(convLancamentos);
 
-      convLancamentos.forEach((l) => {
-        const v = Number(l.valor || 0);
-        totalConsumido += v;
-        if (isDavidOuMotoEmbu(l)) {
-          totalMotoEmbuDavid += v;
-        } else if (l.colaborador_id) {
-          totalMotoboys += v;
-          distinctColabs.add(l.colaborador_id);
-        } else {
-          totalSemVinculo += v;
-        }
-      });
+      const distinctColabs = new Set(
+        motoboys
+          .map((m) => m.colaborador_id)
+          .filter((id): id is string => Boolean(id))
+      );
 
       globalConsumido += totalConsumido;
       globalMotoboys += totalMotoboys;
@@ -358,19 +304,24 @@ export const convenioAuditoriaService = {
           pagamentos: (fatura.pagamentos || []) as FaturaFornecedorPagamento[],
         };
       } else if (totalConsumido > 0) {
-        const mesVenc = mes === 12 ? 1 : mes + 1;
-        const anoVenc = mes === 12 ? ano + 1 : ano;
-        const dataVencimentoPrevisao = `${anoVenc}-${String(mesVenc).padStart(2, "0")}-15`;
-        const faturaValor = parseFloat(totalConsumido.toFixed(2));
-        globalFaturas += faturaValor;
+        const faturaPrevisao = convenioRegrasService.gerarFaturaPrevisao({
+          convenioId: conv.id,
+          mes,
+          ano,
+          diaVencimento: diaConveniosPadrao,
+          valorTotal: totalConsumido,
+          empresaId: conv.empresa_id,
+          contaBancariaId: conv.conta_bancaria_id,
+        });
+        globalFaturas += faturaPrevisao.valor_total_fatura;
         faturaItem = {
-          id: `prev-${conv.id}-${mes}-${ano}`,
-          valor_total_fatura: faturaValor,
-          data_vencimento: dataVencimentoPrevisao,
-          status: "PENDENTE",
+          id: faturaPrevisao.id,
+          valor_total_fatura: faturaPrevisao.valor_total_fatura,
+          data_vencimento: faturaPrevisao.data_vencimento,
+          status: STATUS_FATURA_CONVENIO.PENDENTE,
           saldo_embu: parseFloat(totalMotoEmbuDavid.toFixed(2)),
-          empresa_id: conv.empresa_id || null,
-          conta_bancaria_id: conv.conta_bancaria_id || null,
+          empresa_id: faturaPrevisao.empresa_id,
+          conta_bancaria_id: faturaPrevisao.conta_bancaria_id,
           valor_pago: null,
           data_pagamento: null,
           is_previsao: true,

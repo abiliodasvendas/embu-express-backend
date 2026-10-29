@@ -3,6 +3,8 @@ import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.
 import { financeiroService } from "./financeiro.service.js";
 import { faturamentoService } from "./faturamento.service.js";
 import { despesaService } from "./despesa.service.js";
+import { calcularShareHolding } from "../utils/rateio-corporativo.helper.js";
+import { convenioRegrasService } from "./convenio-regras.service.js";
 import {
   CATEGORIA_DESPESA,
   STATUS_DESPESA,
@@ -60,34 +62,11 @@ export const dreService = {
     const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-    const faturasList = await faturamentoService.listFaturas({ mes, ano });
-    const todasFaturasHolding = faturasList.filter(f => {
-      if (f.status === STATUS_FATURA.CANCELADA) return false;
-      if (tipoVisao === "realizado" && f.is_previsao) return false;
-      return true;
-    });
-
-    const totalFaturamentoHolding = (todasFaturasHolding || []).reduce((acc, f) => {
-      const v = tipoVisao === "realizado" && f.valor_pago && f.status === STATUS_FATURA.LIQUIDADA
-        ? Number(f.valor_pago)
-        : Number(f.valor_faturado || 0);
-      return acc + v;
-    }, 0);
-
-    const faturasEmpresa = empresaId
-      ? (todasFaturasHolding || []).filter(f => Number(f.empresa_id) === Number(empresaId))
-      : (todasFaturasHolding || []);
-
-    const faturamentoBruto = faturasEmpresa.reduce((acc, f) => {
-      const v = tipoVisao === "realizado" && f.valor_pago && f.status === STATUS_FATURA.LIQUIDADA
-        ? Number(f.valor_pago)
-        : Number(f.valor_faturado || 0);
-      return acc + v;
-    }, 0);
-
-    const shareEmpresa = totalFaturamentoHolding > 0 && empresaId
-      ? faturamentoBruto / totalFaturamentoHolding
-      : 1;
+    const {
+      shareEmpresa,
+      faturamentoBrutoEmpresa: faturamentoBruto,
+      totalFaturamentoHolding,
+    } = await calcularShareHolding(empresaId, mes, ano, tipoVisao);
 
     let empresaNome = "Consolidado (Holding)";
     if (empresaId) {
@@ -104,40 +83,19 @@ export const dreService = {
       custoPessoalFolha = custoPessoalFolha * shareEmpresa;
     }
 
-    const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";
     const [conveniosLancamentos, faturasConvenios] = await Promise.all([
       convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioStr, dataFimStr),
       convenioAuditoriaRepository.listFaturasPorCompetencia(mes, ano),
     ]);
 
-    let manutencaoFrotaPropria = 0;
-    (conveniosLancamentos || []).forEach(c => {
-      const isDavidOuMotoEmbu = c.moto_embu || c.colaborador_id === DAVID_CAITITE_ID;
-      if (isDavidOuMotoEmbu) {
-        manutencaoFrotaPropria += Number(c.valor || 0);
-      }
+    const manutencaoFrotaPropria = convenioRegrasService.calcularManutencaoFrotaPropria({
+      conveniosLancamentos,
+      faturasConvenios,
+      tipoVisao,
+      empresaId,
+      shareEmpresa,
+      totalFaturamentoHolding,
     });
-
-    const totalMotoboysLancamentos = (conveniosLancamentos || [])
-      .filter(c => !c.moto_embu && c.colaborador_id !== DAVID_CAITITE_ID && c.colaborador_id)
-      .reduce((acc, c) => acc + Number(c.valor || 0), 0);
-
-    const totalFaturas = (faturasConvenios || []).reduce((acc, f) => {
-      if (tipoVisao === "realizado" && f.status !== "PAGA") return acc;
-      const v = f.valor_pago && f.status === "PAGA" ? Number(f.valor_pago) : Number(f.valor_total_fatura || 0);
-      return acc + v;
-    }, 0);
-
-    if (totalFaturas > 0) {
-      const saldoExcedenteFatura = Math.max(0, totalFaturas - totalMotoboysLancamentos);
-      if (saldoExcedenteFatura > manutencaoFrotaPropria) {
-        manutencaoFrotaPropria = saldoExcedenteFatura;
-      }
-    }
-
-    if (empresaId && totalFaturamentoHolding > 0) {
-      manutencaoFrotaPropria = manutencaoFrotaPropria * shareEmpresa;
-    }
 
     const movAvulsas = await dreRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
 
@@ -169,7 +127,7 @@ export const dreService = {
     const despesasList = await despesaService.list({ mes, ano });
     const despesas = despesasList.filter(d => {
       if (d.status === STATUS_DESPESA.CANCELADO) return false;
-      if (tipoVisao === "realizado" && d.status !== STATUS_DESPESA.PAGO) return false;
+      if (tipoVisao === "realizado" && d.status !== STATUS_DESPESA.PAGO && (!d.valor_pago || Number(d.valor_pago) <= 0)) return false;
       return true;
     });
 
@@ -185,7 +143,9 @@ export const dreService = {
     let despesasFinanceiras = 0;
 
     (despesas || []).forEach(d => {
-      const valor = Number(d.valor_pago && d.status === STATUS_DESPESA.PAGO ? d.valor_pago : d.valor_previsto);
+      const valor = tipoVisao === "realizado"
+        ? Number(d.valor_pago || (d.status === STATUS_DESPESA.PAGO ? d.valor_previsto : 0) || 0)
+        : Number(d.valor_previsto || 0);
       const isDestaEmpresa = empresaId ? Number(d.empresa_id) === Number(empresaId) : true;
       const isGeralHolding = !d.empresa_id || d.is_holding;
 

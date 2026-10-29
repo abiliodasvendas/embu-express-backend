@@ -500,6 +500,8 @@ export interface MovimentacaoAvulsa {
 export interface DespesaOperacional {
   id: string;
   empresa_id?: number | null;
+  conta_bancaria_id?: string | null;
+  lote_pagamento_id?: string | null;
   categoria: CategoriaDespesa;
   descricao: string;
   mes_competencia: number;
@@ -521,6 +523,7 @@ export interface DespesaOperacional {
   created_at?: string;
   updated_at?: string;
   empresa?: Empresa;
+  conta_bancaria?: ContaBancaria;
 }
 
 export interface FechamentoCaixaMensal {
@@ -584,6 +587,7 @@ export interface FaturaFornecedorConvenio {
   status: StatusFaturaFornecedorConvenio;
   empresa_id?: number | null;
   conta_bancaria_id?: string | null;
+  lote_pagamento_id?: string | null;
   data_pagamento?: string | null;
   valor_pago?: number | null;
   observacoes?: string | null;
@@ -592,7 +596,21 @@ export interface FaturaFornecedorConvenio {
   created_at?: string;
   updated_at?: string;
   convenio?: Convenio;
+  empresa?: Empresa;
+  conta_bancaria?: ContaBancaria;
   pagamentos?: FaturaFornecedorPagamento[];
+}
+
+export interface LotePagamento {
+  id: string;
+  conta_bancaria_origem_id: string;
+  data_pagamento: string;
+  valor_total_pago: number;
+  observacao?: string | null;
+  criado_por?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  conta_bancaria_origem?: ContaBancaria;
 }
 
 export interface AuditoriaConvenioResultado {

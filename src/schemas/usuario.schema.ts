@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { onlyNumbers } from "../utils/utils.js";
+import { optionalIsoDate } from "./auth.schema.js";
 
 export const createUsuarioSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -15,7 +16,7 @@ export const createUsuarioSchema = z.object({
   empresa_id: z.number().optional().nullable(),
   cliente_id: z.number().optional().nullable(),
   rg: z.string().optional().nullable(),
-  data_nascimento: z.string().optional().nullable(),
+  data_nascimento: optionalIsoDate,
   nome_mae: z.string().optional().nullable(),
   endereco_completo: z.string().min(5, "Endereço obrigatório"),
   moto_modelo: z.string().optional().nullable(),
@@ -24,8 +25,7 @@ export const createUsuarioSchema = z.object({
   moto_ano: z.string().optional().nullable(),
   cnh_registro: z.string().optional().nullable(),
   cnh_categoria: z.string().optional().nullable(),
-  cnh_vencimento: z.string().optional().nullable(),
-  // Campos de controle/metadados que podem vir do front
+  cnh_vencimento: optionalIsoDate,
   links: z.array(z.object({
     id: z.number().optional(),
     cliente_id: z.number().optional(),

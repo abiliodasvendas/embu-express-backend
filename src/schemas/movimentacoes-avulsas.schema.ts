@@ -23,7 +23,7 @@ export const categoriaMovimentacaoAvulsaEnum = z.enum([
 
 export const movimentacaoAvulsaSchema = z.object({
   empresa_id: z.number().int().positive("Empresa é obrigatória"),
-  conta_bancaria_id: z.string().uuid("Conta bancária inválida").optional().nullable(),
+  conta_bancaria_id: z.string().uuid("Conta bancária é obrigatória"),
   tipo_movimentacao: tipoMovimentacaoAvulsaEnum,
   categoria: categoriaMovimentacaoAvulsaEnum,
   descricao: z.string().min(1, "Descrição é obrigatória"),

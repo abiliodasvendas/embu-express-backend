@@ -41,6 +41,18 @@ export const STATUS_FATURA = {
 
 export type StatusFaturaType = typeof STATUS_FATURA[keyof typeof STATUS_FATURA];
 
+export const STATUS_FATURA_CONVENIO = {
+    PENDENTE: 'PENDENTE',
+    PAGO_PARCIAL: 'PAGO_PARCIAL',
+    PAGA: 'PAGA',
+    CANCELADA: 'CANCELADA',
+    EM_AUDITORIA: 'EM_AUDITORIA',
+    APROVADA: 'APROVADA',
+    GLOSADA: 'GLOSADA',
+} as const;
+
+export type StatusFaturaConvenioType = typeof STATUS_FATURA_CONVENIO[keyof typeof STATUS_FATURA_CONVENIO];
+
 export const PERIODICIDADE_FATURAMENTO = {
     QUINZENAL: 'QUINZENAL',
     MENSAL: 'MENSAL',
@@ -126,3 +138,7 @@ export type NivelRiscoValeType = typeof NIVEL_RISCO_VALE[keyof typeof NIVEL_RISC
 export const CLIENTES_ESPECIAIS = {
     INTERNO: 'INTERNO',
 } as const;
+
+export const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";
+export const DIA_DESEMBOLSO_CONVENIOS_PADRAO = 16;
+

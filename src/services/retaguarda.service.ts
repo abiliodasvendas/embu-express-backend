@@ -6,6 +6,7 @@ import { alocacaoTemporariaSchema } from "../schemas/retaguarda.schema.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { ROLES } from "../constants/permissions.enum.js";
 import { NIVEL_RISCO_VALE, CLIENTES_ESPECIAIS, NivelRiscoValeType } from "../constants/financeiro.enum.js";
+import { configuracaoService } from "./configuracao.service.js";
 
 type CreateAlocacaoDTO = z.infer<typeof alocacaoTemporariaSchema>;
 
@@ -180,8 +181,11 @@ export const retaguardaService = {
   },
 
   async getAlertaRiscoVales(mes: number, ano: number): Promise<AlertaRiscoValeItem[]> {
+    const configVales = await configuracaoService.getConfiguracao("dia_desembolso_vales");
+    const diaVales = Math.min(Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1), 31);
+
     const dataInicioQuinzena = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    const dataFimQuinzena = `${ano}-${String(mes).padStart(2, '0')}-15`;
+    const dataFimQuinzena = `${ano}-${String(mes).padStart(2, '0')}-${String(diaVales).padStart(2, '0')}`;
 
     const { data: perfilMotoboy } = await supabaseAdmin
       .from("perfis")
@@ -291,12 +295,12 @@ export const retaguardaService = {
       for (const link of linksAtivos) {
         const baseTurno = Number(link.valor_contrato || 0) + Number(link.ajuda_custo || 0) + Number(link.valor_aluguel || 0);
         salarioBaseTotal += baseTurno;
-        const baseQuinzenaTurno = baseTurno / 2;
+        const baseQuinzenaTurno = baseTurno * (diaVales / 30);
 
         let diasEsperadosTurno = 0;
         let faltasTurno = 0;
 
-        for (let d = 1; d <= 15; d++) {
+        for (let d = 1; d <= diaVales; d++) {
           const dataAtual = new Date(Date.UTC(ano, mes - 1, d));
           const dataStr = dataAtual.toISOString().split("T")[0];
           const diaSemana = dataAtual.getUTCDay();

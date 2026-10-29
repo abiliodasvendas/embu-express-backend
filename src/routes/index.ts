@@ -23,6 +23,7 @@ import dreRoutes from "./dre.routes.js";
 import fluxoCaixaRoutes from "./fluxo-caixa.routes.js";
 import retaguardaRoutes from "./retaguarda.routes.js";
 import movimentacoesAvulsasRoutes from "./movimentacoes-avulsas.routes.js";
+import contasPagarRoutes from "./contas-pagar.routes.js";
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Embu Express Routes
@@ -50,6 +51,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(fluxoCaixaRoutes, { prefix: "/api/fluxo-caixa" });
   app.register(retaguardaRoutes, { prefix: "/api/retaguarda" });
   app.register(movimentacoesAvulsasRoutes, { prefix: "/api/movimentacoes-avulsas" });
+  app.register(contasPagarRoutes, { prefix: "/api/contas-pagar" });
 };
 
 export default routes;

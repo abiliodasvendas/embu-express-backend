@@ -4,6 +4,8 @@ import { SalvarBloqueiosColaboradorDTO } from "../schemas/convenio.schema.js";
 import { financeiroService } from "./financeiro.service.js";
 import { AppError } from "../errors/AppError.js";
 import { convenioRepository } from "../repositories/convenio.repository.js";
+import { isDavidOuMotoEmbu } from "./convenio-regras.service.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 
 export const convenioService = {
   async listConvenios(ativo?: string) {
@@ -168,7 +170,7 @@ export const convenioService = {
     }
 
     const usuario = await convenioRepository.getUsuarioStatusEElegibilidade(colaboradorId);
-    if (usuario && usuario.status === "INATIVO") {
+    if (usuario && usuario.status === CADASTRO_STATUS.INATIVO) {
       return {
         bloqueado: true,
         tipo_bloqueio: "MANUAL",
@@ -284,7 +286,7 @@ export const convenioService = {
 
     const { is_parcelado, quantidade_parcelas, ...lancamentoData } = payload;
 
-    if (!lancamentoData.moto_embu && lancamentoData.colaborador_id) {
+    if (!isDavidOuMotoEmbu(lancamentoData) && lancamentoData.colaborador_id) {
       const [anoStr, mesStr] = (lancamentoData.data_lancamento || "").split("-");
       const mesRef = mesStr ? parseInt(mesStr, 10) : undefined;
       const anoRef = anoStr ? parseInt(anoStr, 10) : undefined;
@@ -352,7 +354,7 @@ export const convenioService = {
 
     const { is_parcelado, quantidade_parcelas, ...updateData } = payload;
 
-    if (!updateData.moto_embu && updateData.colaborador_id) {
+    if (!isDavidOuMotoEmbu(updateData) && updateData.colaborador_id) {
       const [anoStr, mesStr] = (updateData.data_lancamento || "").split("-");
       const mesRef = mesStr ? parseInt(mesStr, 10) : undefined;
       const anoRef = anoStr ? parseInt(anoStr, 10) : undefined;

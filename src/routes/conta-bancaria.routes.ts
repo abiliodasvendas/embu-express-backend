@@ -3,6 +3,7 @@ import { verifyAdminOnly } from "../middlewares/auth.middleware.js";
 import { contaBancariaController } from "../controllers/conta-bancaria.controller.js";
 
 const contaBancariaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  app.get("/saldos", { preHandler: [verifyAdminOnly()] }, contaBancariaController.listComSaldos);
   app.get("/", { preHandler: [verifyAdminOnly()] }, contaBancariaController.list);
   app.get("/:id", { preHandler: [verifyAdminOnly()] }, contaBancariaController.get);
   app.post("/", { preHandler: [verifyAdminOnly()] }, contaBancariaController.create);

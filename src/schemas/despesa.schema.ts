@@ -22,6 +22,7 @@ export const statusDespesaEnum = z.enum([
 
 export const despesaOperacionalSchema = z.object({
   empresa_id: z.number().int().positive().optional().nullable(),
+  conta_bancaria_id: z.string().uuid().optional().nullable(),
   categoria: categoriaDespesaEnum,
   descricao: z.string().min(1, "Descrição é obrigatória"),
   mes_competencia: z.number().int().min(1).max(12),
@@ -47,4 +48,10 @@ export const listDespesasQuerySchema = z.object({
   empresa_id: z.coerce.number().int().positive().optional(),
   categoria: categoriaDespesaEnum.optional(),
   status: statusDespesaEnum.optional(),
+});
+
+export const liquidarDespesaSchema = z.object({
+  conta_bancaria_id: z.string().uuid("Conta bancária é obrigatória"),
+  data_pagamento: z.string().min(1, "Data de pagamento é obrigatória"),
+  valor_pago: z.number().positive("Valor pago deve ser maior que zero"),
 });

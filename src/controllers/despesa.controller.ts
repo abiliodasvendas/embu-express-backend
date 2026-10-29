@@ -45,9 +45,10 @@ export const despesaController = {
     const body = z.object({
       data_pagamento: z.string().min(1),
       valor_pago: z.number().nonnegative().optional(),
+      conta_bancaria_id: z.string().uuid().optional(),
     }).parse(request.body);
 
-    const result = await despesaService.marcarPaga(id, body.data_pagamento, body.valor_pago);
+    const result = await despesaService.marcarPaga(id, body.data_pagamento, body.valor_pago, body.conta_bancaria_id);
     return reply.send(result);
   },
 

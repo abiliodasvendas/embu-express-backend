@@ -14,6 +14,13 @@ import {
   STATUS_INTERCOMPANY,
 } from "../constants/financeiro.enum.js";
 import { faturamentoRepository, ListFaturasFilters } from "../repositories/faturamento.repository.js";
+import { contaBancariaRepository } from "../repositories/conta-bancaria.repository.js";
+import {
+  getSemanasCompetencia,
+  getQuinzenasCompetencia,
+  getMensalCompetencia,
+  PeriodoCalculado,
+} from "../utils/periodo-faturamento.helper.js";
 
 type CreateFaturaDTO = z.infer<typeof faturaClienteSchema>;
 type UpdateFaturaDTO = z.infer<typeof updateFaturaClienteSchema>;
@@ -36,34 +43,42 @@ export const faturamentoService = {
 
     const tipo = tipoPeriodo || (cliente.periodicidade || TIPO_PERIODO_FATURA.QUINZENAL);
     const num = numeroPeriodo || quinzena || 1;
+    const valorBase = Number(cliente.valor_contrato_mensal || cliente.valor_base || 0);
 
-    const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-    let dataInicioStr = "";
-    let dataFimStr = "";
+    let periodosCalculados: PeriodoCalculado[] = [];
+    let valorSugerido = valorBase;
 
-    if (tipo === TIPO_PERIODO_FATURA.MENSAL) {
-      dataInicioStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
-      dataFimStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+    if (tipo === TIPO_PERIODO_FATURA.SEMANAL) {
+      periodosCalculados = getSemanasCompetencia(mes, ano);
+      valorSugerido = valorBase;
+    } else if (tipo === TIPO_PERIODO_FATURA.MENSAL) {
+      periodosCalculados = getMensalCompetencia(mes, ano, cliente.dia_vencimento_padrao || 10);
+      valorSugerido = valorBase;
     } else {
-      dataInicioStr = num === 1
-        ? `${ano}-${String(mes).padStart(2, "0")}-01`
-        : `${ano}-${String(mes).padStart(2, "0")}-16`;
-      dataFimStr = num === 1
-        ? `${ano}-${String(mes).padStart(2, "0")}-15`
-        : `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+      periodosCalculados = getQuinzenasCompetencia(mes, ano);
+      valorSugerido = parseFloat((valorBase / 2).toFixed(2));
     }
 
-    const valorContrato = Number(cliente.valor_contrato_mensal || cliente.valor_base || 0);
-    const valorSugerido = tipo === TIPO_PERIODO_FATURA.MENSAL
-      ? valorContrato
-      : parseFloat((valorContrato / 2).toFixed(2));
+    const periodoEncontrado =
+      periodosCalculados.find((p) => p.numero_periodo === num) ||
+      periodosCalculados[0] || {
+        numero_periodo: num,
+        data_inicio: `${ano}-${String(mes).padStart(2, "0")}-01`,
+        data_fim: `${ano}-${String(mes).padStart(2, "0")}-15`,
+        data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-16`,
+        descricao: "",
+      };
 
     return {
       cliente_id: clienteId,
       tipo_periodo: tipo,
-      numero_periodo: num,
-      valor_base: valorContrato,
-      periodo: { data_inicio: dataInicioStr, data_fim: dataFimStr },
+      numero_periodo: periodoEncontrado.numero_periodo,
+      valor_base: valorBase,
+      periodo: {
+        data_inicio: periodoEncontrado.data_inicio,
+        data_fim: periodoEncontrado.data_fim,
+        data_vencimento: periodoEncontrado.data_vencimento,
+      },
       dias_esperados: 0,
       dias_trabalhados: 0,
       faltas_sem_cobertura: 0,
@@ -91,52 +106,58 @@ export const faturamentoService = {
     const fallbackEmpresa = empresas[0] || { id: 1 };
     const empresaId = cliente.empresa_emissora_padrao_id || fallbackEmpresa.id;
 
-    const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const periodicidade = cliente.periodicidade || PERIODICIDADE_FATURAMENTO.QUINZENAL;
-    const valorMensal = Number(cliente.valor_contrato_mensal || cliente.valor_base || 0);
+    const valorCadastrado = Number(cliente.valor_contrato_mensal || cliente.valor_base || 0);
 
-    let valorFaturado = valorMensal;
-    let dataVenc = `${ano}-${String(mes).padStart(2, "0")}-10`;
-    let dataInicio = `${ano}-${String(mes).padStart(2, "0")}-01`;
-    let dataFim = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
-    let tipoPeriodo: string = TIPO_PERIODO_FATURA.MENSAL;
+    let periodosCalculados: PeriodoCalculado[] = [];
+    let tipoPeriodo: string = periodicidade;
     let quinzena: number | null = null;
+    let valorFaturado = valorCadastrado;
 
-    if (periodicidade === PERIODICIDADE_FATURAMENTO.MENSAL) {
-      const dia = Math.min(cliente.dia_vencimento_padrao || 10, ultimoDiaMes);
-      dataVenc = `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+    if (periodicidade === PERIODICIDADE_FATURAMENTO.SEMANAL) {
+      periodosCalculados = getSemanasCompetencia(mes, ano);
+      tipoPeriodo = TIPO_PERIODO_FATURA.SEMANAL;
+      valorFaturado = valorCadastrado;
+    } else if (periodicidade === PERIODICIDADE_FATURAMENTO.MENSAL) {
+      periodosCalculados = getMensalCompetencia(mes, ano, cliente.dia_vencimento_padrao || 10);
       tipoPeriodo = TIPO_PERIODO_FATURA.MENSAL;
+      valorFaturado = valorCadastrado;
     } else {
+      periodosCalculados = getQuinzenasCompetencia(mes, ano);
       tipoPeriodo = TIPO_PERIODO_FATURA.QUINZENAL;
       quinzena = numPeriodo;
       if (numPeriodo === 1) {
-        valorFaturado = Math.round((valorMensal / 2) * 100) / 100;
-        dataVenc = `${ano}-${String(mes).padStart(2, "0")}-16`;
-        dataInicio = `${ano}-${String(mes).padStart(2, "0")}-01`;
-        dataFim = `${ano}-${String(mes).padStart(2, "0")}-15`;
+        valorFaturado = Math.round((valorCadastrado / 2) * 100) / 100;
       } else {
-        const v1 = Math.round((valorMensal / 2) * 100) / 100;
-        valorFaturado = parseFloat((valorMensal - v1).toFixed(2));
-        dataVenc = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
-        dataInicio = `${ano}-${String(mes).padStart(2, "0")}-16`;
-        dataFim = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+        const v1 = Math.round((valorCadastrado / 2) * 100) / 100;
+        valorFaturado = parseFloat((valorCadastrado - v1).toFixed(2));
       }
     }
+
+    const periodoEncontrado =
+      periodosCalculados.find((p) => p.numero_periodo === numPeriodo) ||
+      periodosCalculados[0];
 
     const record = {
       cliente_id: cliente.id,
       empresa_id: empresaId,
       mes_competencia: mes,
       ano_competencia: ano,
-      quinzena,
+      quinzena: quinzena ?? (tipoPeriodo === TIPO_PERIODO_FATURA.QUINZENAL ? numPeriodo : (numPeriodo || 1)),
       tipo_periodo: tipoPeriodo,
       numero_periodo: numPeriodo,
-      data_inicio_apuracao: dataInicio,
-      data_fim_apuracao: dataFim,
+      data_inicio_apuracao: periodoEncontrado
+        ? periodoEncontrado.data_inicio
+        : `${ano}-${String(mes).padStart(2, "0")}-01`,
+      data_fim_apuracao: periodoEncontrado
+        ? periodoEncontrado.data_fim
+        : `${ano}-${String(mes).padStart(2, "0")}-15`,
       valor_faturado: valorFaturado,
       valor_pago: 0,
       data_emissao: new Date().toISOString().split("T")[0],
-      data_vencimento: dataVenc,
+      data_vencimento: periodoEncontrado
+        ? periodoEncontrado.data_vencimento
+        : `${ano}-${String(mes).padStart(2, "0")}-16`,
       status: STATUS_FATURA.PENDENTE,
       dias_esperados: 0,
       dias_trabalhados: 0,
@@ -145,6 +166,10 @@ export const faturamentoService = {
       criado_por: criadoPor || null,
       ...overrides,
     };
+
+    if (record.quinzena === null || record.quinzena === undefined) {
+      record.quinzena = record.numero_periodo || 1;
+    }
 
     return faturamentoRepository.createFatura(record);
   },
@@ -195,114 +220,76 @@ export const faturamentoService = {
         ? empresasMap.get(cliente.empresa_emissora_padrao_id)
         : null) || fallbackEmpresa;
 
-      if (periodicidade === PERIODICIDADE_FATURAMENTO.MENSAL) {
+      let periodosDoCliente: PeriodoCalculado[] = [];
+      let tipoPeriodoFinal: string = periodicidade;
+
+      if (periodicidade === PERIODICIDADE_FATURAMENTO.SEMANAL) {
+        if (filtros.tipo_periodo && filtros.tipo_periodo !== TIPO_PERIODO_FATURA.SEMANAL) continue;
+        periodosDoCliente = getSemanasCompetencia(mes, ano);
+        tipoPeriodoFinal = TIPO_PERIODO_FATURA.SEMANAL;
+      } else if (periodicidade === PERIODICIDADE_FATURAMENTO.MENSAL) {
         if (filtros.tipo_periodo && filtros.tipo_periodo !== TIPO_PERIODO_FATURA.MENSAL) continue;
-        if (filtros.numero_periodo && filtros.numero_periodo !== 1) continue;
+        periodosDoCliente = getMensalCompetencia(mes, ano, cliente.dia_vencimento_padrao || 10);
+        tipoPeriodoFinal = TIPO_PERIODO_FATURA.MENSAL;
+      } else {
+        if (filtros.tipo_periodo && filtros.tipo_periodo !== TIPO_PERIODO_FATURA.QUINZENAL) continue;
+        periodosDoCliente = getQuinzenasCompetencia(mes, ano);
+        tipoPeriodoFinal = TIPO_PERIODO_FATURA.QUINZENAL;
+      }
+
+      for (const p of periodosDoCliente) {
+        if (filtros.numero_periodo && filtros.numero_periodo !== p.numero_periodo) {
+          continue;
+        }
+        if (
+          tipoPeriodoFinal === TIPO_PERIODO_FATURA.QUINZENAL &&
+          filtros.quinzena &&
+          filtros.quinzena !== p.numero_periodo
+        ) {
+          continue;
+        }
 
         const existeReal = faturasReais.some(
-          (f) => f.cliente_id === cliente.id && (f.numero_periodo === 1 || f.tipo_periodo === TIPO_PERIODO_FATURA.MENSAL)
+          (f) =>
+            f.cliente_id === cliente.id &&
+            f.tipo_periodo === tipoPeriodoFinal &&
+            (f.numero_periodo === p.numero_periodo ||
+              (tipoPeriodoFinal === TIPO_PERIODO_FATURA.QUINZENAL && f.quinzena === p.numero_periodo))
         );
+
         if (!existeReal) {
-          const diaVenc = Math.min(cliente.dia_vencimento_padrao || 10, ultimoDiaMes);
+          let valorPeriodo = valorMensal;
+          if (tipoPeriodoFinal === TIPO_PERIODO_FATURA.QUINZENAL) {
+            const q1Val = Math.round((valorMensal / 2) * 100) / 100;
+            valorPeriodo =
+              p.numero_periodo === 1 ? q1Val : parseFloat((valorMensal - q1Val).toFixed(2));
+          }
+
           projecoes.push({
-            id: `prev_${cliente.id}_${mes}_${ano}_1`,
+            id: `prev_${cliente.id}_${mes}_${ano}_${p.numero_periodo}`,
             cliente_id: cliente.id,
             empresa_id: empresaObj.id,
             mes_competencia: mes,
             ano_competencia: ano,
-            quinzena: undefined,
-            tipo_periodo: TIPO_PERIODO_FATURA.MENSAL,
-            numero_periodo: 1,
-            data_inicio_apuracao: `${ano}-${String(mes).padStart(2, "0")}-01`,
-            data_fim_apuracao: `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`,
-            valor_faturado: valorMensal,
+            quinzena: tipoPeriodoFinal === TIPO_PERIODO_FATURA.QUINZENAL ? p.numero_periodo : undefined,
+            tipo_periodo: tipoPeriodoFinal,
+            numero_periodo: p.numero_periodo,
+            data_inicio_apuracao: p.data_inicio,
+            data_fim_apuracao: p.data_fim,
+            valor_faturado: valorPeriodo,
             valor_pago: 0,
             data_emissao: `${ano}-${String(mes).padStart(2, "0")}-01`,
-            data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-${String(diaVenc).padStart(2, "0")}`,
+            data_vencimento: p.data_vencimento,
             status: STATUS_FATURA.PENDENTE,
             dias_esperados: 0,
             dias_trabalhados: 0,
             faltas_sem_cobertura: 0,
-                  observacoes: "Previsão contratual",
+            observacoes: "Previsão contratual",
             is_previsao: true,
             cliente: { id: cliente.id, nome_fantasia: cliente.nome_fantasia },
             empresa: empresaObj,
             recebimentos: [],
           } as unknown as FaturaCliente);
-        }
-      } else {
-        if (filtros.tipo_periodo && filtros.tipo_periodo !== TIPO_PERIODO_FATURA.QUINZENAL) continue;
-
-        const valorQuinzena1 = Math.round((valorMensal / 2) * 100) / 100;
-        const valorQuinzena2 = parseFloat((valorMensal - valorQuinzena1).toFixed(2));
-
-        const incluirQ1 = (!filtros.numero_periodo || filtros.numero_periodo === 1) && (!filtros.quinzena || filtros.quinzena === 1);
-        const incluirQ2 = (!filtros.numero_periodo || filtros.numero_periodo === 2) && (!filtros.quinzena || filtros.quinzena === 2);
-
-        if (incluirQ1) {
-          const existeQ1 = faturasReais.some(
-            (f) => f.cliente_id === cliente.id && (f.numero_periodo === 1 || f.quinzena === 1)
-          );
-          if (!existeQ1) {
-            projecoes.push({
-              id: `prev_${cliente.id}_${mes}_${ano}_1`,
-              cliente_id: cliente.id,
-              empresa_id: empresaObj.id,
-              mes_competencia: mes,
-              ano_competencia: ano,
-              quinzena: 1,
-              tipo_periodo: TIPO_PERIODO_FATURA.QUINZENAL,
-              numero_periodo: 1,
-              data_inicio_apuracao: `${ano}-${String(mes).padStart(2, "0")}-01`,
-              data_fim_apuracao: `${ano}-${String(mes).padStart(2, "0")}-15`,
-              valor_faturado: valorQuinzena1,
-              valor_pago: 0,
-              data_emissao: `${ano}-${String(mes).padStart(2, "0")}-01`,
-              data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-16`,
-              status: STATUS_FATURA.PENDENTE,
-              dias_esperados: 0,
-              dias_trabalhados: 0,
-              faltas_sem_cobertura: 0,
-                      observacoes: "Previsão contratual",
-              is_previsao: true,
-              cliente: { id: cliente.id, nome_fantasia: cliente.nome_fantasia },
-              empresa: empresaObj,
-              recebimentos: [],
-            } as unknown as FaturaCliente);
-          }
-        }
-
-        if (incluirQ2) {
-          const existeQ2 = faturasReais.some(
-            (f) => f.cliente_id === cliente.id && (f.numero_periodo === 2 || f.quinzena === 2)
-          );
-          if (!existeQ2) {
-            projecoes.push({
-              id: `prev_${cliente.id}_${mes}_${ano}_2`,
-              cliente_id: cliente.id,
-              empresa_id: empresaObj.id,
-              mes_competencia: mes,
-              ano_competencia: ano,
-              quinzena: 2,
-              tipo_periodo: TIPO_PERIODO_FATURA.QUINZENAL,
-              numero_periodo: 2,
-              data_inicio_apuracao: `${ano}-${String(mes).padStart(2, "0")}-16`,
-              data_fim_apuracao: `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`,
-              valor_faturado: valorQuinzena2,
-              valor_pago: 0,
-              data_emissao: `${ano}-${String(mes).padStart(2, "0")}-16`,
-              data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`,
-              status: STATUS_FATURA.PENDENTE,
-              dias_esperados: 0,
-              dias_trabalhados: 0,
-              faltas_sem_cobertura: 0,
-                      observacoes: "Previsão contratual",
-              is_previsao: true,
-              cliente: { id: cliente.id, nome_fantasia: cliente.nome_fantasia },
-              empresa: empresaObj,
-              recebimentos: [],
-            } as unknown as FaturaCliente);
-          }
         }
       }
     }
@@ -324,6 +311,7 @@ export const faturamentoService = {
   async createFatura(data: CreateFaturaDTO, criadoPor?: string): Promise<FaturaCliente> {
     return faturamentoRepository.createFatura({
       ...data,
+      quinzena: data.quinzena ?? (data.numero_periodo || 1),
       criado_por: criadoPor || null,
     });
   },
@@ -364,7 +352,7 @@ export const faturamentoService = {
       throw new AppError("Fatura não encontrada", 404);
     }
 
-    const contaBancaria = await faturamentoRepository.getContaBancaria(conta_bancaria_id);
+    const contaBancaria = await contaBancariaRepository.getById(conta_bancaria_id);
     if (!contaBancaria) {
       throw new AppError("Conta bancária não encontrada", 404);
     }
@@ -407,7 +395,7 @@ export const faturamentoService = {
   async processarLoteRecebimento(payload: LoteRecebimentoDTO, criadoPor?: string): Promise<LoteRecebimento> {
     const { conta_bancaria_destino_id, data_deposito, valor_total_depositado, observacao, itens } = payload;
 
-    const contaBancaria = await faturamentoRepository.getContaBancaria(conta_bancaria_destino_id);
+    const contaBancaria = await contaBancariaRepository.getById(conta_bancaria_destino_id);
     if (!contaBancaria) {
       throw new AppError("Conta bancária de destino não encontrada", 404);
     }

@@ -56,7 +56,7 @@ export const usuarioService = {
             cnpj: data.cnpj ? onlyNumbers(data.cnpj) : null,
             telefone: data.telefone ? onlyNumbers(data.telefone) : null,
             telefone_recado: onlyNumbers(data.telefone_recado) || null,
-            status: (data.status as "PENDENTE" | "ATIVO" | "INATIVO") || CADASTRO_STATUS.ATIVO,
+            status: (data.status as CADASTRO_STATUS) || CADASTRO_STATUS.ATIVO,
             tipo_chave_pix: data.tipo_chave_pix || PIX_TYPES.CPF,
             chave_pix: data.chave_pix || null,
             senha_padrao: data.status === CADASTRO_STATUS.PENDENTE ? false : true
@@ -158,7 +158,7 @@ export const usuarioService = {
             usuarioData.tipo_chave_pix = data.tipo_chave_pix || PIX_TYPES.CPF;
         }
         if (data.status !== undefined) {
-            usuarioData.status = data.status as "PENDENTE" | "ATIVO" | "INATIVO";
+            usuarioData.status = data.status as CADASTRO_STATUS;
         }
         if (data.chave_pix !== undefined) {
             usuarioData.chave_pix = data.chave_pix || null;

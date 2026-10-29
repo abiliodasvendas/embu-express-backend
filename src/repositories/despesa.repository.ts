@@ -13,7 +13,7 @@ export const despesaRepository = {
   async list(filtros: ListDespesasFilters): Promise<DespesaOperacional[]> {
     let query = supabaseAdmin
       .from("despesas_operacionais")
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .order("data_vencimento", { ascending: true });
 
     if (filtros.mes) query = query.eq("mes_competencia", filtros.mes);
@@ -35,7 +35,7 @@ export const despesaRepository = {
   async listRecorrentesAtivas(empresaId?: number, categoria?: CategoriaDespesa): Promise<DespesaOperacional[]> {
     let query = supabaseAdmin
       .from("despesas_operacionais")
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .eq("is_recorrente", true)
       .neq("status", "CANCELADO");
 
@@ -52,7 +52,7 @@ export const despesaRepository = {
   async getById(id: string): Promise<DespesaOperacional | null> {
     const { data, error } = await supabaseAdmin
       .from("despesas_operacionais")
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .eq("id", id)
       .single();
 
@@ -66,7 +66,7 @@ export const despesaRepository = {
     const { data, error } = await supabaseAdmin
       .from("despesas_operacionais")
       .insert([record])
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .single();
 
     if (error) throw error;
@@ -77,7 +77,7 @@ export const despesaRepository = {
     const { data, error } = await supabaseAdmin
       .from("despesas_operacionais")
       .insert(records)
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)");
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)");
 
     if (error) throw error;
     return (data || []) as DespesaOperacional[];
@@ -88,7 +88,7 @@ export const despesaRepository = {
       .from("despesas_operacionais")
       .update(record)
       .eq("id", id)
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .single();
 
     if (error) throw error;

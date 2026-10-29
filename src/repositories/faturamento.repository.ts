@@ -176,17 +176,6 @@ export const faturamentoRepository = {
     return (data || []) as Array<{ id: number; nome_fantasia: string; razao_social: string; cnpj: string }>;
   },
 
-  async getContaBancaria(id: string): Promise<{ id: string; empresa_id: number; banco_nome: string } | null> {
-    const { data, error } = await supabaseAdmin
-      .from("contas_bancarias")
-      .select("id, empresa_id, banco_nome")
-      .eq("id", id)
-      .single();
-
-    if (error || !data) return null;
-    return data;
-  },
-
   async createRecebimento(record: Record<string, unknown>): Promise<{ id: string }> {
     const { data, error } = await supabaseAdmin
       .from("fatura_recebimentos")

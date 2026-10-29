@@ -6,7 +6,6 @@ import { AppError } from "./AppError.js";
 export function globalErrorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
     const { method, url } = request;
 
-    // 1. Erro Conhecido (AppError ou validações tratadas)
     if (error instanceof AppError || error.name === 'AppError' || (error as any).isOperational) {
         const statusCode = (error as any).statusCode || 500;
         const message = error.message || "Erro desconhecido";
@@ -25,7 +24,6 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
     }
 
-    // 1.5 Erro de Validação Zod
     if (error instanceof ZodError) {
         logger.warn({
             msg: "Erro de Validação (Zod)",
@@ -41,7 +39,6 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
     }
 
-    // 2. Erros de Validação do Fastify (Schema)
     if (error.validation) {
          logger.warn({
             msg: "Erro de Validação (Schema)",
@@ -58,7 +55,6 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
     }
 
-    // 2.5 Erro de Banco de Dados (Supabase/Postgres)
     if ((error as any).code === '23503') {
         logger.warn({
             msg: "Violação de Chave Estrangeira (Integridade SQL)",
@@ -104,7 +100,27 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         });
     }
 
-    // 2.7 Erro de Autenticação Supabase (AuthApiError)
+    if (
+        (error as any).code === '22007' ||
+        (error as any).code === '22008' ||
+        error.message?.includes('date/time field value out of range') ||
+        error.message?.includes('is out of range')
+    ) {
+        logger.warn({
+            msg: "Erro de Formato de Data (SQL)",
+            error: error.message,
+            method,
+            url
+        });
+        const customMessage = "Uma ou mais datas fornecidas possuem formato inválido ou estão fora do limite aceito.";
+        return reply.status(400).send({
+            status: "error",
+            message: customMessage,
+            error: customMessage,
+            code: (error as any).code || '22007'
+        });
+    }
+
     if (error.name === 'AuthApiError' || (error as any).status === 422 || (error as any).status === 400) {
         if (error.message?.includes('already been registered')) {
             logger.warn({
@@ -121,14 +137,12 @@ export function globalErrorHandler(error: FastifyError, request: FastifyRequest,
         }
     }
 
-    // 3. Erro Desconhecido (Bug / Infra)
     logger.error({
         msg: "Erro Interno (500)",
         error: error.message,
         stack: error.stack,
         method,
         url,
-        // Adicione userId se disponível via request.user
         userId: (request as any).user?.id
     });
 

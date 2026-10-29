@@ -1,8 +1,9 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { TransferenciaIntercompany } from "../types/database.js";
+import { STATUS_INTERCOMPANY } from "../constants/financeiro.enum.js";
 
 export interface ListTransferenciasFilters {
-  status?: "PENDENTE_ACERTO" | "COMPENSADO";
+  status?: typeof STATUS_INTERCOMPANY[keyof typeof STATUS_INTERCOMPANY];
   empresaCredoraId?: number;
   empresaDevedoraId?: number;
 }
@@ -32,7 +33,7 @@ export const intercompanyRepository = {
     const { data, error } = await supabaseAdmin
       .from("transferencias_intercompany")
       .select("empresa_credora_id, empresa_devedora_id, valor")
-      .eq("status", "PENDENTE_ACERTO");
+      .eq("status", STATUS_INTERCOMPANY.PENDENTE_ACERTO);
 
     if (error) {
       if (error.code === "PGRST205") {
@@ -64,7 +65,7 @@ export const intercompanyRepository = {
     const { data, error } = await supabaseAdmin
       .from("transferencias_intercompany")
       .update({
-        status: "COMPENSADO",
+        status: STATUS_INTERCOMPANY.COMPENSADO,
         data_acerto: payload.data_acerto,
         comprovante_acerto_url: payload.comprovante_acerto_url || null,
         observacao: payload.observacao || null,
