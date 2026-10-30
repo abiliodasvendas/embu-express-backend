@@ -1,14 +1,14 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { despesaService } from "./despesa.service.js";
 import { DespesaOperacional, FaturaFornecedorConvenio } from "../types/database.js";
-import { STATUS_DESPESA, STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
+import { STATUS_DESPESA, STATUS_FATURA_CONVENIO, TIPO_CONTA_PAGAR, TipoContaPagarType } from "../constants/financeiro.enum.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
 import { contaBancariaRepository } from "../repositories/conta-bancaria.repository.js";
 import { AppError } from "../errors/AppError.js";
 
 export interface ContaPagarItem {
   id: string;
-  tipo: "DESPESA" | "CONVENIO";
+  tipo: TipoContaPagarType;
   descricao: string;
   categoria: string;
   empresa_id?: number | null;
@@ -23,6 +23,11 @@ export interface ContaPagarItem {
   status: string;
   is_previsao: boolean;
   lote_pagamento_id?: string | null;
+  grupo_parcelamento_id?: string | null;
+  numero_parcela?: number | null;
+  total_parcelas?: number | null;
+  is_recorrente?: boolean;
+  recorrencia_origem_id?: string | null;
 }
 
 export interface ContasPagarKpis {
@@ -70,7 +75,7 @@ export const contasPagarService = {
 
       return {
         id: d.id,
-        tipo: "DESPESA",
+        tipo: TIPO_CONTA_PAGAR.DESPESA,
         descricao: d.descricao,
         categoria: d.categoria,
         empresa_id: d.empresa_id,
@@ -85,6 +90,11 @@ export const contasPagarService = {
         status: d.status,
         is_previsao: Boolean(d.is_previsao),
         lote_pagamento_id: d.lote_pagamento_id,
+        grupo_parcelamento_id: d.grupo_parcelamento_id,
+        numero_parcela: d.numero_parcela,
+        total_parcelas: d.total_parcelas,
+        is_recorrente: Boolean(d.is_recorrente),
+        recorrencia_origem_id: d.recorrencia_origem_id,
       };
     });
 
@@ -97,7 +107,7 @@ export const contasPagarService = {
 
       return {
         id: f.id,
-        tipo: "CONVENIO",
+        tipo: TIPO_CONTA_PAGAR.CONVENIO,
         descricao: `Fatura Convênio: ${convenioNome}`,
         categoria: "CONVENIO",
         empresa_id: f.empresa_id,

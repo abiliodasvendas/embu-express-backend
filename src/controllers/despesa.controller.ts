@@ -4,8 +4,16 @@ import {
   despesaOperacionalSchema,
   updateDespesaOperacionalSchema,
   listDespesasQuerySchema,
+  deleteDespesaQuerySchema,
 } from "../schemas/despesa.schema.js";
 import { z } from "zod";
+
+interface AuthenticatedRequest extends FastifyRequest {
+  user?: {
+    id: string;
+    email?: string;
+  };
+}
 
 export const despesaController = {
   async list(request: FastifyRequest, reply: FastifyReply) {
@@ -20,9 +28,9 @@ export const despesaController = {
     return reply.send(result);
   },
 
-  async create(request: FastifyRequest, reply: FastifyReply) {
+  async create(request: AuthenticatedRequest, reply: FastifyReply) {
     const data = despesaOperacionalSchema.parse(request.body);
-    const userId = (request as any).user?.id;
+    const userId = request.user?.id;
     const result = await despesaService.create(data, userId);
     return reply.status(201).send(result);
   },
@@ -36,7 +44,8 @@ export const despesaController = {
 
   async delete(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
-    await despesaService.delete(id);
+    const { escopo } = deleteDespesaQuerySchema.parse(request.query);
+    await despesaService.delete(id, escopo);
     return reply.status(204).send();
   },
 

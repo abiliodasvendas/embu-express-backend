@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { DespesaOperacional, CategoriaDespesa, StatusDespesa } from "../types/database.js";
+import { STATUS_DESPESA } from "../constants/financeiro.enum.js";
 
 export interface ListDespesasFilters {
   mes?: number;
@@ -37,7 +38,7 @@ export const despesaRepository = {
       .from("despesas_operacionais")
       .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
       .eq("is_recorrente", true)
-      .neq("status", "CANCELADO");
+      .neq("status", STATUS_DESPESA.CANCELADO);
 
     if (empresaId) query = query.eq("empresa_id", empresaId);
     if (categoria) query = query.eq("categoria", categoria);
@@ -102,5 +103,107 @@ export const despesaRepository = {
       .eq("id", id);
 
     if (error) throw error;
+  },
+
+  async getParcelasAfetadas(grupoId: string, minNumeroParcela?: number): Promise<DespesaOperacional[]> {
+    let query = supabaseAdmin
+      .from("despesas_operacionais")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .eq("grupo_parcelamento_id", grupoId)
+      .neq("status", STATUS_DESPESA.PAGO)
+      .order("numero_parcela", { ascending: true });
+
+    if (minNumeroParcela !== undefined) {
+      query = query.gte("numero_parcela", minNumeroParcela);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as DespesaOperacional[];
+  },
+
+  async deleteByParcelamento(grupoId: string, minNumeroParcela?: number): Promise<void> {
+    let query = supabaseAdmin
+      .from("despesas_operacionais")
+      .delete()
+      .eq("grupo_parcelamento_id", grupoId)
+      .neq("status", STATUS_DESPESA.PAGO);
+
+    if (minNumeroParcela !== undefined) {
+      query = query.gte("numero_parcela", minNumeroParcela);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+  },
+
+  async getRecorrentesAfetadas(masterId: string, minAno: number, minMes: number): Promise<DespesaOperacional[]> {
+    const { data, error } = await supabaseAdmin
+      .from("despesas_operacionais")
+      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .or(`id.eq.${masterId},recorrencia_origem_id.eq.${masterId}`)
+      .neq("status", STATUS_DESPESA.PAGO);
+
+    if (error) throw error;
+    const items = (data || []) as DespesaOperacional[];
+    return items.filter((item) => item.ano_competencia > minAno || (item.ano_competencia === minAno && item.mes_competencia >= minMes));
+  },
+
+  async deleteRecorrenciaFuturas(masterId: string, minAno: number, minMes: number): Promise<void> {
+    const { data: afetadas } = await supabaseAdmin
+      .from("despesas_operacionais")
+      .select("id, mes_competencia, ano_competencia, recorrencia_origem_id")
+      .or(`id.eq.${masterId},recorrencia_origem_id.eq.${masterId}`)
+      .neq("status", STATUS_DESPESA.PAGO);
+
+    if (!afetadas || afetadas.length === 0) return;
+
+    const idsParaDeletar: string[] = [];
+    let cancelarMaster = false;
+
+    for (const d of afetadas) {
+      const isFuturaOuAtual = d.ano_competencia > minAno || (d.ano_competencia === minAno && d.mes_competencia >= minMes);
+      if (isFuturaOuAtual) {
+        if (d.id === masterId) {
+          cancelarMaster = true;
+        } else {
+          idsParaDeletar.push(d.id);
+        }
+      }
+    }
+
+    if (idsParaDeletar.length > 0) {
+      const { error: errDel } = await supabaseAdmin
+        .from("despesas_operacionais")
+        .delete()
+        .in("id", idsParaDeletar);
+      if (errDel) throw errDel;
+    }
+
+    if (cancelarMaster) {
+      const { error: errUpdate } = await supabaseAdmin
+        .from("despesas_operacionais")
+        .update({ status: STATUS_DESPESA.CANCELADO })
+        .eq("id", masterId);
+      if (errUpdate) throw errUpdate;
+    }
+  },
+
+  async deleteRecorrenciaTodas(masterId: string): Promise<void> {
+    const { error: errFilhos } = await supabaseAdmin
+      .from("despesas_operacionais")
+      .delete()
+      .eq("recorrencia_origem_id", masterId)
+      .neq("status", STATUS_DESPESA.PAGO);
+
+    if (errFilhos) throw errFilhos;
+
+    const { error: errMaster } = await supabaseAdmin
+      .from("despesas_operacionais")
+      .delete()
+      .eq("id", masterId)
+      .neq("status", STATUS_DESPESA.PAGO);
+
+    if (errMaster) throw errMaster;
   },
 };

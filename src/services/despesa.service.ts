@@ -1,10 +1,23 @@
 import { AppError } from "../errors/AppError.js";
 import { DespesaOperacional, CategoriaDespesa, StatusDespesa } from "../types/database.js";
-import { STATUS_DESPESA } from "../constants/financeiro.enum.js";
+import { STATUS_DESPESA, DESPESA_ESCOPO_ACAO, DespesaEscopoAcaoType } from "../constants/financeiro.enum.js";
 import { z } from "zod";
 import { despesaOperacionalSchema, updateDespesaOperacionalSchema } from "../schemas/despesa.schema.js";
 import { despesaRepository, ListDespesasFilters } from "../repositories/despesa.repository.js";
 import crypto from "crypto";
+
+function addMonthsFinancial(dateStr: string, monthsToAdd: number): string {
+  if (monthsToAdd === 0) return dateStr;
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const novoMes = ((month - 1 + monthsToAdd) % 12) + 1;
+  const novoAno = year + Math.floor((month - 1 + monthsToAdd) / 12);
+  const ultimoDia = new Date(Date.UTC(novoAno, novoMes, 0)).getUTCDate();
+  const diaFinal = Math.min(day, ultimoDia);
+  return `${novoAno}-${String(novoMes).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
+}
 
 type CreateDespesaDTO = z.infer<typeof despesaOperacionalSchema>;
 type UpdateDespesaDTO = z.infer<typeof updateDespesaOperacionalSchema>;
@@ -160,6 +173,7 @@ export const despesaService = {
 
         despesasParaInserir.push({
           empresa_id: data.empresa_id,
+          conta_bancaria_id: data.conta_bancaria_id || null,
           categoria: data.categoria,
           descricao: data.descricao.trim(),
           mes_competencia: novoMes,
@@ -187,6 +201,7 @@ export const despesaService = {
       const diaOriginal = Number(data.data_vencimento.split("-")[2]) || 10;
       return despesaRepository.insert({
         empresa_id: data.empresa_id,
+        conta_bancaria_id: data.conta_bancaria_id || null,
         categoria: data.categoria,
         descricao: data.descricao,
         mes_competencia: data.mes_competencia,
@@ -205,6 +220,7 @@ export const despesaService = {
 
     return despesaRepository.insert({
       empresa_id: data.empresa_id,
+      conta_bancaria_id: data.conta_bancaria_id || null,
       categoria: data.categoria,
       descricao: data.descricao,
       mes_competencia: data.mes_competencia,
@@ -220,21 +236,112 @@ export const despesaService = {
   },
 
   async update(id: string, data: UpdateDespesaDTO): Promise<DespesaOperacional> {
+    const { escopo = DESPESA_ESCOPO_ACAO.UNICA, ...payloadClean } = data;
+
     if (id.startsWith("prev_desp_")) {
-      return this._materializarPrevisaoDespesa(id, data as Partial<DespesaOperacional>);
+      const materializada = await this._materializarPrevisaoDespesa(id, payloadClean as Partial<DespesaOperacional>);
+      if (escopo === DESPESA_ESCOPO_ACAO.UNICA) {
+        return materializada;
+      }
+      return this.update(materializada.id, { ...data, escopo });
     }
+
     const exists = await despesaRepository.getById(id);
     if (!exists) throw new AppError("Despesa não encontrada", 404);
-    return despesaRepository.update(id, data as Record<string, unknown>);
+
+    if (escopo === DESPESA_ESCOPO_ACAO.UNICA || (!exists.grupo_parcelamento_id && !exists.is_recorrente && !exists.recorrencia_origem_id)) {
+      return despesaRepository.update(id, payloadClean as Record<string, unknown>);
+    }
+
+    if (exists.grupo_parcelamento_id) {
+      const minParcela = escopo === DESPESA_ESCOPO_ACAO.FUTURAS ? (exists.numero_parcela || 1) : undefined;
+      const parcelasAfetadas = await despesaRepository.getParcelasAfetadas(exists.grupo_parcelamento_id, minParcela);
+      const baseNumero = exists.numero_parcela || 1;
+      const baseDateStr = payloadClean.data_vencimento;
+
+      for (const p of parcelasAfetadas) {
+        const itemPayload: Record<string, unknown> = { ...payloadClean };
+        if (baseDateStr) {
+          const offsetMeses = (p.numero_parcela || 1) - baseNumero;
+          itemPayload.data_vencimento = addMonthsFinancial(baseDateStr, Math.max(0, offsetMeses));
+        }
+        await despesaRepository.update(p.id, itemPayload);
+      }
+
+      const updated = await despesaRepository.getById(id);
+      return updated || exists;
+    }
+
+    const masterId = exists.recorrencia_origem_id || exists.id;
+    const minAno = escopo === DESPESA_ESCOPO_ACAO.FUTURAS ? exists.ano_competencia : 0;
+    const minMes = escopo === DESPESA_ESCOPO_ACAO.FUTURAS ? exists.mes_competencia : 0;
+
+    const afetadas = await despesaRepository.getRecorrentesAfetadas(masterId, minAno, minMes);
+    for (const af of afetadas) {
+      const itemPayload: Record<string, unknown> = { ...payloadClean };
+      if (payloadClean.data_vencimento) {
+        const diaOriginal = Number(payloadClean.data_vencimento.split("-")[2]) || 10;
+        const ultimoDiaDoMes = new Date(Date.UTC(af.ano_competencia, af.mes_competencia, 0)).getUTCDate();
+        const diaVenc = Math.min(diaOriginal, ultimoDiaDoMes);
+        itemPayload.data_vencimento = `${af.ano_competencia}-${String(af.mes_competencia).padStart(2, "0")}-${String(diaVenc).padStart(2, "0")}`;
+      }
+      await despesaRepository.update(af.id, itemPayload);
+    }
+
+    const updated = await despesaRepository.getById(id);
+    return updated || exists;
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, escopo: DespesaEscopoAcaoType = DESPESA_ESCOPO_ACAO.UNICA): Promise<void> {
     if (id.startsWith("prev_desp_")) {
-      await this._materializarPrevisaoDespesa(id, { status: "CANCELADO" });
-      return;
+      const parts = id.split("_");
+      const recorrenteId = parts[2];
+      const mes = Number(parts[3]);
+      const ano = Number(parts[4]);
+
+      if (escopo === DESPESA_ESCOPO_ACAO.UNICA) {
+        await this._materializarPrevisaoDespesa(id, { status: STATUS_DESPESA.CANCELADO });
+        return;
+      }
+      if (escopo === DESPESA_ESCOPO_ACAO.FUTURAS) {
+        await despesaRepository.deleteRecorrenciaFuturas(recorrenteId, ano, mes);
+        return;
+      }
+      if (escopo === DESPESA_ESCOPO_ACAO.TODAS) {
+        await despesaRepository.deleteRecorrenciaTodas(recorrenteId);
+        return;
+      }
     }
+
     const exists = await despesaRepository.getById(id);
     if (!exists) throw new AppError("Despesa não encontrada", 404);
+
+    if (escopo === DESPESA_ESCOPO_ACAO.UNICA || (!exists.grupo_parcelamento_id && !exists.is_recorrente && !exists.recorrencia_origem_id)) {
+      await despesaRepository.delete(id);
+      return;
+    }
+
+    if (exists.grupo_parcelamento_id) {
+      if (escopo === DESPESA_ESCOPO_ACAO.FUTURAS) {
+        await despesaRepository.deleteByParcelamento(exists.grupo_parcelamento_id, exists.numero_parcela || 1);
+        return;
+      }
+      if (escopo === DESPESA_ESCOPO_ACAO.TODAS) {
+        await despesaRepository.deleteByParcelamento(exists.grupo_parcelamento_id);
+        return;
+      }
+    }
+
+    const masterId = exists.recorrencia_origem_id || exists.id;
+    if (escopo === DESPESA_ESCOPO_ACAO.FUTURAS) {
+      await despesaRepository.deleteRecorrenciaFuturas(masterId, exists.ano_competencia, exists.mes_competencia);
+      return;
+    }
+    if (escopo === DESPESA_ESCOPO_ACAO.TODAS) {
+      await despesaRepository.deleteRecorrenciaTodas(masterId);
+      return;
+    }
+
     await despesaRepository.delete(id);
   },
 

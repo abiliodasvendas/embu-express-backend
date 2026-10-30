@@ -108,6 +108,21 @@ export const STATUS_DESPESA = {
 
 export type StatusDespesaType = typeof STATUS_DESPESA[keyof typeof STATUS_DESPESA];
 
+export const DESPESA_ESCOPO_ACAO = {
+    UNICA: 'unica',
+    FUTURAS: 'futuras',
+    TODAS: 'todas',
+} as const;
+
+export type DespesaEscopoAcaoType = typeof DESPESA_ESCOPO_ACAO[keyof typeof DESPESA_ESCOPO_ACAO];
+
+export const TIPO_CONTA_PAGAR = {
+    DESPESA: 'DESPESA',
+    CONVENIO: 'CONVENIO',
+} as const;
+
+export type TipoContaPagarType = typeof TIPO_CONTA_PAGAR[keyof typeof TIPO_CONTA_PAGAR];
+
 export const TIPO_MOVIMENTACAO_AVULSA = {
     ENTRADA: 'ENTRADA',
     SAIDA: 'SAIDA',

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DESPESA_ESCOPO_ACAO } from "../constants/financeiro.enum.js";
 
 export const categoriaDespesaEnum = z.enum([
   "DESPESA_FIXA",
@@ -40,7 +41,15 @@ export const despesaOperacionalSchema = z.object({
   dia_vencimento_base: z.number().int().min(1).max(31).optional().nullable(),
 });
 
-export const updateDespesaOperacionalSchema = despesaOperacionalSchema.partial();
+export const escopoDespesaEnum = z.nativeEnum(DESPESA_ESCOPO_ACAO);
+
+export const deleteDespesaQuerySchema = z.object({
+  escopo: escopoDespesaEnum.optional().default(DESPESA_ESCOPO_ACAO.UNICA),
+});
+
+export const updateDespesaOperacionalSchema = despesaOperacionalSchema.partial().extend({
+  escopo: escopoDespesaEnum.optional(),
+});
 
 export const listDespesasQuerySchema = z.object({
   mes: z.coerce.number().int().min(1).max(12).optional(),
