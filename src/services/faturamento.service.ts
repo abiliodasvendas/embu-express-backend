@@ -76,7 +76,12 @@ export const faturamentoService = {
       periodosCalculados = getMensalCompetencia(mes, ano, unidade.dia_vencimento_padrao || 10);
       valorSugerido = valorBase;
     } else {
-      periodosCalculados = getQuinzenasCompetencia(mes, ano);
+      periodosCalculados = getQuinzenasCompetencia(
+        mes,
+        ano,
+        unidade.dia_vencimento_padrao,
+        unidade.dia_vencimento_segunda_quinzena
+      );
       valorSugerido = parseFloat((valorBase / 2).toFixed(2));
     }
 

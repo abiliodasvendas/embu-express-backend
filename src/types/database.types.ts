@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -2086,6 +2086,7 @@ export type Database = {
           conta_bancaria_padrao_id: string | null
           created_at: string
           dia_vencimento_padrao: number
+          dia_vencimento_segunda_quinzena: number | null
           empresa_emissora_padrao_id: number | null
           escala_semanal: number[] | null
           estado: string
@@ -2113,6 +2114,7 @@ export type Database = {
           conta_bancaria_padrao_id?: string | null
           created_at?: string
           dia_vencimento_padrao?: number
+          dia_vencimento_segunda_quinzena?: number | null
           empresa_emissora_padrao_id?: number | null
           escala_semanal?: number[] | null
           estado: string
@@ -2140,6 +2142,7 @@ export type Database = {
           conta_bancaria_padrao_id?: string | null
           created_at?: string
           dia_vencimento_padrao?: number
+          dia_vencimento_segunda_quinzena?: number | null
           empresa_emissora_padrao_id?: number | null
           escala_semanal?: number[] | null
           estado?: string

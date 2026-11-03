@@ -41,10 +41,11 @@ export interface Unidade {
   ativo: boolean;
   valor_contrato_mensal?: number;
   periodicidade?: 'QUINZENAL' | 'MENSAL' | 'SEMANAL';
-  dia_vencimento_padrao?: number;
+  dia_vencimento_padrao?: number | null;
+  dia_vencimento_segunda_quinzena?: number | null;
   empresa_emissora_padrao_id?: number | null;
   conta_bancaria_padrao_id?: string | null;
-  tipo_cobranca?: 'FIXO_MENSAL' | 'DIARIA_MOTOBOY' | 'PRODUCAO_ENTREGA';
+  tipo_cobranca?: string | null;
   conta_bancaria_padrao?: ContaBancaria | null;
   created_at?: string;
   updated_at?: string;
@@ -352,7 +353,7 @@ export interface Convenio {
   token: string;
   empresa_id?: number | null;
   conta_bancaria_id?: string | null;
-  dia_vencimento_padrao?: number;
+  dia_vencimento_padrao?: number | null;
   periodicidade?: 'MENSAL' | 'QUINZENAL' | 'SEMANAL';
   created_at?: string;
 }

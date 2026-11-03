@@ -42,7 +42,12 @@ export function montarPayloadMaterializacao(
     tipoPeriodo = TIPO_PERIODO_FATURA.MENSAL;
     valorFaturado = valorCadastrado;
   } else {
-    periodosCalculados = getQuinzenasCompetencia(mes, ano);
+    periodosCalculados = getQuinzenasCompetencia(
+      mes,
+      ano,
+      unidade.dia_vencimento_padrao,
+      unidade.dia_vencimento_segunda_quinzena
+    );
     tipoPeriodo = TIPO_PERIODO_FATURA.QUINZENAL;
     quinzena = numPeriodo;
     if (numPeriodo === 1) {
@@ -142,7 +147,12 @@ export function gerarProjecoesVirtuais(
       tipoPeriodoFinal = TIPO_PERIODO_FATURA.MENSAL;
     } else {
       if (filtros.tipo_periodo && filtros.tipo_periodo !== TIPO_PERIODO_FATURA.QUINZENAL) continue;
-      periodosDaUnidade = getQuinzenasCompetencia(mes, ano);
+      periodosDaUnidade = getQuinzenasCompetencia(
+        mes,
+        ano,
+        unidade.dia_vencimento_padrao,
+        unidade.dia_vencimento_segunda_quinzena
+      );
       tipoPeriodoFinal = TIPO_PERIODO_FATURA.QUINZENAL;
     }
 

@@ -58,15 +58,22 @@ export function getSemanasCompetencia(mes: number, ano: number): PeriodoCalculad
   return semanas;
 }
 
-export function getQuinzenasCompetencia(mes: number, ano: number): PeriodoCalculado[] {
+export function getQuinzenasCompetencia(
+  mes: number,
+  ano: number,
+  diaVencimentoQ1?: number | null,
+  diaVencimentoQ2?: number | null
+): PeriodoCalculado[] {
   const ultimoDia = getUltimoDiaMes(mes, ano);
   const q1Inicio = formatIsoDate(ano, mes, 1);
   const q1Fim = formatIsoDate(ano, mes, 15);
-  const q1Venc = formatIsoDate(ano, mes, 16);
+  const dia1 = diaVencimentoQ1 && diaVencimentoQ1 >= 1 && diaVencimentoQ1 <= ultimoDia ? diaVencimentoQ1 : 16;
+  const q1Venc = formatIsoDate(ano, mes, dia1);
 
   const q2Inicio = formatIsoDate(ano, mes, 16);
   const q2Fim = formatIsoDate(ano, mes, ultimoDia);
-  const q2Venc = formatIsoDate(ano, mes, ultimoDia);
+  const dia2 = diaVencimentoQ2 && diaVencimentoQ2 >= 1 && diaVencimentoQ2 <= ultimoDia ? diaVencimentoQ2 : ultimoDia;
+  const q2Venc = formatIsoDate(ano, mes, dia2);
 
   return [
     {

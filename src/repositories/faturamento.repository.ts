@@ -21,6 +21,7 @@ export interface UnidadeParaMedicao {
   periodicidade?: string | null;
   valor_contrato_mensal?: number | null;
   dia_vencimento_padrao?: number | null;
+  dia_vencimento_segunda_quinzena?: number | null;
   empresa_emissora_padrao_id?: number | null;
   conta_bancaria_padrao_id?: string | null;
   tipo_cobranca?: string | null;
@@ -36,6 +37,7 @@ export interface UnidadeAtivaContrato {
   ativo: boolean;
   periodicidade: string;
   dia_vencimento_padrao: number;
+  dia_vencimento_segunda_quinzena?: number | null;
   empresa_emissora_padrao_id?: number | null;
   conta_bancaria_padrao_id?: string | null;
   valor_contrato_mensal: number;
@@ -132,7 +134,7 @@ export const faturamentoRepository = {
   async getUnidadeParaMedicao(unidadeId: number): Promise<UnidadeParaMedicao | null> {
     const { data, error } = await supabaseAdmin
       .from("unidades_cliente")
-      .select("id, cliente_id, nome_unidade, cnpj, periodicidade, valor_contrato_mensal, dia_vencimento_padrao, empresa_emissora_padrao_id, conta_bancaria_padrao_id, tipo_cobranca, cliente:clientes(id, nome_fantasia)")
+      .select("id, cliente_id, nome_unidade, cnpj, periodicidade, valor_contrato_mensal, dia_vencimento_padrao, dia_vencimento_segunda_quinzena, empresa_emissora_padrao_id, conta_bancaria_padrao_id, tipo_cobranca, cliente:clientes(id, nome_fantasia)")
       .eq("id", unidadeId)
       .single();
 
@@ -143,7 +145,7 @@ export const faturamentoRepository = {
   async listUnidadesAtivas(clienteId?: number, unidadeId?: number): Promise<UnidadeAtivaContrato[]> {
     let query = supabaseAdmin
       .from("unidades_cliente")
-      .select("id, cliente_id, nome_unidade, razao_social, cnpj, ativo, periodicidade, dia_vencimento_padrao, empresa_emissora_padrao_id, conta_bancaria_padrao_id, valor_contrato_mensal, created_at, cliente:clientes(id, nome_fantasia, ativo)")
+      .select("id, cliente_id, nome_unidade, razao_social, cnpj, ativo, periodicidade, dia_vencimento_padrao, dia_vencimento_segunda_quinzena, empresa_emissora_padrao_id, conta_bancaria_padrao_id, valor_contrato_mensal, created_at, cliente:clientes(id, nome_fantasia, ativo)")
       .eq("ativo", true);
 
     if (clienteId) {

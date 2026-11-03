@@ -23,14 +23,11 @@ export const unidadeSchema = z.object({
     PERIODICIDADE_FATURAMENTO.MENSAL,
     PERIODICIDADE_FATURAMENTO.SEMANAL,
   ]).optional().default(PERIODICIDADE_FATURAMENTO.QUINZENAL),
-  dia_vencimento_padrao: z.number().int().min(1).max(31).optional().default(16),
+  dia_vencimento_padrao: z.number().int().min(1).max(31).optional().nullable(),
+  dia_vencimento_segunda_quinzena: z.number().int().min(1).max(31).optional().nullable(),
   empresa_emissora_padrao_id: z.number().int().positive("A empresa emissora é obrigatória"),
   conta_bancaria_padrao_id: z.string().uuid("A conta bancária é obrigatória"),
-  tipo_cobranca: z.enum([
-    TIPO_COBRANCA_CLIENTE.FIXO_MENSAL,
-    TIPO_COBRANCA_CLIENTE.DIARIA_MOTOBOY,
-    TIPO_COBRANCA_CLIENTE.PRODUCAO_ENTREGA,
-  ]).optional().default(TIPO_COBRANCA_CLIENTE.FIXO_MENSAL),
+  tipo_cobranca: z.string().optional().default(TIPO_COBRANCA_CLIENTE.FIXO_MENSAL),
 });
 
 export const updateUnidadeSchema = unidadeSchema.partial().omit({ cliente_id: true });

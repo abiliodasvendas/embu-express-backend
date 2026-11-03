@@ -19,6 +19,7 @@ export interface UnidadeDTO {
   valor_contrato_mensal: number;
   periodicidade: string;
   dia_vencimento_padrao: number;
+  dia_vencimento_segunda_quinzena?: number | null;
   empresa_emissora_padrao_id?: number | null;
   conta_bancaria_padrao_id?: string | null;
   tipo_cobranca?: string;
@@ -47,6 +48,7 @@ export function toUnidadeDTO(u: Unidade & { cliente?: { nome_fantasia?: string }
     valor_contrato_mensal: Number(u.valor_contrato_mensal || 0),
     periodicidade: u.periodicidade || "QUINZENAL",
     dia_vencimento_padrao: u.dia_vencimento_padrao || 16,
+    dia_vencimento_segunda_quinzena: u.dia_vencimento_segunda_quinzena,
     empresa_emissora_padrao_id: u.empresa_emissora_padrao_id,
     conta_bancaria_padrao_id: u.conta_bancaria_padrao_id,
     tipo_cobranca: u.tipo_cobranca || "FIXO_MENSAL",
