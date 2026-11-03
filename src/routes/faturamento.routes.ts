@@ -14,6 +14,11 @@ const faturamentoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     { preHandler: [verifyPermissao(PERMISSIONS.FATURAMENTO.VER)] },
     faturamentoController.getAging
   );
+  app.post(
+    "/cancelar-lote",
+    { preHandler: [verifyPermissao(PERMISSIONS.FATURAMENTO.EDITAR)] },
+    faturamentoController.cancelarLote
+  );
   app.get(
     "/",
     { preHandler: [verifyPermissao(PERMISSIONS.FATURAMENTO.VER)] },

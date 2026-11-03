@@ -7,6 +7,7 @@ import {
   loteRecebimentoSchema,
   liquidarFaturaIndividualSchema,
   faturaStatusEnum,
+  cancelarLoteFaturasSchema,
 } from "../schemas/faturamento.schema.js";
 import { z } from "zod";
 
@@ -99,5 +100,11 @@ export const faturamentoController = {
 
     const result = await faturamentoService.getAgingRecebiveis(filtros);
     return reply.send(result);
+  },
+
+  async cancelarLote(request: FastifyRequest, reply: FastifyReply) {
+    const { ids } = cancelarLoteFaturasSchema.parse(request.body);
+    const result = await faturamentoService.cancelarFaturasLote(ids);
+    return reply.status(200).send(result);
   },
 };

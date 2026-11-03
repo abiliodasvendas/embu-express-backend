@@ -86,3 +86,7 @@ export const acertoIntercompanySchema = z.object({
   comprovante_acerto_url: z.string().optional().nullable(),
   observacao: z.string().optional().nullable(),
 });
+
+export const cancelarLoteFaturasSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "Selecione ao menos uma fatura para cancelar"),
+});

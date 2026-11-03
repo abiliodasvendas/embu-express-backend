@@ -206,7 +206,24 @@ export const faturamentoService = {
     }
     const exists = await faturamentoRepository.getFaturaById(id);
     if (!exists) throw new AppError("Fatura não encontrada", 404);
-    await faturamentoRepository.deleteFatura(id);
+    await faturamentoRepository.updateFatura(id, { status: STATUS_FATURA.CANCELADA });
+  },
+
+  async cancelarFaturasLote(ids: string[]): Promise<{ canceladas: number }> {
+    let canceladas = 0;
+    for (const id of ids) {
+      if (id.startsWith("prev_")) {
+        await this._materializarPrevisao(id, { status: STATUS_FATURA.CANCELADA });
+        canceladas++;
+      } else {
+        const exists = await faturamentoRepository.getFaturaById(id);
+        if (exists && exists.status !== STATUS_FATURA.CANCELADA) {
+          await faturamentoRepository.updateFatura(id, { status: STATUS_FATURA.CANCELADA });
+          canceladas++;
+        }
+      }
+    }
+    return { canceladas };
   },
 
   async liquidarFaturaIndividual(
