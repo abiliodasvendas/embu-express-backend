@@ -5,7 +5,7 @@ export const createConvenioSchema = z.object({
     ativo: z.boolean().optional().default(true),
     empresa_id: z.number().int().positive("A empresa pagadora é obrigatória."),
     conta_bancaria_id: z.string().uuid("A conta bancária é obrigatória."),
-    dia_vencimento_padrao: z.number().int().min(1, "Dia de vencimento inválido.").max(31, "Dia de vencimento inválido."),
+    dia_vencimento_padrao: z.number().int().min(1, "Dia de vencimento inválido.").max(31, "Dia de vencimento inválido.").optional().nullable(),
     periodicidade: z.enum(['MENSAL', 'QUINZENAL', 'SEMANAL']),
 });
 
