@@ -2,13 +2,14 @@ import { z } from "zod";
 
 export const createConvenioSchema = z.object({
     nome: z.string().min(1, "O nome do convênio é obrigatório."),
-    ativo: z.boolean().optional().default(true)
+    ativo: z.boolean().optional().default(true),
+    empresa_id: z.number().int().positive("A empresa pagadora é obrigatória."),
+    conta_bancaria_id: z.string().uuid("A conta bancária é obrigatória."),
+    dia_vencimento_padrao: z.number().int().min(1, "Dia de vencimento inválido.").max(31, "Dia de vencimento inválido."),
+    periodicidade: z.enum(['MENSAL', 'QUINZENAL', 'SEMANAL']),
 });
 
-export const updateConvenioSchema = z.object({
-    nome: z.string().min(1, "O nome do convênio é obrigatório.").optional(),
-    ativo: z.boolean().optional()
-});
+export const updateConvenioSchema = createConvenioSchema.partial();
 
 export const lancamentoConvenioSchema = z.object({
     colaborador_id: z.string().uuid("Colaborador inválido."),

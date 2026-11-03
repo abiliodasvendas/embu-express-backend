@@ -6,4 +6,5 @@ export const env = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY!,
   LOG_LEVEL: process.env.LOG_LEVEL || "info",
   LOGTAIL_TOKEN: process.env.LOGTAIL_TOKEN,
+  ATIVMOB_WEBHOOK_SECRET: process.env.ATIVMOB_WEBHOOK_SECRET,
 };

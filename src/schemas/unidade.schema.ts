@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { onlyNumbers } from "../utils/utils.js";
+import { PERIODICIDADE_FATURAMENTO, TIPO_COBRANCA_CLIENTE } from "../constants/financeiro.enum.js";
 
 export const unidadeSchema = z.object({
   cliente_id: z.number().min(1, "ID do cliente é obrigatório"),
@@ -16,6 +17,20 @@ export const unidadeSchema = z.object({
   km_contratados: z.number().optional().nullable(),
   escala_semanal: z.array(z.number()).optional().nullable(),
   ativo: z.boolean().optional().default(true),
+  valor_contrato_mensal: z.number().nonnegative().optional().default(0),
+  periodicidade: z.enum([
+    PERIODICIDADE_FATURAMENTO.QUINZENAL,
+    PERIODICIDADE_FATURAMENTO.MENSAL,
+    PERIODICIDADE_FATURAMENTO.SEMANAL,
+  ]).optional().default(PERIODICIDADE_FATURAMENTO.QUINZENAL),
+  dia_vencimento_padrao: z.number().int().min(1).max(31).optional().default(16),
+  empresa_emissora_padrao_id: z.number().int().positive("A empresa emissora é obrigatória"),
+  conta_bancaria_padrao_id: z.string().uuid("A conta bancária é obrigatória"),
+  tipo_cobranca: z.enum([
+    TIPO_COBRANCA_CLIENTE.FIXO_MENSAL,
+    TIPO_COBRANCA_CLIENTE.DIARIA_MOTOBOY,
+    TIPO_COBRANCA_CLIENTE.PRODUCAO_ENTREGA,
+  ]).optional().default(TIPO_COBRANCA_CLIENTE.FIXO_MENSAL),
 });
 
 export const updateUnidadeSchema = unidadeSchema.partial().omit({ cliente_id: true });

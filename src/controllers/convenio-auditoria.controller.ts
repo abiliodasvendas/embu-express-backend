@@ -22,12 +22,21 @@ export const convenioAuditoriaController = {
     const querySchema = z.object({
       mes: z.coerce.number().int().min(1).max(12),
       ano: z.coerce.number().int().min(2020),
+      tipo_periodo: z.string().optional(),
+      numero_periodo: z.coerce.number().int().optional(),
+      quinzena: z.coerce.number().int().optional(),
     });
 
     const { id } = paramsSchema.parse(request.params);
-    const { mes, ano } = querySchema.parse(request.query);
+    const { mes, ano, tipo_periodo, numero_periodo, quinzena } = querySchema.parse(request.query);
 
-    const resultado = await convenioAuditoriaService.getAuditoriaMensal(id, mes, ano);
+    const resultado = await convenioAuditoriaService.getAuditoriaMensal(
+      id,
+      mes,
+      ano,
+      tipo_periodo,
+      numero_periodo || quinzena
+    );
     return reply.status(200).send(resultado);
   },
 

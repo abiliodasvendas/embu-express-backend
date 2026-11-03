@@ -13,8 +13,7 @@ import {
   LiquidarFaturaConvenioInput,
 } from "../schemas/convenio-auditoria.schema.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
-import { configuracaoService } from "./configuracao.service.js";
-import { DIA_DESEMBOLSO_CONVENIOS_PADRAO, STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
+import { STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
 import { convenioRegrasService } from "./convenio-regras.service.js";
 
 type FaturaFornecedorDTO = z.infer<typeof faturaFornecedorConvenioSchema>;
@@ -23,19 +22,40 @@ export const convenioAuditoriaService = {
   async getAuditoriaMensal(
     convenioId: string,
     mes: number,
-    ano: number
+    ano: number,
+    tipoPeriodo?: string,
+    numeroPeriodo?: number
   ): Promise<AuditoriaConvenioResultado> {
     const convenio = await convenioAuditoriaRepository.getConvenioBasic(convenioId);
     if (!convenio) {
       throw new AppError("Convênio não encontrado", 404);
     }
 
+    const periodicidadeFinal = tipoPeriodo || convenio.periodicidade || "MENSAL";
+    const numPeriodoFinal = numeroPeriodo || 1;
+
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-    const dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
-    const dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+    let dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
+    let dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+
+    if (periodicidadeFinal === "QUINZENAL") {
+      if (numPeriodoFinal === 1) {
+        dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
+        dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-15`;
+      } else {
+        dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-16`;
+        dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
+      }
+    }
 
     const [fatura, lancamentos] = await Promise.all([
-      convenioAuditoriaRepository.getFaturaPorCompetencia(convenioId, mes, ano),
+      convenioAuditoriaRepository.getFaturaPorCompetencia(
+        convenioId,
+        mes,
+        ano,
+        periodicidadeFinal,
+        numPeriodoFinal
+      ),
       convenioAuditoriaRepository.listLancamentosAuditoria(convenioId, dataInicioMesStr, dataFimMesStr),
     ]);
 
@@ -53,15 +73,7 @@ export const convenioAuditoriaService = {
 
     let faturaResultado = fatura;
     if (!faturaResultado && totalGeralLancamentos > 0) {
-      const configDia = await configuracaoService.getConfiguracao("dia_desembolso_convenios");
-      const diaConvenios = Math.min(
-        Math.max(
-          parseInt(configDia?.valor || String(DIA_DESEMBOLSO_CONVENIOS_PADRAO), 10) ||
-            DIA_DESEMBOLSO_CONVENIOS_PADRAO,
-          1
-        ),
-        31
-      );
+      const diaConvenios = Math.min(Math.max(convenio.dia_vencimento_padrao || 15, 1), 31);
       faturaResultado = convenioRegrasService.gerarFaturaPrevisao({
         convenioId: convenio.id,
         mes,
@@ -70,6 +82,11 @@ export const convenioAuditoriaService = {
         valorTotal: totalGeralLancamentos,
         empresaId: convenio.empresa_id,
         contaBancariaId: convenio.conta_bancaria_id,
+        tipoPeriodo: periodicidadeFinal as "MENSAL" | "QUINZENAL" | "SEMANAL",
+        numeroPeriodo: numPeriodoFinal,
+        quinzena: periodicidadeFinal === "QUINZENAL" ? numPeriodoFinal : null,
+        dataInicioApuracao: dataInicioMesStr,
+        dataFimApuracao: dataFimMesStr,
       });
     }
 
@@ -113,7 +130,9 @@ export const convenioAuditoriaService = {
     const existente = await convenioAuditoriaRepository.getFaturaPorCompetencia(
       payload.convenio_id,
       payload.mes_competencia,
-      payload.ano_competencia
+      payload.ano_competencia,
+      payload.tipo_periodo,
+      payload.numero_periodo
     );
 
     if (existente) {
@@ -127,6 +146,11 @@ export const convenioAuditoriaService = {
         valor_pago: payload.valor_pago !== undefined ? payload.valor_pago : null,
         comprovante_url: payload.comprovante_url || null,
         observacoes: payload.observacoes || null,
+        tipo_periodo: payload.tipo_periodo,
+        numero_periodo: payload.numero_periodo,
+        quinzena: payload.quinzena,
+        data_inicio_apuracao: payload.data_inicio_apuracao,
+        data_fim_apuracao: payload.data_fim_apuracao,
       });
     }
 
@@ -151,7 +175,9 @@ export const convenioAuditoriaService = {
       fatura = await convenioAuditoriaRepository.getFaturaPorCompetencia(
         payload.convenio_id,
         payload.mes_competencia,
-        payload.ano_competencia
+        payload.ano_competencia,
+        payload.tipo_periodo,
+        payload.numero_periodo
       );
     }
 
@@ -160,6 +186,9 @@ export const convenioAuditoriaService = {
         convenio_id: payload.convenio_id,
         mes_competencia: payload.mes_competencia,
         ano_competencia: payload.ano_competencia,
+        tipo_periodo: payload.tipo_periodo || "MENSAL",
+        numero_periodo: payload.numero_periodo || 1,
+        quinzena: payload.quinzena || 1,
         data_vencimento: payload.data_vencimento,
         valor_total_fatura: payload.valor_total_fatura,
         valor_pago: 0,
@@ -214,21 +243,11 @@ export const convenioAuditoriaService = {
     const dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
     const dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    const [convenios, faturas, lancamentos, configDiaConvenios] = await Promise.all([
+    const [convenios, faturas, lancamentos] = await Promise.all([
       convenioAuditoriaRepository.listConveniosParaResumo(),
       convenioAuditoriaRepository.listFaturasPorCompetencia(mes, ano),
       convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioMesStr, dataFimMesStr),
-      configuracaoService.getConfiguracao("dia_desembolso_convenios"),
     ]);
-
-    const diaConveniosPadrao = Math.min(
-      Math.max(
-        parseInt(configDiaConvenios?.valor || String(DIA_DESEMBOLSO_CONVENIOS_PADRAO), 10) ||
-          DIA_DESEMBOLSO_CONVENIOS_PADRAO,
-        1
-      ),
-      31
-    );
 
     const faturasMap = new Map<string, FaturaFornecedorConvenio>();
     faturas.forEach((f) => faturasMap.set(f.convenio_id, f));
@@ -308,20 +327,21 @@ export const convenioAuditoriaService = {
           convenioId: conv.id,
           mes,
           ano,
-          diaVencimento: diaConveniosPadrao,
+          diaVencimento: conv.dia_vencimento_padrao || 15,
           valorTotal: totalConsumido,
           empresaId: conv.empresa_id,
           contaBancariaId: conv.conta_bancaria_id,
+          tipoPeriodo: (conv.periodicidade as "QUINZENAL" | "MENSAL" | "SEMANAL") || "MENSAL",
         });
-        globalFaturas += faturaPrevisao.valor_total_fatura;
+
         faturaItem = {
           id: faturaPrevisao.id,
-          valor_total_fatura: faturaPrevisao.valor_total_fatura,
+          valor_total_fatura: totalConsumido,
           data_vencimento: faturaPrevisao.data_vencimento,
-          status: STATUS_FATURA_CONVENIO.PENDENTE,
-          saldo_embu: parseFloat(totalMotoEmbuDavid.toFixed(2)),
-          empresa_id: faturaPrevisao.empresa_id,
-          conta_bancaria_id: faturaPrevisao.conta_bancaria_id,
+          status: faturaPrevisao.status,
+          saldo_embu: parseFloat((totalConsumido - totalMotoboys).toFixed(2)),
+          empresa_id: conv.empresa_id || null,
+          conta_bancaria_id: conv.conta_bancaria_id || null,
           valor_pago: null,
           data_pagamento: null,
           is_previsao: true,
@@ -329,42 +349,27 @@ export const convenioAuditoriaService = {
         };
       }
 
-      const ticketMedio =
-        convLancamentos.length > 0
-          ? parseFloat((totalConsumido / convLancamentos.length).toFixed(2))
-          : 0;
-
       return {
         id: conv.id,
         nome: conv.nome,
         ativo: conv.ativo,
-        empresa_id: conv.empresa_id || null,
-        conta_bancaria_id: conv.conta_bancaria_id || null,
-        total_consumido: parseFloat(totalConsumido.toFixed(2)),
-        total_motoboys: parseFloat(totalMotoboys.toFixed(2)),
-        total_moto_embu_david: parseFloat(totalMotoEmbuDavid.toFixed(2)),
-        total_sem_vinculo: parseFloat(totalSemVinculo.toFixed(2)),
+        empresa_id: conv.empresa_id,
+        conta_bancaria_id: conv.conta_bancaria_id,
+        total_consumido: totalConsumido,
+        total_motoboys: totalMotoboys,
+        total_moto_embu_david: totalMotoEmbuDavid,
+        total_sem_vinculo: totalSemVinculo,
         quantidade_lancamentos: convLancamentos.length,
         total_colaboradores_distintos: distinctColabs.size,
-        ticket_medio: ticketMedio,
+        ticket_medio:
+          convLancamentos.length > 0
+            ? parseFloat((totalConsumido / convLancamentos.length).toFixed(2))
+            : 0,
         fatura_fornecedor: faturaItem,
       };
     });
 
-    const totalSaldoEmbu = parseFloat((globalFaturas - globalMotoboys).toFixed(2));
-
-    const distribuicaoPercentual = conveniosItens
-      .filter((c) => c.total_consumido > 0)
-      .map((c) => ({
-        convenio_id: c.id,
-        nome: c.nome,
-        percentual:
-          globalConsumido > 0
-            ? parseFloat(((c.total_consumido / globalConsumido) * 100).toFixed(1))
-            : 0,
-        total: c.total_consumido,
-      }))
-      .sort((a, b) => b.total - a.total);
+    const totalSaldoCargoEmbu = parseFloat((globalFaturas - globalMotoboys).toFixed(2));
 
     return {
       periodo: { mes, ano },
@@ -374,11 +379,10 @@ export const convenioAuditoriaService = {
         total_moto_embu_david: parseFloat(globalMotoEmbuDavid.toFixed(2)),
         total_sem_vinculo: parseFloat(globalSemVinculo.toFixed(2)),
         total_faturas_fornecedores: parseFloat(globalFaturas.toFixed(2)),
-        total_saldo_cargo_embu: totalSaldoEmbu,
+        total_saldo_cargo_embu: totalSaldoCargoEmbu,
       },
-      convenios: conveniosItens,
       top_colaboradores: topColaboradores,
-      distribuicao_percentual: distribuicaoPercentual,
+      convenios: conveniosItens,
     };
   },
 };

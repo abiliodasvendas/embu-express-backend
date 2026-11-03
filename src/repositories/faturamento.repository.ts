@@ -9,36 +9,45 @@ export interface ListFaturasFilters {
   numero_periodo?: number;
   empresa_id?: number;
   cliente_id?: number;
+  unidade_id?: number;
   status?: StatusFatura;
 }
 
-export interface ClienteParaMedicao {
+export interface UnidadeParaMedicao {
   id: number;
-  nome_fantasia: string;
+  cliente_id: number;
+  nome_unidade: string;
+  cnpj: string;
   periodicidade?: string | null;
   valor_contrato_mensal?: number | null;
-  valor_base?: number | null;
   dia_vencimento_padrao?: number | null;
   empresa_emissora_padrao_id?: number | null;
+  conta_bancaria_padrao_id?: string | null;
+  tipo_cobranca?: string | null;
+  cliente?: { id: number; nome_fantasia: string };
 }
 
-export interface ClienteAtivoContrato {
+export interface UnidadeAtivaContrato {
   id: number;
-  nome_fantasia: string;
+  cliente_id: number;
+  nome_unidade: string;
+  razao_social: string;
+  cnpj: string;
   ativo: boolean;
-  periodicidade?: string | null;
-  dia_vencimento_padrao?: number | null;
+  periodicidade: string;
+  dia_vencimento_padrao: number;
   empresa_emissora_padrao_id?: number | null;
-  valor_contrato_mensal?: number | null;
-  valor_base?: number | null;
+  conta_bancaria_padrao_id?: string | null;
+  valor_contrato_mensal: number;
   created_at: string;
+  cliente?: { id: number; nome_fantasia: string; ativo: boolean };
 }
 
 export const faturamentoRepository = {
   async listFaturas(filtros: ListFaturasFilters): Promise<FaturaCliente[]> {
     let query = supabaseAdmin
       .from("faturas_clientes")
-      .select("*, cliente:clientes(id, nome_fantasia), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
       .order("data_vencimento", { ascending: false });
 
     if (filtros.mes) query = query.eq("mes_competencia", filtros.mes);
@@ -48,6 +57,7 @@ export const faturamentoRepository = {
     if (filtros.quinzena) query = query.eq("quinzena", filtros.quinzena);
     if (filtros.empresa_id) query = query.eq("empresa_id", filtros.empresa_id);
     if (filtros.cliente_id) query = query.eq("cliente_id", filtros.cliente_id);
+    if (filtros.unidade_id) query = query.eq("unidade_id", filtros.unidade_id);
     if (filtros.status) query = query.eq("status", filtros.status);
 
     const { data, error } = await query;
@@ -58,7 +68,7 @@ export const faturamentoRepository = {
   async listFaturasAging(filtros: { mes?: number; ano?: number; empresa_id?: number }): Promise<FaturaCliente[]> {
     let query = supabaseAdmin
       .from("faturas_clientes")
-      .select("*, cliente:clientes(id, nome_fantasia), empresa:empresas(id, nome_fantasia)")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj), empresa:empresas(id, nome_fantasia)")
       .neq("status", "CANCELADA")
       .neq("status", "LIQUIDADA");
 
@@ -79,7 +89,7 @@ export const faturamentoRepository = {
   async getFaturaById(id: string): Promise<FaturaCliente | null> {
     const { data, error } = await supabaseAdmin
       .from("faturas_clientes")
-      .select("*, cliente:clientes(id, nome_fantasia), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
       .eq("id", id)
       .single();
 
@@ -91,7 +101,7 @@ export const faturamentoRepository = {
     const { data, error } = await supabaseAdmin
       .from("faturas_clientes")
       .insert([record])
-      .select("*, cliente:clientes(id, nome_fantasia), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
       .single();
 
     if (error) throw error;
@@ -103,7 +113,7 @@ export const faturamentoRepository = {
       .from("faturas_clientes")
       .update(record)
       .eq("id", id)
-      .select("*, cliente:clientes(id, nome_fantasia), empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
       .single();
 
     if (error) throw error;
@@ -119,52 +129,35 @@ export const faturamentoRepository = {
     if (error) throw error;
   },
 
-  async getCliente(id: number): Promise<ClienteParaMedicao | null> {
-    const res = await supabaseAdmin
-      .from("clientes")
-      .select("id, nome_fantasia, periodicidade, valor_contrato_mensal, valor_base, dia_vencimento_padrao, empresa_emissora_padrao_id")
-      .eq("id", id)
+  async getUnidadeParaMedicao(unidadeId: number): Promise<UnidadeParaMedicao | null> {
+    const { data, error } = await supabaseAdmin
+      .from("unidades_cliente")
+      .select("id, cliente_id, nome_unidade, cnpj, periodicidade, valor_contrato_mensal, dia_vencimento_padrao, empresa_emissora_padrao_id, conta_bancaria_padrao_id, tipo_cobranca, cliente:clientes(id, nome_fantasia)")
+      .eq("id", unidadeId)
       .single();
 
-    let clienteData: ClienteParaMedicao | null = res.data ? (res.data as ClienteParaMedicao) : null;
-    let clientError = res.error;
-
-    if (clientError && clientError.code === "42703") {
-      const fallback = await supabaseAdmin
-        .from("clientes")
-        .select("id, nome_fantasia, valor_base")
-        .eq("id", id)
-        .single();
-      clienteData = fallback.data
-        ? {
-            id: fallback.data.id,
-            nome_fantasia: fallback.data.nome_fantasia,
-            periodicidade: null,
-            valor_contrato_mensal: fallback.data.valor_base,
-            valor_base: fallback.data.valor_base,
-            dia_vencimento_padrao: null,
-            empresa_emissora_padrao_id: null,
-          }
-        : null;
-      clientError = fallback.error;
-    }
-
-    if (clientError || !clienteData) return null;
-    return clienteData;
+    if (error || !data) return null;
+    return data as unknown as UnidadeParaMedicao;
   },
 
-  async listClientesAtivos(clienteId?: number): Promise<ClienteAtivoContrato[]> {
-    let clientQuery = supabaseAdmin
-      .from("clientes")
-      .select("id, nome_fantasia, ativo, periodicidade, dia_vencimento_padrao, empresa_emissora_padrao_id, valor_contrato_mensal, valor_base, created_at")
+  async listUnidadesAtivas(clienteId?: number, unidadeId?: number): Promise<UnidadeAtivaContrato[]> {
+    let query = supabaseAdmin
+      .from("unidades_cliente")
+      .select("id, cliente_id, nome_unidade, razao_social, cnpj, ativo, periodicidade, dia_vencimento_padrao, empresa_emissora_padrao_id, conta_bancaria_padrao_id, valor_contrato_mensal, created_at, cliente:clientes(id, nome_fantasia, ativo)")
       .eq("ativo", true);
 
     if (clienteId) {
-      clientQuery = clientQuery.eq("id", clienteId);
+      query = query.eq("cliente_id", clienteId);
+    }
+    if (unidadeId) {
+      query = query.eq("id", unidadeId);
     }
 
-    const { data } = await clientQuery;
-    return (data || []) as ClienteAtivoContrato[];
+    const { data, error } = await query;
+    if (error) throw error;
+    return ((data || []) as unknown as UnidadeAtivaContrato[]).filter(
+      (u) => !u.cliente || u.cliente.ativo
+    );
   },
 
   async listEmpresasAtivas(): Promise<Array<{ id: number; nome_fantasia: string; razao_social: string; cnpj: string }>> {

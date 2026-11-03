@@ -9,23 +9,23 @@ import {
 export const convenioAuditoriaRepository = {
   async getConvenioBasic(
     convenioId: string
-  ): Promise<Pick<Convenio, "id" | "nome" | "empresa_id" | "conta_bancaria_id"> | null> {
+  ): Promise<Pick<Convenio, "id" | "nome" | "empresa_id" | "conta_bancaria_id" | "dia_vencimento_padrao" | "periodicidade"> | null> {
     const { data, error } = await supabaseAdmin
       .from("convenios")
-      .select("id, nome, empresa_id, conta_bancaria_id")
+      .select("id, nome, empresa_id, conta_bancaria_id, dia_vencimento_padrao, periodicidade")
       .eq("id", convenioId)
       .single();
 
     if (error || !data) return null;
-    return data as Pick<Convenio, "id" | "nome" | "empresa_id" | "conta_bancaria_id">;
+    return data as Pick<Convenio, "id" | "nome" | "empresa_id" | "conta_bancaria_id" | "dia_vencimento_padrao" | "periodicidade">;
   },
 
   async listConveniosParaResumo(): Promise<
-    Array<{ id: string; nome: string; ativo: boolean; empresa_id: number | null; conta_bancaria_id: string | null }>
+    Array<{ id: string; nome: string; ativo: boolean; empresa_id: number | null; conta_bancaria_id: string | null; dia_vencimento_padrao: number; periodicidade: string }>
   > {
     const { data, error } = await supabaseAdmin
       .from("convenios")
-      .select("id, nome, ativo, empresa_id, conta_bancaria_id")
+      .select("id, nome, ativo, empresa_id, conta_bancaria_id, dia_vencimento_padrao, periodicidade")
       .order("nome", { ascending: true });
 
     if (error) throw error;
@@ -35,21 +35,33 @@ export const convenioAuditoriaRepository = {
       ativo: boolean;
       empresa_id: number | null;
       conta_bancaria_id: string | null;
+      dia_vencimento_padrao: number;
+      periodicidade: string;
     }>;
   },
 
   async getFaturaPorCompetencia(
     convenioId: string,
     mes: number,
-    ano: number
+    ano: number,
+    tipoPeriodo?: string,
+    numeroPeriodo?: number
   ): Promise<FaturaFornecedorConvenio | null> {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("faturas_fornecedores_convenios")
       .select("*, pagamentos:faturas_fornecedores_pagamentos(*, conta_bancaria:contas_bancarias(*), empresa:empresas(*))")
       .eq("convenio_id", convenioId)
       .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano)
-      .maybeSingle();
+      .eq("ano_competencia", ano);
+
+    if (tipoPeriodo) {
+      query = query.eq("tipo_periodo", tipoPeriodo);
+    }
+    if (numeroPeriodo) {
+      query = query.eq("numero_periodo", numeroPeriodo);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) throw error;
     return data as FaturaFornecedorConvenio | null;

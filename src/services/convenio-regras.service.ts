@@ -168,6 +168,11 @@ export function gerarFaturaPrevisao({
   valorTotal,
   empresaId,
   contaBancariaId,
+  tipoPeriodo = "MENSAL",
+  numeroPeriodo = 1,
+  quinzena = 1,
+  dataInicioApuracao,
+  dataFimApuracao,
 }: {
   convenioId: string;
   mes: number;
@@ -176,16 +181,41 @@ export function gerarFaturaPrevisao({
   valorTotal: number;
   empresaId?: number | null;
   contaBancariaId?: string | null;
+  tipoPeriodo?: "MENSAL" | "QUINZENAL" | "SEMANAL";
+  numeroPeriodo?: number;
+  quinzena?: number | null;
+  dataInicioApuracao?: string;
+  dataFimApuracao?: string;
 }): FaturaFornecedorConvenio {
-  const mesVenc = mes === 12 ? 1 : mes + 1;
-  const anoVenc = mes === 12 ? ano + 1 : ano;
-  const dataVencimento = `${anoVenc}-${String(mesVenc).padStart(2, "0")}-${String(diaVencimento).padStart(2, "0")}`;
+  let mesVenc = mes;
+  let anoVenc = ano;
+  let diaVenc = diaVencimento;
+
+  if (tipoPeriodo === "QUINZENAL") {
+    if (numeroPeriodo === 1) {
+      diaVenc = Math.min(Math.max(diaVencimento, 1), 31);
+    } else {
+      diaVenc = Math.min(diaVencimento + 15, 30);
+    }
+  } else {
+    mesVenc = mes === 12 ? 1 : mes + 1;
+    anoVenc = mes === 12 ? ano + 1 : ano;
+  }
+
+  const ultimoDiaMesVenc = new Date(Date.UTC(anoVenc, mesVenc, 0)).getUTCDate();
+  const diaFinal = Math.min(diaVenc, ultimoDiaMesVenc);
+  const dataVencimento = `${anoVenc}-${String(mesVenc).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
 
   return {
-    id: `prev-${convenioId}-${mes}-${ano}`,
+    id: `prev-${convenioId}-${mes}-${ano}-${tipoPeriodo}-${numeroPeriodo}`,
     convenio_id: convenioId,
     mes_competencia: mes,
     ano_competencia: ano,
+    tipo_periodo: tipoPeriodo,
+    numero_periodo: numeroPeriodo,
+    quinzena: tipoPeriodo === "QUINZENAL" ? quinzena : null,
+    data_inicio_apuracao: dataInicioApuracao || null,
+    data_fim_apuracao: dataFimApuracao || null,
     data_vencimento: dataVencimento,
     valor_total_fatura: valorTotal,
     status: STATUS_FATURA_CONVENIO.PENDENTE,

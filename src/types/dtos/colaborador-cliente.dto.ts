@@ -98,7 +98,7 @@ export function toVinculoDTO(v: ColaboradorCliente): VinculoDTO {
             dia_semana: h.dia_semana,
             hora_inicio: h.hora_inicio,
             hora_fim: h.hora_fim,
-            tolerancia_pausa_min: h.tolerancia_pausa_min
+            tolerancia_pausa_min: h.tolerancia_pausa_min || 0
         })),
         cliente: v.cliente ? {
             id: v.cliente.id,

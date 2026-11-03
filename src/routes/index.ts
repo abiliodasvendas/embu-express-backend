@@ -24,9 +24,10 @@ import fluxoCaixaRoutes from "./fluxo-caixa.routes.js";
 import retaguardaRoutes from "./retaguarda.routes.js";
 import movimentacoesAvulsasRoutes from "./movimentacoes-avulsas.routes.js";
 import contasPagarRoutes from "./contas-pagar.routes.js";
+import ativMobWebhookRoutes from "./ativmob-webhook.routes.js";
+import { ATIVMOB_ROUTES } from "../constants/ativmob-webhook.enum.js";
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
-  // Embu Express Routes
   app.register(appUpdatesRoutes, { prefix: "/api/app" });
   app.register(authRoutes, { prefix: "/api/auth" });
   app.register(clientRoutes, { prefix: "/api/clientes" });
@@ -52,6 +53,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(retaguardaRoutes, { prefix: "/api/retaguarda" });
   app.register(movimentacoesAvulsasRoutes, { prefix: "/api/movimentacoes-avulsas" });
   app.register(contasPagarRoutes, { prefix: "/api/contas-pagar" });
+  app.register(ativMobWebhookRoutes, { prefix: ATIVMOB_ROUTES.WEBHOOK });
 };
 
 export default routes;

@@ -16,6 +16,7 @@ export const tipoPeriodoFaturaEnum = z.enum([
 
 export const faturaClienteSchema = z.object({
   cliente_id: z.number().int().positive("Cliente é obrigatório"),
+  unidade_id: z.number().int().positive("Unidade é obrigatória"),
   empresa_id: z.number().int().positive("Empresa é obrigatória"),
   mes_competencia: z.number().int().min(1).max(12),
   ano_competencia: z.number().int().min(2020),
@@ -38,7 +39,8 @@ export const faturaClienteSchema = z.object({
 export const updateFaturaClienteSchema = faturaClienteSchema.partial();
 
 export const sugestaoMedicaoQuerySchema = z.object({
-  cliente_id: z.coerce.number().int().positive(),
+  unidade_id: z.coerce.number().int().positive().optional(),
+  cliente_id: z.coerce.number().int().positive().optional(),
   mes: z.coerce.number().int().min(1).max(12),
   ano: z.coerce.number().int().min(2020),
   tipo_periodo: tipoPeriodoFaturaEnum.optional(),

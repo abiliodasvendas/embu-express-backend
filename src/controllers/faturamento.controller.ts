@@ -20,14 +20,15 @@ interface AuthenticatedRequest extends FastifyRequest {
 export const faturamentoController = {
   async getSugestao(request: FastifyRequest, reply: FastifyReply) {
     const query = sugestaoMedicaoQuerySchema.parse(request.query);
-    const result = await faturamentoService.calcularSugestaoMedicao(
-      query.cliente_id,
-      query.mes,
-      query.ano,
-      query.tipo_periodo,
-      query.numero_periodo,
-      query.quinzena
-    );
+    const result = await faturamentoService.calcularSugestaoMedicao({
+      unidadeId: query.unidade_id,
+      clienteId: query.cliente_id,
+      mes: query.mes,
+      ano: query.ano,
+      tipoPeriodo: query.tipo_periodo,
+      numeroPeriodo: query.numero_periodo,
+      quinzena: query.quinzena,
+    });
     return reply.send(result);
   },
 
@@ -40,6 +41,7 @@ export const faturamentoController = {
       numero_periodo: z.coerce.number().optional(),
       empresa_id: z.coerce.number().optional(),
       cliente_id: z.coerce.number().optional(),
+      unidade_id: z.coerce.number().optional(),
       status: faturaStatusEnum.optional(),
     }).parse(request.query);
 

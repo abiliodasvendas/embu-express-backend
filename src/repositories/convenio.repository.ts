@@ -46,6 +46,8 @@ export const convenioRepository = {
     token: string;
     empresa_id?: number | null;
     conta_bancaria_id?: string | null;
+    dia_vencimento_padrao?: number;
+    periodicidade?: 'MENSAL' | 'QUINZENAL' | 'SEMANAL';
   }): Promise<Convenio> {
     const { data, error } = await supabaseAdmin
       .from("convenios")

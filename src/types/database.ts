@@ -16,12 +16,7 @@ export interface Client {
   latitude?: number | null;
   longitude?: number | null;
   ativo: boolean;
-  tipo_cobranca?: 'FIXO_MENSAL' | 'DIARIA_MOTOBOY' | 'TAXA_ENTREGA';
-  periodicidade?: 'QUINZENAL' | 'MENSAL' | 'SEMANAL';
-  dia_vencimento_padrao?: number;
-  empresa_emissora_padrao_id?: number | null;
-  valor_contrato_mensal?: number;
-  valor_base?: number;
+  valor_total_contrato?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -44,6 +39,13 @@ export interface Unidade {
   latitude?: number | null;
   longitude?: number | null;
   ativo: boolean;
+  valor_contrato_mensal?: number;
+  periodicidade?: 'QUINZENAL' | 'MENSAL' | 'SEMANAL';
+  dia_vencimento_padrao?: number;
+  empresa_emissora_padrao_id?: number | null;
+  conta_bancaria_padrao_id?: string | null;
+  tipo_cobranca?: 'FIXO_MENSAL' | 'DIARIA_MOTOBOY' | 'PRODUCAO_ENTREGA';
+  conta_bancaria_padrao?: ContaBancaria | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -193,6 +195,16 @@ export interface ColaboradorClienteHorario {
   created_at?: string;
 }
 
+export interface HorarioTrabalhoTurno {
+  id?: number;
+  colaborador_cliente_id?: number;
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+  tolerancia_pausa_min?: number | null;
+  created_at?: string | null;
+}
+
 export interface ColaboradorCliente {
   id: number;
   colaborador_id: string;
@@ -210,7 +222,7 @@ export interface ColaboradorCliente {
   cliente?: Client;
   unidade?: Unidade;
   empresa?: Empresa;
-  horarios?: any[];
+  horarios?: HorarioTrabalhoTurno[] | null;
   validar_localizacao?: boolean;
   tipo_alocacao?: 'PADRAO' | 'RESERVA' | 'FISCAL';
   created_at?: string;
@@ -340,6 +352,8 @@ export interface Convenio {
   token: string;
   empresa_id?: number | null;
   conta_bancaria_id?: string | null;
+  dia_vencimento_padrao?: number;
+  periodicidade?: 'MENSAL' | 'QUINZENAL' | 'SEMANAL';
   created_at?: string;
 }
 
@@ -379,6 +393,7 @@ export type StatusFatura = 'PENDENTE' | 'PAGO_PARCIAL' | 'LIQUIDADA' | 'CANCELAD
 export interface FaturaCliente {
   id: string;
   cliente_id: number;
+  unidade_id: number;
   empresa_id: number;
   mes_competencia: number;
   ano_competencia: number;
@@ -402,6 +417,7 @@ export interface FaturaCliente {
   created_at?: string;
   updated_at?: string;
   cliente?: Client;
+  unidade?: Unidade;
   empresa?: Empresa;
   recebimentos?: FaturaRecebimento[];
 }
@@ -582,6 +598,11 @@ export interface FaturaFornecedorConvenio {
   convenio_id: string;
   mes_competencia: number;
   ano_competencia: number;
+  tipo_periodo?: 'MENSAL' | 'QUINZENAL' | 'SEMANAL';
+  numero_periodo?: number;
+  quinzena?: number | null;
+  data_inicio_apuracao?: string | null;
+  data_fim_apuracao?: string | null;
   data_vencimento: string;
   valor_total_fatura: number;
   status: StatusFaturaFornecedorConvenio;
@@ -736,4 +757,26 @@ export interface ElegibilidadeConvenioResultado {
   teto_limite?: number;
   saldo_disponivel?: number;
   total_gasto_mes?: number;
+}
+
+export interface AtivMobWebhookEvent {
+  id: string;
+  event_id: number | null;
+  event_code: string | null;
+  event_title: string | null;
+  event_dth: string | null;
+  store_cnpj: string | null;
+  order_number: string | null;
+  invoice_number: string | null;
+  agent_code: string | null;
+  agent_name: string | null;
+  lat: number | null;
+  lng: number | null;
+  codigo_roteiro: string | null;
+  form: Record<string, unknown>[];
+  raw_payload: Record<string, unknown>;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
