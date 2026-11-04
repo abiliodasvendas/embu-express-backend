@@ -102,9 +102,10 @@ export const faturamentoController = {
     return reply.send(result);
   },
 
-  async cancelarLote(request: FastifyRequest, reply: FastifyReply) {
+  async cancelarLote(request: AuthenticatedRequest, reply: FastifyReply) {
     const { ids } = cancelarLoteFaturasSchema.parse(request.body);
-    const result = await faturamentoService.cancelarFaturasLote(ids);
+    const userId = request.user?.id;
+    const result = await faturamentoService.cancelarFaturasLote(ids, userId);
     return reply.status(200).send(result);
   },
 };

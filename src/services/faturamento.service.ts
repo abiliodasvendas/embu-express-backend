@@ -209,20 +209,78 @@ export const faturamentoService = {
     await faturamentoRepository.updateFatura(id, { status: STATUS_FATURA.CANCELADA });
   },
 
-  async cancelarFaturasLote(ids: string[]): Promise<{ canceladas: number }> {
-    let canceladas = 0;
+  async cancelarFaturasLote(ids: string[], criadoPor?: string): Promise<{ canceladas: number }> {
+    if (!ids || ids.length === 0) {
+      return { canceladas: 0 };
+    }
+
+    const prevIds: string[] = [];
+    const realIds: string[] = [];
+
     for (const id of ids) {
       if (id.startsWith("prev_")) {
-        await this._materializarPrevisao(id, { status: STATUS_FATURA.CANCELADA });
-        canceladas++;
+        prevIds.push(id);
       } else {
-        const exists = await faturamentoRepository.getFaturaById(id);
-        if (exists && exists.status !== STATUS_FATURA.CANCELADA) {
-          await faturamentoRepository.updateFatura(id, { status: STATUS_FATURA.CANCELADA });
-          canceladas++;
-        }
+        realIds.push(id);
       }
     }
+
+    let canceladas = 0;
+
+    if (realIds.length > 0) {
+      const countReais = await faturamentoRepository.updateFaturasStatusLote(
+        realIds,
+        STATUS_FATURA.CANCELADA
+      );
+      canceladas += countReais;
+    }
+
+    if (prevIds.length > 0) {
+      const parsedPrevs = prevIds.map((prevId) => {
+        const parts = prevId.split("_");
+        return {
+          unidadeId: Number(parts[1]),
+          mes: Number(parts[2]),
+          ano: Number(parts[3]),
+          numPeriodo: Number(parts[4]),
+        };
+      });
+
+      const uniqueUnidadeIds = [...new Set(parsedPrevs.map((p) => p.unidadeId))];
+
+      const [unidades, empresas] = await Promise.all([
+        faturamentoRepository.getUnidadesParaMedicaoLote(uniqueUnidadeIds),
+        faturamentoRepository.listEmpresasAtivas(),
+      ]);
+
+      const unidadesMap = new Map(unidades.map((u) => [u.id, u]));
+      const fallbackEmpresa = empresas[0] || { id: 1 };
+
+      const recordsToInsert: Record<string, unknown>[] = [];
+
+      for (const p of parsedPrevs) {
+        const unidade = unidadesMap.get(p.unidadeId);
+        if (!unidade) continue;
+
+        const empresaId = unidade.empresa_emissora_padrao_id || fallbackEmpresa.id;
+        const record = montarPayloadMaterializacao(
+          unidade,
+          p.mes,
+          p.ano,
+          p.numPeriodo,
+          empresaId,
+          { status: STATUS_FATURA.CANCELADA },
+          criadoPor
+        );
+        recordsToInsert.push(record);
+      }
+
+      if (recordsToInsert.length > 0) {
+        const countVirtuais = await faturamentoRepository.createFaturasLote(recordsToInsert);
+        canceladas += countVirtuais;
+      }
+    }
+
     return { canceladas };
   },
 

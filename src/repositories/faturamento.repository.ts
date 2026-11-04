@@ -131,6 +131,38 @@ export const faturamentoRepository = {
     if (error) throw error;
   },
 
+  async updateFaturasStatusLote(ids: string[], status: StatusFatura): Promise<number> {
+    if (ids.length === 0) return 0;
+    const { error, count } = await supabaseAdmin
+      .from("faturas_clientes")
+      .update({ status }, { count: "exact" })
+      .in("id", ids);
+
+    if (error) throw error;
+    return count ?? ids.length;
+  },
+
+  async getUnidadesParaMedicaoLote(unidadeIds: number[]): Promise<UnidadeParaMedicao[]> {
+    if (unidadeIds.length === 0) return [];
+    const { data, error } = await supabaseAdmin
+      .from("unidades_cliente")
+      .select("id, cliente_id, nome_unidade, cnpj, periodicidade, valor_contrato_mensal, dia_vencimento_padrao, dia_vencimento_segunda_quinzena, empresa_emissora_padrao_id, conta_bancaria_padrao_id, tipo_cobranca, cliente:clientes(id, nome_fantasia)")
+      .in("id", unidadeIds);
+
+    if (error) throw error;
+    return (data || []) as unknown as UnidadeParaMedicao[];
+  },
+
+  async createFaturasLote(records: Record<string, unknown>[]): Promise<number> {
+    if (records.length === 0) return 0;
+    const { error, count } = await supabaseAdmin
+      .from("faturas_clientes")
+      .insert(records, { count: "exact" });
+
+    if (error) throw error;
+    return count ?? records.length;
+  },
+
   async getUnidadeParaMedicao(unidadeId: number): Promise<UnidadeParaMedicao | null> {
     const { data, error } = await supabaseAdmin
       .from("unidades_cliente")
