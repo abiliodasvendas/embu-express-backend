@@ -22,6 +22,18 @@ export const contaBancariaService = {
   },
 
   async create(data: CreateContaBancariaDTO): Promise<ContaBancaria> {
+    const duplicate = await contaBancariaRepository.findDuplicate(
+      data.empresa_id,
+      data.banco_nome,
+      data.agencia,
+      data.conta
+    );
+    if (duplicate) {
+      throw new AppError(
+        "Já existe uma conta bancária cadastrada com esta agência e número de conta para esta empresa.",
+        409
+      );
+    }
     return contaBancariaRepository.create(data);
   },
 
@@ -29,6 +41,19 @@ export const contaBancariaService = {
     const exists = await contaBancariaRepository.getById(id);
     if (!exists) {
       throw new AppError("Conta bancária não encontrada para atualização", 404);
+    }
+    const duplicate = await contaBancariaRepository.findDuplicate(
+      data.empresa_id ?? exists.empresa_id,
+      data.banco_nome ?? exists.banco_nome,
+      data.agencia !== undefined ? data.agencia : exists.agencia,
+      data.conta !== undefined ? data.conta : exists.conta,
+      id
+    );
+    if (duplicate) {
+      throw new AppError(
+        "Já existe uma conta bancária cadastrada com esta agência e número de conta para esta empresa.",
+        409
+      );
     }
     return contaBancariaRepository.update(id, data);
   },

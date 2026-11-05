@@ -51,6 +51,38 @@ export const contaBancariaRepository = {
     return data as ContaBancaria;
   },
 
+  async findDuplicate(
+    empresaId: number,
+    bancoNome: string,
+    agencia?: string | null,
+    conta?: string | null,
+    excludeId?: string
+  ): Promise<ContaBancaria | null> {
+    const contaLimpa = conta?.trim();
+    if (!contaLimpa) return null;
+
+    let query = supabaseAdmin
+      .from("contas_bancarias")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .ilike("conta", contaLimpa);
+
+    const agenciaLimpa = agencia?.trim();
+    if (agenciaLimpa) {
+      query = query.ilike("agencia", agenciaLimpa);
+    } else {
+      query = query.ilike("banco_nome", bancoNome.trim());
+    }
+
+    if (excludeId) {
+      query = query.neq("id", excludeId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    return data as ContaBancaria;
+  },
+
   async create(data: CreateContaBancariaDTO): Promise<ContaBancaria> {
     const { data: inserted, error } = await supabaseAdmin
       .from("contas_bancarias")

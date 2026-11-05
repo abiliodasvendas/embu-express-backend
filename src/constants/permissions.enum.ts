@@ -91,6 +91,10 @@ export const PERMISSIONS = {
         VER: 'movimentacoes_avulsas:ver',
         EDITAR: 'movimentacoes_avulsas:editar',
     },
+    CONTAS_BANCARIAS: {
+        VER: 'contas_bancarias:ver',
+        EDITAR: 'contas_bancarias:editar',
+    },
 } as const;
 
 export const ROLES = {
