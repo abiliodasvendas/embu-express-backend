@@ -35,7 +35,7 @@ export const despesaOperacionalSchema = z.object({
   status: statusDespesaEnum.optional().default("PENDENTE"),
   is_holding: z.boolean().optional().default(false),
   is_parcelado: z.boolean().optional().default(false),
-  quantidade_parcelas: z.number().int().min(2).max(120).optional().nullable(),
+  quantidade_parcelas: z.number().int().min(2).optional().nullable(),
   is_recorrente: z.boolean().optional().default(false),
   meses_recorrencia: z.number().int().min(2).max(24).optional().nullable(),
   dia_vencimento_base: z.number().int().min(1).max(31).optional().nullable(),
