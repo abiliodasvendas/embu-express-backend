@@ -1,9 +1,9 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FINANCEIRO_STATUS, LANCAMENTO_TIPO, CALENDARIO_STATUS } from "../constants/financeiro.enum.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
-import { ROLES } from "../constants/permissions.enum.js";
 import { getNowBR, toBRTime, toLocalDateString, extractDateOnly } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
+import { obterColaboradoresElegiveisMes, extrairComponentesFolha } from "../utils/financeiro-fechamento.helper.js";
 
 import { ExtratoMensal, FechamentoPayload, ConfirmacaoAdiantamentoPayload, StatusGeralFechamento, DashboardLoteResultado } from "../types/financeiro.type.js";
 import { Ocorrencia } from "../types/database.js";
@@ -33,6 +33,7 @@ interface FechamentoFinanceiroDb {
 interface ColaboradorClienteDb {
     colaborador_id: string;
     valor_adiantamento: number | null;
+    data_inicio: string | null;
     data_fim: string | null;
     cliente: {
         nome_fantasia: string;
@@ -111,8 +112,12 @@ export const financeiroService = {
             ? Number(confirmacaoAdiantamento.valor)
             : null;
 
-        const linksAtivos = (links || []).filter(link => !link.data_fim);
-        const somaAdiantamentoConfigurado = linksAtivos.reduce((acc, link) => acc + (link.valor_adiantamento || 0), 0);
+        const linksVigentesNoMes = (links || []).filter(link => {
+            const dIni = extractDateOnly(link.data_inicio) || extractDateOnly(link.created_at);
+            const dFim = extractDateOnly(link.data_fim);
+            return (!dIni || dIni <= dataFimMesStr) && (!dFim || dFim >= dataInicioMesStr);
+        });
+        const somaAdiantamentoConfigurado = linksVigentesNoMes.reduce((acc, link) => acc + (link.valor_adiantamento || 0), 0);
         let valorAdiantamentoDistribuidoAcumulado = 0;
 
         const hojeLocalStr = toLocalDateString();
@@ -196,18 +201,18 @@ export const financeiroService = {
             const diasTrabalhados = new Set(pontosDesteTurno.map(p => p.data_referencia)).size;
 
             const bonusEfetivo = (diasEsperadosTurno > 0 && ausenciasTurno === 0) ? (link.valor_bonus || 0) : 0;
-            const isAtivo = !link.data_fim;
-            const valorAdiantamentoConfig = isAtivo ? (link.valor_adiantamento || 0) : 0;
+            const isVigenteNoMes = isShiftInMonth;
+            const valorAdiantamentoConfig = isVigenteNoMes ? (link.valor_adiantamento || 0) : 0;
             let valorAdiantamentoEfetivo = 0;
 
             if (adiantamentoConfirmado) {
                 if (valorAdiantamentoCustom !== null) {
-                    if (isAtivo) {
-                        const indexAtivo = linksAtivos.findIndex(l => l.id === link.id);
-                        const isUltimoAtivo = indexAtivo === linksAtivos.length - 1;
+                    if (isVigenteNoMes) {
+                        const indexVigente = linksVigentesNoMes.findIndex(l => l.id === link.id);
+                        const isUltimoVigente = indexVigente === linksVigentesNoMes.length - 1;
 
                         if (somaAdiantamentoConfigurado > 0) {
-                            if (isUltimoAtivo) {
+                            if (isUltimoVigente) {
                                 valorAdiantamentoEfetivo = Math.max(0, parseFloat((valorAdiantamentoCustom - valorAdiantamentoDistribuidoAcumulado).toFixed(2)));
                             } else {
                                 const proporcao = valorAdiantamentoConfig / somaAdiantamentoConfigurado;
@@ -215,7 +220,7 @@ export const financeiroService = {
                                 valorAdiantamentoDistribuidoAcumulado += valorAdiantamentoEfetivo;
                             }
                         } else {
-                            if (indexAtivo === 0) {
+                            if (indexVigente === 0) {
                                 valorAdiantamentoEfetivo = valorAdiantamentoCustom;
                             } else {
                                 valorAdiantamentoEfetivo = 0;
@@ -513,25 +518,18 @@ export const financeiroService = {
             return cached.data;
         }
 
-        const { data: perfilMotoboy } = await supabaseAdmin
-            .from("perfis")
-            .select("id")
-            .ilike("nome", ROLES.MOTOBOY)
-            .maybeSingle();
-
-        const perfilMotoboyId = perfilMotoboy?.id || 3;
-
-        const { data: colaboradoresAtivos } = await supabaseAdmin
-            .from("usuarios")
-            .select("id, valor_mei")
-            .eq("status", CADASTRO_STATUS.ATIVO)
-            .eq("perfil_id", perfilMotoboyId);
-
         const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
         const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        if (!colaboradoresAtivos || colaboradoresAtivos.length === 0) {
+        const colaboradoresElegiveis = await obterColaboradoresElegiveisMes({
+            mes,
+            ano,
+            dataInicioMesStr,
+            dataFimMesStr
+        });
+
+        if (!colaboradoresElegiveis || colaboradoresElegiveis.length === 0) {
             const emptyResult: DashboardLoteResultado = {
                 totalFolha: 0,
                 valorPago: 0,
@@ -560,7 +558,7 @@ export const financeiroService = {
                 .eq("pago", true),
             supabaseAdmin
                 .from("colaborador_clientes")
-                .select("colaborador_id, valor_adiantamento, data_fim")
+                .select("colaborador_id, valor_adiantamento, data_inicio, data_fim")
                 .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`),
             supabaseAdmin
                 .from("confirmacoes_adiantamento")
@@ -570,7 +568,9 @@ export const financeiroService = {
         ]);
 
         const fechamentos = fechamentosRes.data || [];
-        const todosTurnos = todosTurnosRes.data || [];
+        const todosTurnos = (todosTurnosRes.data || []).filter(
+            t => !t.data_inicio || t.data_inicio <= dataFimMesStr
+        );
         const todasConfirmacoes = todasConfirmacoesRes.data || [];
 
         const totalAdiantamentoPrevisto = todosTurnos.reduce((acc, t) => acc + Number(t.valor_adiantamento || 0), 0);
@@ -583,45 +583,13 @@ export const financeiroService = {
         let totalDescontoConvenios = 0;
         let totalAdiantamentoPago = 0;
 
-        function extrairComponentes(r: any) {
-            let colabBruto = 0;
-            let colabFaltas = 0;
-            let colabAdi = 0;
-
-            (r.resumo_por_cliente || []).forEach((c: any) => {
-                const v = c.valores_fixos || {};
-                const baseBrutaFixa = Number(v.contrato || 0) + Number(v.ajuda_custo || 0) + Number(v.aluguel || 0);
-                const diasBase = Number(c.dias_base_mes) || 26;
-                const diasEsperados = Number(c.dias_esperados_turno) || diasBase;
-                const brutoVigente = (baseBrutaFixa / diasBase) * diasEsperados;
-                colabBruto += brutoVigente + Number(v.bonus || 0) + Number(c.creditos_ocorrencia || 0);
-
-                const adi = Number(v.adiantamento || 0);
-                colabAdi += adi;
-                const ausencias = Math.max(0, Number(c.debitos_ocorrencia || 0) - adi);
-                colabFaltas += ausencias;
-            });
-
-            const mei = Number(r.mei_consolidado?.valor_calculado || 0);
-            const credAvulso = Number(r.ocorrencias_avulsas?.creditos || 0);
-            const debAvulso = Number(r.ocorrencias_avulsas?.debitos || 0);
-            const conv = (r.lancamentos_convenios || []).reduce((acc: number, l: any) => acc + Number(l.valor || 0), 0);
-
-            return {
-                bruto: colabBruto + mei + credAvulso,
-                faltas: colabFaltas + debAvulso,
-                convenios: conv,
-                adiantamentoPago: colabAdi
-            };
-        }
-
         fechamentos.forEach(f => {
             fechamentosMap.set(f.colaborador_id, f);
             valorPago += Number(f.saldo_final || 0);
 
-            const r = f.resumo_json as any;
+            const r = f.resumo_json as Partial<ExtratoMensal> | null;
             if (r) {
-                const comp = extrairComponentes(r);
+                const comp = extrairComponentesFolha(r);
                 totalFolhaBruta += comp.bruto;
                 totalDescontoFaltas += comp.faltas;
                 totalDescontoConvenios += comp.convenios;
@@ -629,7 +597,7 @@ export const financeiroService = {
             }
         });
 
-        const pendentes = colaboradoresAtivos.filter(c => !fechamentosMap.has(c.id));
+        const pendentes = colaboradoresElegiveis.filter(c => !fechamentosMap.has(c.id));
 
         if (pendentes.length === 0) {
             const totalDescontosTotalPaid = totalDescontoFaltas + totalDescontoConvenios;
@@ -778,7 +746,7 @@ export const financeiroService = {
             const saldo = Number(extrato.totais.saldo_final || 0);
             restaPagar += saldo;
 
-            const comp = extrairComponentes(extrato);
+            const comp = extrairComponentesFolha(extrato);
             totalFolhaBruta += comp.bruto;
             totalDescontoFaltas += comp.faltas;
             totalDescontoConvenios += comp.convenios;
@@ -914,23 +882,17 @@ export const financeiroService = {
     },
 
     async getStatusGeral(mes: number, ano: number): Promise<StatusGeralFechamento[]> {
+        const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
         const dataInicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+        const dataFimMesStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
-        const { data: perfilMotoboy } = await supabaseAdmin
-            .from("perfis")
-            .select("id")
-            .ilike("nome", ROLES.MOTOBOY)
-            .maybeSingle();
-
-        const perfilMotoboyId = perfilMotoboy?.id || 3;
-
-        const [colabRes, confirmacoesRes, fechamentosRes, turnosRes] = await Promise.all([
-            supabaseAdmin
-                .from("usuarios")
-                .select("id, nome_completo, email, status")
-                .eq("status", CADASTRO_STATUS.ATIVO)
-                .eq("perfil_id", perfilMotoboyId)
-                .order("nome_completo", { ascending: true }),
+        const [colaboradores, confirmacoesRes, fechamentosRes, turnosRes] = await Promise.all([
+            obterColaboradoresElegiveisMes({
+                mes,
+                ano,
+                dataInicioMesStr,
+                dataFimMesStr
+            }),
             supabaseAdmin
                 .from("confirmacoes_adiantamento")
                 .select("*")
@@ -943,19 +905,19 @@ export const financeiroService = {
                 .eq("ano", ano),
             supabaseAdmin
                 .from("colaborador_clientes")
-                .select("colaborador_id, valor_adiantamento, data_fim, cliente:clientes(nome_fantasia)")
+                .select("colaborador_id, valor_adiantamento, data_inicio, data_fim, cliente:clientes(nome_fantasia)")
                 .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`)
         ]);
 
-        if (colabRes.error) throw colabRes.error;
         if (confirmacoesRes.error) throw confirmacoesRes.error;
         if (fechamentosRes.error) throw fechamentosRes.error;
         if (turnosRes.error) throw turnosRes.error;
 
-        const colaboradores = colabRes.data;
         const confirmacoes = confirmacoesRes.data;
         const fechamentos = fechamentosRes.data;
-        const todosTurnos = turnosRes.data;
+        const todosTurnos = (turnosRes.data || []).filter(
+            t => !t.data_inicio || t.data_inicio <= dataFimMesStr
+        );
 
         const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
         (confirmacoes as ConfirmacaoAdiantamentoDb[] || []).forEach(c => {
@@ -984,7 +946,6 @@ export const financeiroService = {
             const pago = !!fechamento;
 
             const valorAdiantamentoConfigurado = turnos
-                .filter(t => !t.data_fim)
                 .reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
 
             const valorAdiantamentoConfirmado = confirmacao
@@ -999,7 +960,7 @@ export const financeiroService = {
                     if (Array.isArray(t.cliente)) {
                         return t.cliente[0]?.nome_fantasia;
                     }
-                    return (t.cliente as any).nome_fantasia;
+                    return (t.cliente as { nome_fantasia?: string }).nome_fantasia;
                 })
                 .filter((nome): nome is string => !!nome);
             const clientesUnicos = [...new Set(clientes)];
@@ -1008,6 +969,7 @@ export const financeiroService = {
                 colaborador_id: colab.id,
                 nome_completo: colab.nome_completo || "",
                 email: colab.email || "",
+                status_cadastro: colab.status || CADASTRO_STATUS.ATIVO,
                 adiantamento_confirmado: adiantamentoConfirmado,
                 data_confirmacao_adiantamento: confirmacao ? toBRTime(confirmacao.data_confirmacao) : null,
                 pago,

@@ -4,6 +4,7 @@ import { messages } from "../constants/messages.js";
 import { cleanString, onlyNumbers, toLocalDateString } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { colaboradorClienteService } from "./colaborador-cliente.service.js";
+import { invalidateDashboardLoteCache } from "./financeiro.service.js";
 import { PIX_TYPES } from "../constants/financeiro.enum.js";
 import { Usuario } from "../types/database.js";
 import { createUsuarioSchema, updateUsuarioSchema } from "../schemas/usuario.schema.js";
@@ -182,6 +183,17 @@ export const usuarioService = {
             throw error;
         }
 
+        if (data.status === CADASTRO_STATUS.INATIVO) {
+            const dataEncerramento = toLocalDateString(new Date());
+            await supabaseAdmin
+                .from("colaborador_clientes")
+                .update({ data_fim: dataEncerramento })
+                .eq("colaborador_id", id)
+                .is("data_fim", null);
+        }
+
+        invalidateDashboardLoteCache();
+
         return this.getUsuario(id);
     },
 
@@ -316,6 +328,19 @@ export const usuarioService = {
         if (error) throw new AppError(`${messages.usuario.erro.atualizarStatus} ${novoStatus}.`, 500);
 
         if (novoStatus === CADASTRO_STATUS.INATIVO) {
+            const now = new Date();
+            const dataOcorrencia = toLocalDateString(now);
+
+            try {
+                await supabaseAdmin
+                    .from("colaborador_clientes")
+                    .update({ data_fim: dataOcorrencia })
+                    .eq("colaborador_id", id)
+                    .is("data_fim", null);
+            } catch (err) {
+                console.error("[updateStatus] Erro ao encerrar vinculos ativos:", err);
+            }
+
             try {
                 let { data: tipoOcorrencia } = await supabaseAdmin
                     .from("tipos_ocorrencia")
@@ -334,8 +359,6 @@ export const usuarioService = {
 
                 if (tipoOcorrencia && tipoOcorrencia.length > 0) {
                     const tipo = tipoOcorrencia[0];
-                    const now = new Date();
-                    const dataOcorrencia = toLocalDateString(now);
 
                     const formatter = new Intl.DateTimeFormat('pt-BR', {
                         timeZone: 'America/Sao_Paulo',
@@ -362,6 +385,8 @@ export const usuarioService = {
                 console.error("[updateStatus] Erro ao gerar ocorrencia de desligamento:", err);
             }
         }
+
+        invalidateDashboardLoteCache();
 
         return novoStatus;
     },

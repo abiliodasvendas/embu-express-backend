@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Convenio, LancamentoConvenio, ElegibilidadeConvenioResultado } from "../types/database.js";
 import { SalvarBloqueiosColaboradorDTO } from "../schemas/convenio.schema.js";
-import { financeiroService } from "./financeiro.service.js";
+import { financeiroService, invalidateDashboardLoteCache } from "./financeiro.service.js";
 import { AppError } from "../errors/AppError.js";
 import { convenioRepository } from "../repositories/convenio.repository.js";
 import { isDavidOuMotoEmbu } from "./convenio-regras.service.js";
@@ -85,10 +85,13 @@ export const convenioService = {
       }
 
       const inserted = await convenioRepository.insertManyLancamentos(lancamentosToInsert);
+      invalidateDashboardLoteCache();
       return inserted[0];
     }
 
-    return convenioRepository.insertLancamento({ ...lancamentoData, convenio_id: convenioId });
+    const res = await convenioRepository.insertLancamento({ ...lancamentoData, convenio_id: convenioId });
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async updateLancamentoAdmin(
@@ -102,11 +105,15 @@ export const convenioService = {
     >
   ) {
     const { is_parcelado, quantidade_parcelas, ...updateData } = payload;
-    return convenioRepository.updateLancamento(convenioId, lancamentoId, updateData);
+    const res = await convenioRepository.updateLancamento(convenioId, lancamentoId, updateData);
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async deleteLancamentoAdmin(convenioId: string, lancamentoId: string) {
-    return convenioRepository.deleteLancamento(convenioId, lancamentoId);
+    const res = await convenioRepository.deleteLancamento(convenioId, lancamentoId);
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async getBloqueiosColaborador(colaboradorId: string) {
@@ -331,10 +338,13 @@ export const convenioService = {
       }
 
       const inserted = await convenioRepository.insertManyLancamentos(lancamentosToInsert);
+      invalidateDashboardLoteCache();
       return inserted[0];
     }
 
-    return convenioRepository.insertLancamento({ ...lancamentoData, convenio_id: convenio.id });
+    const res = await convenioRepository.insertLancamento({ ...lancamentoData, convenio_id: convenio.id });
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async updateLancamentoToken(
@@ -375,7 +385,9 @@ export const convenioService = {
       }
     }
 
-    return convenioRepository.updateLancamento(convenio.id, lancamentoId, updateData);
+    const res = await convenioRepository.updateLancamento(convenio.id, lancamentoId, updateData);
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async deleteLancamentoToken(token: string, lancamentoId: string) {
@@ -383,7 +395,9 @@ export const convenioService = {
     if (!convenio.ativo) {
       throw new AppError("Ações de escrita não são permitidas para convênios inativos.", 400);
     }
-    return convenioRepository.deleteLancamento(convenio.id, lancamentoId);
+    const res = await convenioRepository.deleteLancamento(convenio.id, lancamentoId);
+    invalidateDashboardLoteCache();
+    return res;
   },
 
   async getColaboradoresAtivosToken(token: string) {

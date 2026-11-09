@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { messages } from "../constants/messages.js";
 import { AppError } from "../errors/AppError.js";
 import { ColaboradorCliente } from "../types/database.js";
+import { invalidateDashboardLoteCache } from "./financeiro.service.js";
 
 export const colaboradorClienteService = {
     /**
@@ -65,6 +66,7 @@ export const colaboradorClienteService = {
             results.push(insertedLink as unknown as ColaboradorCliente);
         }
 
+        invalidateDashboardLoteCache();
         return results;
     },
 
@@ -121,6 +123,7 @@ export const colaboradorClienteService = {
         }
 
         logger.info({ id: data.id }, "[colaboradorClienteService] Vínculo criado com sucesso");
+        invalidateDashboardLoteCache();
         return data as ColaboradorCliente;
     },
 
@@ -162,6 +165,7 @@ export const colaboradorClienteService = {
         }
 
         logger.info({ id }, "[colaboradorClienteService] Vínculo atualizado com sucesso");
+        invalidateDashboardLoteCache();
         return data as ColaboradorCliente;
     },
 
@@ -172,5 +176,6 @@ export const colaboradorClienteService = {
             .eq("id", id);
 
         if (error) throw error;
+        invalidateDashboardLoteCache();
     }
 };

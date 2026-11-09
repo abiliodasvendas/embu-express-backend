@@ -4,6 +4,7 @@ import { messages } from "../constants/messages.js";
 import { toBRTime } from "../utils/utils.js";
 import { AppError } from "../errors/AppError.js";
 import { Ocorrencia, TipoOcorrencia } from "../types/database.js";
+import { invalidateDashboardLoteCache } from "./financeiro.service.js";
 import {
     ocorrenciaSchema,
     updateOcorrenciaSchema,
@@ -180,6 +181,7 @@ export const ocorrenciaService = {
                 .select();
 
             if (error) throw error;
+            invalidateDashboardLoteCache();
             return inserted.map(formatOcorrencia);
         }
 
@@ -190,6 +192,7 @@ export const ocorrenciaService = {
             .single();
 
         if (error) throw error;
+        invalidateDashboardLoteCache();
         return formatOcorrencia(inserted);
     },
 
@@ -210,6 +213,7 @@ export const ocorrenciaService = {
             .single();
 
         if (error) throw error;
+        invalidateDashboardLoteCache();
         return formatOcorrencia(updated);
     },
 
@@ -223,5 +227,6 @@ export const ocorrenciaService = {
             .eq("id", id);
 
         if (error) throw error;
+        invalidateDashboardLoteCache();
     }
 };

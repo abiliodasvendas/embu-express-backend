@@ -93,6 +93,7 @@ export interface StatusGeralFechamento {
     colaborador_id: string;
     nome_completo: string;
     email: string;
+    status_cadastro: string;
     adiantamento_confirmado: boolean;
     data_confirmacao_adiantamento: string | null;
     pago: boolean;
