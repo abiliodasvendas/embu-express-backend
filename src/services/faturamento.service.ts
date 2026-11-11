@@ -1,7 +1,6 @@
 import { AppError } from "../errors/AppError.js";
-import { FaturaCliente, LoteRecebimento, StatusFatura, AgingRecebiveisResultado } from "../types/database.js";
+import { FaturaCliente, LoteRecebimento, AgingRecebiveisResultado } from "../types/database.js";
 import { faturamentoRepository, ListFaturasFilters } from "../repositories/faturamento.repository.js";
-import { contaBancariaRepository } from "../repositories/conta-bancaria.repository.js";
 import {
   faturaClienteSchema,
   updateFaturaClienteSchema,
@@ -9,22 +8,15 @@ import {
   liquidarFaturaIndividualSchema,
 } from "../schemas/faturamento.schema.js";
 import { z } from "zod";
+import { STATUS_FATURA } from "../constants/financeiro.enum.js";
 import {
-  STATUS_FATURA,
-  STATUS_INTERCOMPANY,
-  TIPO_PERIODO_FATURA,
-} from "../constants/financeiro.enum.js";
-import {
-  getQuinzenasCompetencia,
-  getMensalCompetencia,
-  getSemanasCompetencia,
-  PeriodoCalculado,
-} from "../utils/periodo-faturamento.helper.js";
-import {
+  calcularValoresSugestaoMedicao,
   gerarProjecoesVirtuais,
   montarPayloadMaterializacao,
+  montarPayloadsCancelamentoPrevisoes,
 } from "../utils/faturamento-projecao.helper.js";
 import { calcularAgingRecebiveis } from "../utils/faturamento-aging.helper.js";
+import { faturamentoLiquidacaoService } from "./faturamento-liquidacao.service.js";
 
 type CreateFaturaDTO = z.infer<typeof faturaClienteSchema>;
 type UpdateFaturaDTO = z.infer<typeof updateFaturaClienteSchema>;
@@ -32,18 +24,15 @@ type LoteRecebimentoDTO = z.infer<typeof loteRecebimentoSchema>;
 type LiquidarFaturaIndividualDTO = z.infer<typeof liquidarFaturaIndividualSchema>;
 
 export const faturamentoService = {
-  async calcularSugestaoMedicao(
-    params: {
-      unidadeId?: number;
-      clienteId?: number;
-      mes: number;
-      ano: number;
-      tipoPeriodo?: string;
-      numeroPeriodo?: number;
-      quinzena?: number | null;
-    }
-  ) {
-    const { mes, ano, tipoPeriodo, numeroPeriodo, quinzena } = params;
+  async calcularSugestaoMedicao(params: {
+    unidadeId?: number;
+    clienteId?: number;
+    mes: number;
+    ano: number;
+    tipoPeriodo?: string;
+    numeroPeriodo?: number;
+    quinzena?: number | null;
+  }) {
     let targetUnidadeId = params.unidadeId;
 
     if (!targetUnidadeId && params.clienteId) {
@@ -62,55 +51,14 @@ export const faturamentoService = {
       throw new AppError("Unidade não encontrada", 404);
     }
 
-    const tipo = tipoPeriodo || (unidade.periodicidade || TIPO_PERIODO_FATURA.QUINZENAL);
-    const num = numeroPeriodo || quinzena || 1;
-    const valorBase = Number(unidade.valor_contrato_mensal || 0);
-
-    let periodosCalculados: PeriodoCalculado[] = [];
-    let valorSugerido = valorBase;
-
-    if (tipo === TIPO_PERIODO_FATURA.SEMANAL) {
-      periodosCalculados = getSemanasCompetencia(mes, ano);
-      valorSugerido = valorBase;
-    } else if (tipo === TIPO_PERIODO_FATURA.MENSAL) {
-      periodosCalculados = getMensalCompetencia(mes, ano, unidade.dia_vencimento_padrao || 10);
-      valorSugerido = valorBase;
-    } else {
-      periodosCalculados = getQuinzenasCompetencia(
-        mes,
-        ano,
-        unidade.dia_vencimento_padrao,
-        unidade.dia_vencimento_segunda_quinzena
-      );
-      valorSugerido = parseFloat((valorBase / 2).toFixed(2));
-    }
-
-    const periodoEncontrado =
-      periodosCalculados.find((p) => p.numero_periodo === num) ||
-      periodosCalculados[0] || {
-        numero_periodo: num,
-        data_inicio: `${ano}-${String(mes).padStart(2, "0")}-01`,
-        data_fim: `${ano}-${String(mes).padStart(2, "0")}-15`,
-        data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-16`,
-        descricao: "",
-      };
-
-    return {
-      cliente_id: unidade.cliente_id,
-      unidade_id: unidade.id,
-      tipo_periodo: tipo,
-      numero_periodo: periodoEncontrado.numero_periodo,
-      valor_base: valorBase,
-      periodo: {
-        data_inicio: periodoEncontrado.data_inicio,
-        data_fim: periodoEncontrado.data_fim,
-        data_vencimento: periodoEncontrado.data_vencimento,
-      },
-      dias_esperados: 0,
-      dias_trabalhados: 0,
-      faltas_sem_cobertura: 0,
-      valor_sugerido: valorSugerido,
-    };
+    return calcularValoresSugestaoMedicao({
+      unidade,
+      mes: params.mes,
+      ano: params.ano,
+      tipoPeriodo: params.tipoPeriodo,
+      numeroPeriodo: params.numeroPeriodo,
+      quinzena: params.quinzena,
+    });
   },
 
   async _materializarPrevisao(
@@ -183,20 +131,75 @@ export const faturamentoService = {
   },
 
   async createFatura(data: CreateFaturaDTO, criadoPor?: string): Promise<FaturaCliente> {
-    return faturamentoRepository.createFatura({
+    const isLiquidadaOuParcial =
+      data.status === STATUS_FATURA.LIQUIDADA ||
+      data.status === STATUS_FATURA.PAGO_PARCIAL;
+    const valorPagoInicial = isLiquidadaOuParcial
+      ? data.valor_pago && data.valor_pago > 0
+        ? data.valor_pago
+        : data.status === STATUS_FATURA.LIQUIDADA
+          ? data.valor_faturado
+          : 0
+      : 0;
+
+    const created = await faturamentoRepository.createFatura({
       ...data,
+      valor_pago: valorPagoInicial,
       quinzena: data.quinzena ?? (data.numero_periodo || 1),
       criado_por: criadoPor || null,
     });
+
+    if (isLiquidadaOuParcial && valorPagoInicial > 0) {
+      await faturamentoRepository.syncValorRecebimentoFatura(created.id, valorPagoInicial);
+      const reloaded = await faturamentoRepository.getFaturaById(created.id);
+      if (reloaded) return reloaded;
+    }
+
+    return created;
   },
 
   async updateFatura(id: string, data: UpdateFaturaDTO): Promise<FaturaCliente> {
     if (id.startsWith("prev_")) {
-      return this._materializarPrevisao(id, data as Partial<FaturaCliente>);
+      const materializada = await this._materializarPrevisao(id, data as Partial<FaturaCliente>);
+      return this.updateFatura(materializada.id, data);
     }
     const exists = await faturamentoRepository.getFaturaById(id);
     if (!exists) throw new AppError("Fatura não encontrada", 404);
-    return faturamentoRepository.updateFatura(id, data as Record<string, unknown>);
+
+    const updatePayload: Record<string, unknown> = { ...data };
+    const statusAlvo = data.status ?? exists.status;
+
+    if (
+      statusAlvo === STATUS_FATURA.PENDENTE ||
+      statusAlvo === STATUS_FATURA.CANCELADA
+    ) {
+      await faturamentoRepository.deleteRecebimentosPorFatura(id);
+      updatePayload.valor_pago = 0;
+    } else if (
+      statusAlvo === STATUS_FATURA.LIQUIDADA ||
+      statusAlvo === STATUS_FATURA.PAGO_PARCIAL
+    ) {
+      const valorFaturadoRef = Number(
+        data.valor_faturado ?? exists.valor_faturado ?? 0
+      );
+      const valorPagoInput =
+        data.valor_pago !== undefined
+          ? data.valor_pago
+          : Number(exists.valor_pago || 0);
+      const novoValorPago =
+        valorPagoInput > 0
+          ? valorPagoInput
+          : statusAlvo === STATUS_FATURA.LIQUIDADA
+            ? valorFaturadoRef
+            : 0;
+      updatePayload.valor_pago = novoValorPago;
+      await faturamentoRepository.syncValorRecebimentoFatura(
+        id,
+        novoValorPago
+      );
+    }
+
+    return faturamentoRepository.updateFatura(id, updatePayload);
   },
 
   async deleteFatura(id: string): Promise<void> {
@@ -206,7 +209,11 @@ export const faturamentoService = {
     }
     const exists = await faturamentoRepository.getFaturaById(id);
     if (!exists) throw new AppError("Fatura não encontrada", 404);
-    await faturamentoRepository.updateFatura(id, { status: STATUS_FATURA.CANCELADA });
+    await faturamentoRepository.deleteRecebimentosPorFatura(id);
+    await faturamentoRepository.updateFatura(id, {
+      status: STATUS_FATURA.CANCELADA,
+      valor_pago: 0,
+    });
   },
 
   async cancelarFaturasLote(ids: string[], criadoPor?: string): Promise<{ canceladas: number }> {
@@ -214,20 +221,12 @@ export const faturamentoService = {
       return { canceladas: 0 };
     }
 
-    const prevIds: string[] = [];
-    const realIds: string[] = [];
-
-    for (const id of ids) {
-      if (id.startsWith("prev_")) {
-        prevIds.push(id);
-      } else {
-        realIds.push(id);
-      }
-    }
-
+    const prevIds = ids.filter((id) => id.startsWith("prev_"));
+    const realIds = ids.filter((id) => !id.startsWith("prev_"));
     let canceladas = 0;
 
     if (realIds.length > 0) {
+      await faturamentoRepository.deleteRecebimentosPorFaturasLote(realIds);
       const countReais = await faturamentoRepository.updateFaturasStatusLote(
         realIds,
         STATUS_FATURA.CANCELADA
@@ -236,44 +235,18 @@ export const faturamentoService = {
     }
 
     if (prevIds.length > 0) {
-      const parsedPrevs = prevIds.map((prevId) => {
-        const parts = prevId.split("_");
-        return {
-          unidadeId: Number(parts[1]),
-          mes: Number(parts[2]),
-          ano: Number(parts[3]),
-          numPeriodo: Number(parts[4]),
-        };
-      });
-
-      const uniqueUnidadeIds = [...new Set(parsedPrevs.map((p) => p.unidadeId))];
-
+      const uniqueUnidadeIds = [...new Set(prevIds.map((prevId) => Number(prevId.split("_")[1])))];
       const [unidades, empresas] = await Promise.all([
         faturamentoRepository.getUnidadesParaMedicaoLote(uniqueUnidadeIds),
         faturamentoRepository.listEmpresasAtivas(),
       ]);
 
-      const unidadesMap = new Map(unidades.map((u) => [u.id, u]));
-      const fallbackEmpresa = empresas[0] || { id: 1 };
-
-      const recordsToInsert: Record<string, unknown>[] = [];
-
-      for (const p of parsedPrevs) {
-        const unidade = unidadesMap.get(p.unidadeId);
-        if (!unidade) continue;
-
-        const empresaId = unidade.empresa_emissora_padrao_id || fallbackEmpresa.id;
-        const record = montarPayloadMaterializacao(
-          unidade,
-          p.mes,
-          p.ano,
-          p.numPeriodo,
-          empresaId,
-          { status: STATUS_FATURA.CANCELADA },
-          criadoPor
-        );
-        recordsToInsert.push(record);
-      }
+      const recordsToInsert = montarPayloadsCancelamentoPrevisoes(
+        prevIds,
+        unidades,
+        empresas,
+        criadoPor
+      );
 
       if (recordsToInsert.length > 0) {
         const countVirtuais = await faturamentoRepository.createFaturasLote(recordsToInsert);
@@ -289,125 +262,20 @@ export const faturamentoService = {
     payload: LiquidarFaturaIndividualDTO,
     criadoPor?: string
   ): Promise<FaturaCliente> {
-    if (faturaId.startsWith("prev_")) {
-      const materializada = await this._materializarPrevisao(faturaId, undefined, criadoPor);
-      faturaId = materializada.id;
-    }
-
-    const { conta_bancaria_id, data_pagamento, valor_pago, observacao } = payload;
-
-    const fatura = await faturamentoRepository.getFaturaById(faturaId);
-    if (!fatura) {
-      throw new AppError("Fatura não encontrada", 404);
-    }
-
-    const contaBancaria = await contaBancariaRepository.getById(conta_bancaria_id);
-    if (!contaBancaria) {
-      throw new AppError("Conta bancária não encontrada", 404);
-    }
-
-    const recebimento = await faturamentoRepository.createRecebimento({
-      fatura_id: fatura.id,
-      conta_bancaria_id,
-      data_recebimento: data_pagamento,
-      valor_alocado: valor_pago,
-      observacao: observacao || null,
-      criado_por: criadoPor || null,
-    });
-
-    const valorPagoAtual = Number(fatura.valor_pago || 0);
-    const novoValorPago = parseFloat((valorPagoAtual + valor_pago).toFixed(2));
-    const valorFaturado = Number(fatura.valor_faturado || 0);
-    const novoStatus: StatusFatura =
-      novoValorPago >= valorFaturado ? STATUS_FATURA.LIQUIDADA : STATUS_FATURA.PAGO_PARCIAL;
-
-    const faturaAtualizada = await faturamentoRepository.updateFatura(fatura.id, {
-      valor_pago: novoValorPago,
-      status: novoStatus,
-    });
-
-    if (Number(fatura.empresa_id) !== Number(contaBancaria.empresa_id)) {
-      await faturamentoRepository.createTransferenciaIntercompany({
-        fatura_recebimento_id: recebimento.id,
-        empresa_credora_id: fatura.empresa_id,
-        empresa_devedora_id: contaBancaria.empresa_id,
-        valor: valor_pago,
-        data_fato_gerador: data_pagamento,
-        status: STATUS_INTERCOMPANY.PENDENTE_ACERTO,
-        observacao: `Recebimento da fatura #${fatura.id.substring(0, 8)} recebido na conta do banco ${contaBancaria.banco_nome}`,
-      });
-    }
-
-    return faturaAtualizada;
+    return faturamentoLiquidacaoService.liquidarFaturaIndividual(
+      faturaId,
+      payload,
+      (prevId, overrides, criador) => this._materializarPrevisao(prevId, overrides, criador),
+      criadoPor
+    );
   },
 
   async processarLoteRecebimento(payload: LoteRecebimentoDTO, criadoPor?: string): Promise<LoteRecebimento> {
-    const { conta_bancaria_destino_id, data_deposito, valor_total_depositado, observacao, itens } = payload;
-
-    const contaBancaria = await contaBancariaRepository.getById(conta_bancaria_destino_id);
-    if (!contaBancaria) {
-      throw new AppError("Conta bancária de destino não encontrada", 404);
-    }
-
-    const somaItens = itens.reduce((acc, item) => acc + item.valor_alocado, 0);
-    if (Math.abs(somaItens - valor_total_depositado) > 0.05) {
-      throw new AppError("A soma dos valores alocados difere do total depositado no lote", 400);
-    }
-
-    const lote = await faturamentoRepository.createLote({
-      conta_bancaria_destino_id,
-      data_deposito,
-      valor_total_depositado,
-      observacao: observacao || null,
-      criado_por: criadoPor || null,
-    });
-
-    for (const item of itens) {
-      if (item.fatura_id.startsWith("prev_")) {
-        const materializada = await this._materializarPrevisao(item.fatura_id, undefined, criadoPor);
-        item.fatura_id = materializada.id;
-      }
-
-      const fatura = await faturamentoRepository.getFaturaById(item.fatura_id);
-      if (!fatura) {
-        throw new AppError(`Fatura ${item.fatura_id} não encontrada`, 404);
-      }
-
-      const recebimento = await faturamentoRepository.createRecebimento({
-        lote_recebimento_id: lote.id,
-        fatura_id: item.fatura_id,
-        conta_bancaria_id: conta_bancaria_destino_id,
-        data_recebimento: data_deposito,
-        valor_alocado: item.valor_alocado,
-        observacao: item.observacao || null,
-        criado_por: criadoPor || null,
-      });
-
-      const novoValorPago = parseFloat((Number(fatura.valor_pago || 0) + item.valor_alocado).toFixed(2));
-      const valorFaturadoBase = Number(fatura.valor_faturado || 0);
-      const valorFaturadoFinal = Math.max(valorFaturadoBase, novoValorPago);
-      const novoStatus: StatusFatura = novoValorPago >= valorFaturadoFinal ? STATUS_FATURA.LIQUIDADA : STATUS_FATURA.PAGO_PARCIAL;
-
-      await faturamentoRepository.updateFatura(fatura.id, {
-        valor_faturado: valorFaturadoFinal,
-        valor_pago: novoValorPago,
-        status: novoStatus,
-      });
-
-      if (Number(fatura.empresa_id) !== Number(contaBancaria.empresa_id)) {
-        await faturamentoRepository.createTransferenciaIntercompany({
-          fatura_recebimento_id: recebimento.id,
-          empresa_credora_id: fatura.empresa_id,
-          empresa_devedora_id: contaBancaria.empresa_id,
-          valor: item.valor_alocado,
-          data_fato_gerador: data_deposito,
-          status: STATUS_INTERCOMPANY.PENDENTE_ACERTO,
-          observacao: `Recebimento da fatura ${fatura.id} caiu na conta do banco ${contaBancaria.banco_nome}`,
-        });
-      }
-    }
-
-    return lote;
+    return faturamentoLiquidacaoService.processarLoteRecebimento(
+      payload,
+      (prevId, overrides, criador) => this._materializarPrevisao(prevId, overrides, criador),
+      criadoPor
+    );
   },
 
   async getAgingRecebiveis(filtros: {
@@ -417,5 +285,9 @@ export const faturamentoService = {
   }): Promise<AgingRecebiveisResultado> {
     const faturas = await faturamentoRepository.listFaturasAging(filtros);
     return calcularAgingRecebiveis(faturas, filtros);
+  },
+
+  async desfazerLiquidacaoFatura(faturaId: string): Promise<FaturaCliente> {
+    return faturamentoLiquidacaoService.desfazerLiquidacaoFatura(faturaId);
   },
 };

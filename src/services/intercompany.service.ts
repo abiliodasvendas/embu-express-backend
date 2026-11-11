@@ -80,4 +80,8 @@ export const intercompanyService = {
       observacao: payload.observacao,
     });
   },
+
+  async desfazerAcerto(transferenciaId: string) {
+    return intercompanyRepository.desfazerAcerto(transferenciaId);
+  },
 };

@@ -84,16 +84,7 @@ export function calcularDesembolsoVales(params: {
   shareEmpresa: number;
   empresaId?: number;
 }) {
-  const { confirmacoesAtual, linksAtivos, diaVales, mes, ano, shareEmpresa, empresaId } = params;
-
-  const hoje = new Date();
-  const anoAtual = hoje.getFullYear();
-  const mesAtual = hoje.getMonth() + 1;
-  const diaAtual = hoje.getDate();
-
-  const isMesPassado = anoAtual > ano || (anoAtual === ano && mesAtual > mes);
-  const isMesAtual = anoAtual === ano && mesAtual === mes;
-  const isPosDiaVales = isMesPassado || (isMesAtual && diaAtual > diaVales);
+  const { confirmacoesAtual, linksAtivos, shareEmpresa, empresaId } = params;
 
   const confirmacoesMap = new Map<string, number>();
   confirmacoesAtual.forEach((c) => {
@@ -122,10 +113,7 @@ export function calcularDesembolsoVales(params: {
     }
   });
 
-  let valesDiaValesProjetado = isPosDiaVales
-    ? totalValesConfirmados
-    : totalValesConfirmados + totalValesPendentesTeoricos;
-
+  let valesDiaValesProjetado = totalValesConfirmados + totalValesPendentesTeoricos;
   let valesDiaValesRealizado = totalValesConfirmados;
 
   if (empresaId) {

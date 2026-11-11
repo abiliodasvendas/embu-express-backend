@@ -77,4 +77,20 @@ export const intercompanyRepository = {
     if (error) throw error;
     return data as TransferenciaIntercompany;
   },
+
+  async desfazerAcerto(transferenciaId: string): Promise<TransferenciaIntercompany> {
+    const { data, error } = await supabaseAdmin
+      .from("transferencias_intercompany")
+      .update({
+        status: STATUS_INTERCOMPANY.PENDENTE_ACERTO,
+        data_acerto: null,
+        comprovante_acerto_url: null,
+      })
+      .eq("id", transferenciaId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as TransferenciaIntercompany;
+  },
 };

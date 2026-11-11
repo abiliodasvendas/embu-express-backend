@@ -119,9 +119,17 @@ export type DespesaEscopoAcaoType = typeof DESPESA_ESCOPO_ACAO[keyof typeof DESP
 export const TIPO_CONTA_PAGAR = {
     DESPESA: 'DESPESA',
     CONVENIO: 'CONVENIO',
+    COLABORADOR: 'COLABORADOR',
 } as const;
 
 export type TipoContaPagarType = typeof TIPO_CONTA_PAGAR[keyof typeof TIPO_CONTA_PAGAR];
+
+export const CATEGORIA_COLABORADOR_CONTA_PAGAR = {
+    ADIANTAMENTO_SALARIAL: 'ADIANTAMENTO_SALARIAL',
+    PAGAMENTO_SALARIO: 'PAGAMENTO_SALARIO',
+} as const;
+
+export type CategoriaColaboradorContaPagarType = typeof CATEGORIA_COLABORADOR_CONTA_PAGAR[keyof typeof CATEGORIA_COLABORADOR_CONTA_PAGAR];
 
 export const TIPO_MOVIMENTACAO_AVULSA = {
     ENTRADA: 'ENTRADA',
@@ -152,6 +160,23 @@ export type NivelRiscoValeType = typeof NIVEL_RISCO_VALE[keyof typeof NIVEL_RISC
 
 export const CLIENTES_ESPECIAIS = {
     INTERNO: 'INTERNO',
+} as const;
+
+export const ORIGEM_EXTRATO_BANCARIO = {
+    FATURA_CLIENTE: 'FATURA_CLIENTE',
+    ENTRADA_AVULSA: 'ENTRADA_AVULSA',
+    DESPESA: 'DESPESA',
+    CONVENIO: 'CONVENIO',
+    ADIANTAMENTO_COLABORADOR: 'ADIANTAMENTO_COLABORADOR',
+    SALARIO_COLABORADOR: 'SALARIO_COLABORADOR',
+    SAIDA_AVULSA: 'SAIDA_AVULSA',
+} as const;
+
+export type OrigemExtratoBancarioType = typeof ORIGEM_EXTRATO_BANCARIO[keyof typeof ORIGEM_EXTRATO_BANCARIO];
+
+export const SUBTIPO_COLABORADOR_CONTA_PAGAR = {
+    VALE: 'vale',
+    SALARIO: 'salario',
 } as const;
 
 export const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";

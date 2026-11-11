@@ -40,14 +40,20 @@ export const fluxoCaixaRepository = {
     return data || [];
   },
 
-  async listColaboradorClientesAtivos() {
-    const { data, error } = await supabaseAdmin
+  async listColaboradorClientesAtivos(dataInicioStr?: string, dataFimStr?: string) {
+    let query = supabaseAdmin
       .from("colaborador_clientes")
-      .select("colaborador_id, valor_adiantamento")
-      .is("data_fim", null);
+      .select("colaborador_id, valor_adiantamento, data_inicio, data_fim");
 
+    if (dataInicioStr) {
+      query = query.or(`data_fim.is.null,data_fim.gte.${dataInicioStr}`);
+    } else {
+      query = query.is("data_fim", null);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return (data || []).filter((t) => !dataFimStr || !t.data_inicio || t.data_inicio <= dataFimStr);
   },
 
   async listMovimentacoesAvulsasPeriodo(mes: number, ano: number) {

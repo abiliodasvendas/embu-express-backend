@@ -25,4 +25,10 @@ export const intercompanyController = {
     const result = await intercompanyService.registrarAcerto(data);
     return reply.send(result);
   },
+
+  async desfazerAcerto(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const result = await intercompanyService.desfazerAcerto(id);
+    return reply.send(result);
+  },
 };

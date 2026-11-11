@@ -17,6 +17,8 @@ export const fecharMesSchema = z.object({
     body: z.object({
         mes: z.number().min(1).max(12),
         ano: z.number().min(2000).max(2100),
+        conta_bancaria_id: z.string().uuid("Conta bancária inválida").optional().nullable(),
+        data_pagamento: z.string().optional().nullable(),
     }),
 });
 
@@ -29,6 +31,8 @@ export const confirmarAdiantamentoSchema = z.object({
         ano: z.number().min(2000).max(2100),
         valor: z.number({ message: "O valor do adiantamento é obrigatório" })
             .positive("O valor do adiantamento deve ser maior que zero"),
+        conta_bancaria_id: z.string().uuid("Conta bancária inválida").optional().nullable(),
+        data_pagamento: z.string().optional().nullable(),
     }),
 });
 

@@ -108,4 +108,10 @@ export const faturamentoController = {
     const result = await faturamentoService.cancelarFaturasLote(ids, userId);
     return reply.status(200).send(result);
   },
+
+  async desfazerLiquidacaoIndividual(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const result = await faturamentoService.desfazerLiquidacaoFatura(id);
+    return reply.status(200).send(result);
+  },
 };

@@ -39,6 +39,11 @@ const despesaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
     despesaController.adiar
   );
+  app.post(
+    "/:id/desfazer-pagamento",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    despesaController.desfazerPagamento
+  );
 };
 
 export default despesaRoutes;

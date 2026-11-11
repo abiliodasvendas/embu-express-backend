@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -519,9 +519,12 @@ export type Database = {
           ano: number
           colaborador_id: string
           confirmado_por: string | null
+          conta_bancaria_id: string | null
           created_at: string | null
           data_confirmacao: string | null
+          data_pagamento: string | null
           id: number
+          lote_pagamento_id: string | null
           mes: number
           valor: number | null
         }
@@ -529,9 +532,12 @@ export type Database = {
           ano: number
           colaborador_id: string
           confirmado_por?: string | null
+          conta_bancaria_id?: string | null
           created_at?: string | null
           data_confirmacao?: string | null
+          data_pagamento?: string | null
           id?: number
+          lote_pagamento_id?: string | null
           mes: number
           valor?: number | null
         }
@@ -539,9 +545,12 @@ export type Database = {
           ano?: number
           colaborador_id?: string
           confirmado_por?: string | null
+          conta_bancaria_id?: string | null
           created_at?: string | null
           data_confirmacao?: string | null
+          data_pagamento?: string | null
           id?: number
+          lote_pagamento_id?: string | null
           mes?: number
           valor?: number | null
         }
@@ -558,6 +567,20 @@ export type Database = {
             columns: ["confirmado_por"]
             isOneToOne: false
             referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confirmacoes_adiantamento_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confirmacoes_adiantamento_lote_pagamento_id_fkey"
+            columns: ["lote_pagamento_id"]
+            isOneToOne: false
+            referencedRelation: "lotes_pagamento"
             referencedColumns: ["id"]
           },
         ]
@@ -1206,11 +1229,13 @@ export type Database = {
         Row: {
           ano: number
           colaborador_id: string
+          conta_bancaria_id: string | null
           created_at: string | null
           data_fechamento: string | null
           data_pagamento: string | null
           fechado_por: string | null
           id: number
+          lote_pagamento_id: string | null
           mes: number
           pago: boolean | null
           resumo_json: Json
@@ -1219,11 +1244,13 @@ export type Database = {
         Insert: {
           ano: number
           colaborador_id: string
+          conta_bancaria_id?: string | null
           created_at?: string | null
           data_fechamento?: string | null
           data_pagamento?: string | null
           fechado_por?: string | null
           id?: number
+          lote_pagamento_id?: string | null
           mes: number
           pago?: boolean | null
           resumo_json: Json
@@ -1232,17 +1259,33 @@ export type Database = {
         Update: {
           ano?: number
           colaborador_id?: string
+          conta_bancaria_id?: string | null
           created_at?: string | null
           data_fechamento?: string | null
           data_pagamento?: string | null
           fechado_por?: string | null
           id?: number
+          lote_pagamento_id?: string | null
           mes?: number
           pago?: boolean | null
           resumo_json?: Json
           saldo_final?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "fechamentos_financeiros_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fechamentos_financeiros_lote_pagamento_id_fkey"
+            columns: ["lote_pagamento_id"]
+            isOneToOne: false
+            referencedRelation: "lotes_pagamento"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_fechamento_colaborador"
             columns: ["colaborador_id"]

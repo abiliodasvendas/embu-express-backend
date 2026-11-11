@@ -66,4 +66,10 @@ export const despesaController = {
     const result = await despesaService.adiarDespesa(id);
     return reply.send(result);
   },
+
+  async desfazerPagamento(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const result = await despesaService.desfazerPagamento(id);
+    return reply.send(result);
+  },
 };

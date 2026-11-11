@@ -7,6 +7,17 @@ import {
   queryContasPagarUnificadasSchema,
 } from "../schemas/lote-pagamento.schema.js";
 import { liquidarDespesaSchema } from "../schemas/despesa.schema.js";
+import { TIPO_CONTA_PAGAR } from "../constants/financeiro.enum.js";
+
+const tipoContaPagarQuerySchema = z.object({
+  tipo: z
+    .enum([
+      TIPO_CONTA_PAGAR.DESPESA,
+      TIPO_CONTA_PAGAR.CONVENIO,
+      TIPO_CONTA_PAGAR.COLABORADOR,
+    ])
+    .default(TIPO_CONTA_PAGAR.DESPESA),
+});
 
 interface AuthenticatedRequest extends FastifyRequest {
   user?: {
@@ -44,14 +55,19 @@ export const contasPagarController = {
   async liquidarIndividual(request: AuthenticatedRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const data = liquidarDespesaSchema.parse(request.body);
-    const query = z
-      .object({
-        tipo: z.enum(["DESPESA", "CONVENIO"]).default("DESPESA"),
-      })
-      .parse(request.query);
+    const query = tipoContaPagarQuerySchema.parse(request.query);
 
     const userId = request.user?.id;
     const result = await contasPagarService.liquidarItem(id, query.tipo, data, userId);
+    return reply.status(200).send(result);
+  },
+
+  async desfazerLiquidacaoIndividual(request: AuthenticatedRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const query = tipoContaPagarQuerySchema.parse(request.query);
+
+    const userId = request.user?.id;
+    const result = await contasPagarService.desfazerLiquidacaoItem(id, query.tipo, userId);
     return reply.status(200).send(result);
   },
 };

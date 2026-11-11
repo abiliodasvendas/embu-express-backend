@@ -1,5 +1,5 @@
-import { supabaseAdmin } from "../config/supabase.js";
 import { despesaService } from "./despesa.service.js";
+import { folhaContasPagarService } from "./folha-contas-pagar.service.js";
 import { DespesaOperacional, FaturaFornecedorConvenio } from "../types/database.js";
 import { STATUS_DESPESA, STATUS_FATURA_CONVENIO, TIPO_CONTA_PAGAR, TipoContaPagarType } from "../constants/financeiro.enum.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
@@ -28,6 +28,10 @@ export interface ContaPagarItem {
   total_parcelas?: number | null;
   is_recorrente?: boolean;
   recorrencia_origem_id?: string | null;
+  colaborador_id?: string | null;
+  colaborador_nome?: string | null;
+  mes_competencia?: number | null;
+  ano_competencia?: number | null;
 }
 
 export interface ContasPagarKpis {
@@ -58,13 +62,14 @@ export const contasPagarService = {
     const mes = filtros.mes || new Date().getMonth() + 1;
     const ano = filtros.ano || new Date().getFullYear();
 
-    const [despesas, faturasConvenios] = await Promise.all([
+    const [despesas, faturasConvenios, itensColaboradores] = await Promise.all([
       despesaService.list({
         mes,
         ano,
         empresa_id: filtros.empresa_id,
       }),
-      this._buscarFaturasConvenios(mes, ano, filtros.empresa_id),
+      convenioAuditoriaRepository.listFaturasParaContasPagar(mes, ano, filtros.empresa_id),
+      folhaContasPagarService.listarItensColaboradoresParaContasPagar(mes, ano, filtros.empresa_id),
     ]);
 
     const itensDespesas: ContaPagarItem[] = despesas.map((d: DespesaOperacional) => {
@@ -129,7 +134,7 @@ export const contasPagarService = {
       };
     });
 
-    const todosItens = [...itensDespesas, ...itensConvenios];
+    const todosItens = [...itensDespesas, ...itensConvenios, ...itensColaboradores];
 
     const hoje = new Date();
     const hojeStr = hoje.toISOString().split("T")[0];
@@ -212,25 +217,9 @@ export const contasPagarService = {
     };
   },
 
-  async _buscarFaturasConvenios(mes: number, ano: number, empresaId?: number): Promise<FaturaFornecedorConvenio[]> {
-    let query = supabaseAdmin
-      .from("faturas_fornecedores_convenios")
-      .select("*, convenio:convenios(id, nome), empresa:empresas(id, nome_fantasia, razao_social), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta)")
-      .eq("mes_competencia", mes)
-      .eq("ano_competencia", ano);
-
-    if (empresaId) {
-      query = query.eq("empresa_id", empresaId);
-    }
-
-    const { data, error } = await query;
-    if (error) return [];
-    return (data || []) as FaturaFornecedorConvenio[];
-  },
-
   async liquidarItem(
     id: string,
-    tipo: "DESPESA" | "CONVENIO",
+    tipo: TipoContaPagarType,
     payload: {
       data_pagamento: string;
       valor_pago: number;
@@ -238,14 +227,27 @@ export const contasPagarService = {
     },
     criadoPor?: string
   ) {
-    if (tipo === "CONVENIO") {
+    if (tipo === TIPO_CONTA_PAGAR.COLABORADOR || id.startsWith("colab_")) {
+      return folhaContasPagarService.liquidarItemColaborador(id, payload, criadoPor);
+    }
+
+    if (tipo === TIPO_CONTA_PAGAR.CONVENIO) {
       const fatura = await convenioAuditoriaRepository.getFaturaById(id);
       if (!fatura) throw new AppError("Fatura de convênio não encontrada", 404);
 
       const conta = await contaBancariaRepository.getById(payload.conta_bancaria_id);
       if (!conta) throw new AppError("Conta bancária de liquidação não encontrada", 404);
 
-      const novoValorPago = parseFloat((Number(fatura.valor_pago || 0) + payload.valor_pago).toFixed(2));
+      const isFaturaSemBaixaAtiva =
+        fatura.status === STATUS_FATURA_CONVENIO.PENDENTE ||
+        fatura.status === STATUS_FATURA_CONVENIO.CANCELADA;
+
+      if (isFaturaSemBaixaAtiva) {
+        await convenioAuditoriaRepository.deletePagamentosPorFatura(fatura.id);
+      }
+
+      const valorPagoBase = isFaturaSemBaixaAtiva ? 0 : Number(fatura.valor_pago || 0);
+      const novoValorPago = parseFloat((valorPagoBase + payload.valor_pago).toFixed(2));
       const totalFatura = Number(fatura.valor_total_fatura || 0);
       const novoStatus = novoValorPago >= totalFatura ? STATUS_FATURA_CONVENIO.PAGA : STATUS_FATURA_CONVENIO.PAGO_PARCIAL;
 
@@ -275,5 +277,32 @@ export const contasPagarService = {
       payload.valor_pago,
       payload.conta_bancaria_id
     );
+  },
+
+  async desfazerLiquidacaoItem(
+    id: string,
+    tipo: TipoContaPagarType,
+    userId?: string
+  ) {
+    if (tipo === TIPO_CONTA_PAGAR.COLABORADOR || id.startsWith("colab_")) {
+      return folhaContasPagarService.desfazerLiquidacaoItemColaborador(id, userId);
+    }
+
+    if (tipo === TIPO_CONTA_PAGAR.CONVENIO) {
+      const fatura = await convenioAuditoriaRepository.getFaturaById(id);
+      if (!fatura) throw new AppError("Fatura de convênio não encontrada", 404);
+
+      await convenioAuditoriaRepository.deletePagamentosPorFatura(fatura.id);
+
+      return convenioAuditoriaRepository.updateFatura(fatura.id, {
+        status: STATUS_FATURA_CONVENIO.PENDENTE,
+        data_pagamento: null,
+        valor_pago: 0,
+        conta_bancaria_id: null,
+        lote_pagamento_id: null,
+      });
+    }
+
+    return despesaService.desfazerPagamento(id);
   },
 };

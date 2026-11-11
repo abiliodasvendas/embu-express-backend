@@ -12,6 +12,8 @@ export interface TransacoesParaSaldos {
   movAvulsas: Array<{ conta_bancaria_id: string | null; tipo_movimentacao: string; valor: number }>;
   despesasPagas: Array<{ conta_bancaria_id: string | null; valor_pago: number | null; valor_previsto: number; status: string }>;
   pagamentosConvenios: Array<{ conta_bancaria_id: string | null; valor_pago: number }>;
+  adiantamentosPagos: Array<{ conta_bancaria_id: string | null; valor: number | null; colaborador_id: string; mes: number; ano: number }>;
+  salariosPagos: Array<{ conta_bancaria_id: string | null; saldo_final: number }>;
   faturasClientesPendentes: Array<{ empresa_id: number; valor_faturado: number; valor_pago: number | null; status: string; mes_competencia?: number | null; ano_competencia?: number | null }>;
   despesasPendentes: Array<{ conta_bancaria_id: string | null; empresa_id: number; valor_previsto: number; valor_pago: number | null; status: string; mes_competencia?: number | null; ano_competencia?: number | null }>;
   conveniosPendentes: Array<{ conta_bancaria_id: string | null; empresa_id: number | null; valor_total_fatura: number; valor_pago: number | null; status: string; mes_competencia?: number | null; ano_competencia?: number | null }>;
@@ -121,6 +123,8 @@ export const contaBancariaRepository = {
       movAvulsasRes,
       despesasPagasRes,
       pagamentosConveniosRes,
+      adiantamentosPagosRes,
+      salariosPagosRes,
       faturasClientesPendentesRes,
       despesasPendentesRes,
       conveniosPendentesRes,
@@ -134,11 +138,21 @@ export const contaBancariaRepository = {
       supabaseAdmin
         .from("despesas_operacionais")
         .select("conta_bancaria_id, valor_pago, valor_previsto, status")
+        .neq("status", STATUS_DESPESA.CANCELADO)
         .or(`status.eq.${STATUS_DESPESA.PAGO},valor_pago.gt.0`)
         .not("conta_bancaria_id", "is", null),
       supabaseAdmin
         .from("faturas_fornecedores_pagamentos")
         .select("conta_bancaria_id, valor_pago")
+        .not("conta_bancaria_id", "is", null),
+      supabaseAdmin
+        .from("confirmacoes_adiantamento")
+        .select("conta_bancaria_id, valor, colaborador_id, mes, ano")
+        .not("conta_bancaria_id", "is", null),
+      supabaseAdmin
+        .from("fechamentos_financeiros")
+        .select("conta_bancaria_id, saldo_final")
+        .eq("pago", true)
         .not("conta_bancaria_id", "is", null),
       supabaseAdmin
         .from("faturas_clientes")
@@ -162,6 +176,8 @@ export const contaBancariaRepository = {
       movAvulsas: movAvulsasRes.data || [],
       despesasPagas: despesasPagasRes.data || [],
       pagamentosConvenios: pagamentosConveniosRes.data || [],
+      adiantamentosPagos: adiantamentosPagosRes.data || [],
+      salariosPagos: salariosPagosRes.data || [],
       faturasClientesPendentes: faturasClientesPendentesRes.data || [],
       despesasPendentes: despesasPendentesRes.data || [],
       conveniosPendentes: conveniosPendentesRes.data || [],

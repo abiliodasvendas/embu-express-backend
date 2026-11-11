@@ -77,7 +77,7 @@ export const dreService = {
     const dashboardFolha = await financeiroService.getDashboardLote(mes, ano);
     let custoPessoalFolha = tipoVisao === "realizado"
       ? Number(dashboardFolha.valorPago || 0) + Number(dashboardFolha.totalAdiantamentoPago || 0)
-      : Number(dashboardFolha.totalFolha || 0);
+      : Number(dashboardFolha.totalFolha || 0) + Number(dashboardFolha.totalAdiantamentoPago || 0);
 
     if (empresaId && totalFaturamentoHolding > 0) {
       custoPessoalFolha = custoPessoalFolha * shareEmpresa;

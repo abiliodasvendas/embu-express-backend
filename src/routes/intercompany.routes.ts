@@ -40,6 +40,18 @@ const intercompanyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     },
     intercompanyController.registrarAcerto
   );
+  app.post(
+    "/:id/desfazer-acerto",
+    {
+      preHandler: [
+        verifyPermissao([
+          PERMISSIONS.FATURAMENTO.EDITAR,
+          PERMISSIONS.DESPESAS.EDITAR,
+        ]),
+      ],
+    },
+    intercompanyController.desfazerAcerto
+  );
 };
 
 export default intercompanyRoutes;

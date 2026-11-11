@@ -26,6 +26,7 @@ export const faturaClienteSchema = z.object({
   data_inicio_apuracao: z.string().optional().nullable(),
   data_fim_apuracao: z.string().optional().nullable(),
   valor_faturado: z.number().nonnegative("Valor faturado deve ser maior ou igual a zero"),
+  valor_pago: z.number().nonnegative().optional(),
   data_emissao: z.string().optional(),
   data_vencimento: z.string().min(1, "Data de vencimento é obrigatória"),
   status: faturaStatusEnum.optional().default(STATUS_FATURA.PENDENTE),

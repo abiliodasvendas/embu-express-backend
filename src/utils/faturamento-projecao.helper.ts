@@ -16,6 +16,106 @@ import {
   PeriodoCalculado,
 } from "./periodo-faturamento.helper.js";
 
+export function calcularValoresSugestaoMedicao(params: {
+  unidade: UnidadeParaMedicao;
+  mes: number;
+  ano: number;
+  tipoPeriodo?: string;
+  numeroPeriodo?: number;
+  quinzena?: number | null;
+}) {
+  const { unidade, mes, ano, tipoPeriodo, numeroPeriodo, quinzena } = params;
+  const tipo = tipoPeriodo || (unidade.periodicidade || TIPO_PERIODO_FATURA.QUINZENAL);
+  const num = numeroPeriodo || quinzena || 1;
+  const valorBase = Number(unidade.valor_contrato_mensal || 0);
+
+  let periodosCalculados: PeriodoCalculado[] = [];
+  let valorSugerido = valorBase;
+
+  if (tipo === TIPO_PERIODO_FATURA.SEMANAL) {
+    periodosCalculados = getSemanasCompetencia(mes, ano);
+    valorSugerido = valorBase;
+  } else if (tipo === TIPO_PERIODO_FATURA.MENSAL) {
+    periodosCalculados = getMensalCompetencia(mes, ano, unidade.dia_vencimento_padrao || 10);
+    valorSugerido = valorBase;
+  } else {
+    periodosCalculados = getQuinzenasCompetencia(
+      mes,
+      ano,
+      unidade.dia_vencimento_padrao,
+      unidade.dia_vencimento_segunda_quinzena
+    );
+    valorSugerido = parseFloat((valorBase / 2).toFixed(2));
+  }
+
+  const periodoEncontrado =
+    periodosCalculados.find((p) => p.numero_periodo === num) ||
+    periodosCalculados[0] || {
+      numero_periodo: num,
+      data_inicio: `${ano}-${String(mes).padStart(2, "0")}-01`,
+      data_fim: `${ano}-${String(mes).padStart(2, "0")}-15`,
+      data_vencimento: `${ano}-${String(mes).padStart(2, "0")}-16`,
+      descricao: "",
+    };
+
+  return {
+    cliente_id: unidade.cliente_id,
+    unidade_id: unidade.id,
+    tipo_periodo: tipo,
+    numero_periodo: periodoEncontrado.numero_periodo,
+    valor_base: valorBase,
+    periodo: {
+      data_inicio: periodoEncontrado.data_inicio,
+      data_fim: periodoEncontrado.data_fim,
+      data_vencimento: periodoEncontrado.data_vencimento,
+    },
+    dias_esperados: 0,
+    dias_trabalhados: 0,
+    faltas_sem_cobertura: 0,
+    valor_sugerido: valorSugerido,
+  };
+}
+
+export function montarPayloadsCancelamentoPrevisoes(
+  prevIds: string[],
+  unidades: UnidadeParaMedicao[],
+  empresas: Array<{ id: number }>,
+  criadoPor?: string
+): Record<string, unknown>[] {
+  const parsedPrevs = prevIds.map((prevId) => {
+    const parts = prevId.split("_");
+    return {
+      unidadeId: Number(parts[1]),
+      mes: Number(parts[2]),
+      ano: Number(parts[3]),
+      numPeriodo: Number(parts[4]),
+    };
+  });
+
+  const unidadesMap = new Map(unidades.map((u) => [u.id, u]));
+  const fallbackEmpresa = empresas[0] || { id: 1 };
+  const recordsToInsert: Record<string, unknown>[] = [];
+
+  for (const p of parsedPrevs) {
+    const unidade = unidadesMap.get(p.unidadeId);
+    if (!unidade) continue;
+
+    const empresaId = unidade.empresa_emissora_padrao_id || fallbackEmpresa.id;
+    const record = montarPayloadMaterializacao(
+      unidade,
+      p.mes,
+      p.ano,
+      p.numPeriodo,
+      empresaId,
+      { status: STATUS_FATURA.CANCELADA },
+      criadoPor
+    );
+    recordsToInsert.push(record);
+  }
+
+  return recordsToInsert;
+}
+
 export function montarPayloadMaterializacao(
   unidade: UnidadeParaMedicao,
   mes: number,

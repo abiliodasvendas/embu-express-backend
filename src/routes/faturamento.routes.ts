@@ -35,6 +35,11 @@ const faturamentoRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     faturamentoController.liquidarIndividual
   );
   app.post(
+    "/:id/desfazer-liquidacao",
+    { preHandler: [verifyPermissao(PERMISSIONS.FATURAMENTO.EDITAR)] },
+    faturamentoController.desfazerLiquidacaoIndividual
+  );
+  app.post(
     "/",
     { preHandler: [verifyPermissao(PERMISSIONS.FATURAMENTO.EDITAR)] },
     faturamentoController.create

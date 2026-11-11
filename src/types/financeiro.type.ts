@@ -1,4 +1,15 @@
 import { Ocorrencia, LancamentoConvenio } from "./database.js";
+import { CalendarioStatus } from "../constants/financeiro.enum.js";
+
+export interface DiaCalendarioVisual {
+    data: string;
+    data_br: string;
+    dia: number;
+    dia_semana_curto: string;
+    dia_semana_longo: string;
+    status: CalendarioStatus;
+    is_dia_escala: boolean;
+}
 
 export interface ExtratoMensal {
     periodo: { mes: number; ano: number };
@@ -12,6 +23,9 @@ export interface ExtratoMensal {
     totais: FinanceiroTotais;
     id_fechamento?: number;
     data_pagamento?: string;
+    conta_bancaria_id?: string | null;
+    adiantamento_conta_bancaria_id?: string | null;
+    adiantamento_data_pagamento?: string | null;
 }
 
 export interface ResumoClienteFinanceiro {
@@ -35,7 +49,7 @@ export interface ResumoClienteFinanceiro {
     dias_esperados_turno: number;
     dias_trabalhados: number;
     ausencias: number;
-    calendario_visual: any[];
+    calendario_visual: DiaCalendarioVisual[];
     data_inicio: string | null;
     data_fim: string | null;
     creditos_ocorrencia: number;
@@ -77,6 +91,8 @@ export interface FechamentoPayload {
     data_fechamento: string;
     pago: boolean;
     data_pagamento: string;
+    conta_bancaria_id?: string | null;
+    lote_pagamento_id?: string | null;
 }
 
 export interface ConfirmacaoAdiantamentoPayload {
@@ -87,6 +103,9 @@ export interface ConfirmacaoAdiantamentoPayload {
     valor?: number | null;
     confirmado_por: string;
     data_confirmacao: string;
+    conta_bancaria_id?: string | null;
+    data_pagamento?: string | null;
+    lote_pagamento_id?: string | null;
 }
 
 export interface StatusGeralFechamento {

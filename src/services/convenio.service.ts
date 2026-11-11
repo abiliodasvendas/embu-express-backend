@@ -6,6 +6,7 @@ import { AppError } from "../errors/AppError.js";
 import { convenioRepository } from "../repositories/convenio.repository.js";
 import { isDavidOuMotoEmbu } from "./convenio-regras.service.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
+import { gerarParcelasLancamentoConvenio } from "../utils/convenio.helper.js";
 
 export const convenioService = {
   async listConvenios(ativo?: string) {
@@ -62,28 +63,11 @@ export const convenioService = {
     const { is_parcelado, quantidade_parcelas, ...lancamentoData } = payload;
 
     if (is_parcelado && quantidade_parcelas && quantidade_parcelas > 1) {
-      const lancamentosToInsert = [];
-      const baseDate = new Date(lancamentoData.data_lancamento + "T12:00:00Z");
-
-      for (let i = 0; i < quantidade_parcelas; i++) {
-        const currentDate = new Date(baseDate);
-        const currentMonth = currentDate.getUTCMonth();
-        currentDate.setUTCMonth(currentMonth + i);
-
-        if (currentDate.getUTCMonth() !== (currentMonth + i) % 12) {
-          currentDate.setUTCDate(0);
-        }
-
-        const dataString = currentDate.toISOString().split("T")[0];
-
-        lancamentosToInsert.push({
-          ...lancamentoData,
-          convenio_id: convenioId,
-          data_lancamento: dataString,
-          descricao: `${lancamentoData.descricao} (Parcela ${i + 1}/${quantidade_parcelas})`,
-        });
-      }
-
+      const lancamentosToInsert = gerarParcelasLancamentoConvenio(
+        convenioId,
+        lancamentoData,
+        quantidade_parcelas
+      );
       const inserted = await convenioRepository.insertManyLancamentos(lancamentosToInsert);
       invalidateDashboardLoteCache();
       return inserted[0];
@@ -315,28 +299,11 @@ export const convenioService = {
     }
 
     if (is_parcelado && quantidade_parcelas && quantidade_parcelas > 1) {
-      const lancamentosToInsert = [];
-      const baseDate = new Date(lancamentoData.data_lancamento + "T12:00:00Z");
-
-      for (let i = 0; i < quantidade_parcelas; i++) {
-        const currentDate = new Date(baseDate);
-        const currentMonth = currentDate.getUTCMonth();
-        currentDate.setUTCMonth(currentMonth + i);
-
-        if (currentDate.getUTCMonth() !== (currentMonth + i) % 12) {
-          currentDate.setUTCDate(0);
-        }
-
-        const dataString = currentDate.toISOString().split("T")[0];
-
-        lancamentosToInsert.push({
-          ...lancamentoData,
-          convenio_id: convenio.id,
-          data_lancamento: dataString,
-          descricao: `${lancamentoData.descricao} (Parcela ${i + 1}/${quantidade_parcelas})`,
-        });
-      }
-
+      const lancamentosToInsert = gerarParcelasLancamentoConvenio(
+        convenio.id,
+        lancamentoData,
+        quantidade_parcelas
+      );
       const inserted = await convenioRepository.insertManyLancamentos(lancamentosToInsert);
       invalidateDashboardLoteCache();
       return inserted[0];

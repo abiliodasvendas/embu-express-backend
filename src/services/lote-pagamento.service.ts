@@ -5,9 +5,10 @@ import { lotePagamentoSchema } from "../schemas/lote-pagamento.schema.js";
 import { lotePagamentoRepository } from "../repositories/lote-pagamento.repository.js";
 import { despesaRepository } from "../repositories/despesa.repository.js";
 import { despesaService } from "./despesa.service.js";
+import { folhaContasPagarService } from "./folha-contas-pagar.service.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
 import { contaBancariaRepository } from "../repositories/conta-bancaria.repository.js";
-import { STATUS_DESPESA, STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
+import { STATUS_DESPESA, STATUS_FATURA_CONVENIO, TIPO_CONTA_PAGAR } from "../constants/financeiro.enum.js";
 
 type LotePagamentoDTO = z.infer<typeof lotePagamentoSchema>;
 
@@ -34,12 +35,12 @@ export const lotePagamentoService = {
     });
 
     for (const item of itens) {
-      if (item.tipo === "DESPESA") {
+      if (item.tipo === TIPO_CONTA_PAGAR.DESPESA) {
         if (item.id.startsWith("prev_desp_")) {
           await despesaService._materializarPrevisaoDespesa(
             item.id,
             {
-              status: "PAGO",
+              status: STATUS_DESPESA.PAGO,
               data_pagamento,
               valor_pago: item.valor_alocado,
               conta_bancaria_id: conta_bancaria_origem_id,
@@ -60,13 +61,22 @@ export const lotePagamentoService = {
             lote_pagamento_id: lote.id,
           });
         }
-      } else if (item.tipo === "CONVENIO") {
+      } else if (item.tipo === TIPO_CONTA_PAGAR.CONVENIO) {
         const faturaConvenio = await convenioAuditoriaRepository.getFaturaById(item.id);
         if (!faturaConvenio) {
           throw new AppError(`Fatura de convênio ${item.id} não encontrada`, 404);
         }
 
-        const novoValorPago = parseFloat((Number(faturaConvenio.valor_pago || 0) + item.valor_alocado).toFixed(2));
+        const isFaturaSemBaixaAtiva =
+          faturaConvenio.status === STATUS_FATURA_CONVENIO.PENDENTE ||
+          faturaConvenio.status === STATUS_FATURA_CONVENIO.CANCELADA;
+
+        if (isFaturaSemBaixaAtiva) {
+          await convenioAuditoriaRepository.deletePagamentosPorFatura(faturaConvenio.id);
+        }
+
+        const valorPagoBase = isFaturaSemBaixaAtiva ? 0 : Number(faturaConvenio.valor_pago || 0);
+        const novoValorPago = parseFloat((valorPagoBase + item.valor_alocado).toFixed(2));
         const totalFatura = Number(faturaConvenio.valor_total_fatura || 0);
         const novoStatus = novoValorPago >= totalFatura ? STATUS_FATURA_CONVENIO.PAGA : STATUS_FATURA_CONVENIO.PAGO_PARCIAL;
 
@@ -87,6 +97,17 @@ export const lotePagamentoService = {
           observacao: observacao || "Liquidação via lote de pagamentos",
           criado_por: criadoPor || null,
         });
+      } else if (item.tipo === TIPO_CONTA_PAGAR.COLABORADOR || item.id.startsWith("colab_")) {
+        await folhaContasPagarService.liquidarItemColaborador(
+          item.id,
+          {
+            data_pagamento,
+            valor_pago: item.valor_alocado,
+            conta_bancaria_id: conta_bancaria_origem_id,
+          },
+          criadoPor,
+          lote.id
+        );
       }
     }
 

@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const itemPagamentoSchema = z.object({
-  id: z.string().uuid("ID inválido"),
-  tipo: z.enum(["DESPESA", "CONVENIO"]),
+  id: z.string().min(1, "ID inválido"),
+  tipo: z.enum(["DESPESA", "CONVENIO", "COLABORADOR"]),
   valor_alocado: z.number().positive("Valor alocado deve ser maior que zero"),
 });
 

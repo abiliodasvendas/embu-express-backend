@@ -135,7 +135,7 @@ export const fluxoCaixaService = {
 
     const [confirmacoesAtual, linksAtivos, configSalarios, configVales, conveniosCadastrados] = await Promise.all([
       fluxoCaixaRepository.listConfirmacoesAdiantamento(mes, ano),
-      fluxoCaixaRepository.listColaboradorClientesAtivos(),
+      fluxoCaixaRepository.listColaboradorClientesAtivos(dataInicioStr, dataFimStr),
       configuracaoService.getConfiguracao("dia_desembolso_salarios"),
       configuracaoService.getConfiguracao("dia_desembolso_vales"),
       convenioAuditoriaRepository.listConveniosParaResumo(),

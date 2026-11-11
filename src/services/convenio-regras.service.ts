@@ -146,7 +146,16 @@ export function calcularManutencaoFrotaPropria({
     return acc + v;
   }, 0);
 
-  if (totalFaturas > 0) {
+  if (tipoVisao === "realizado") {
+    if (totalFaturas <= 0) {
+      return 0;
+    }
+    const saldoExcedentePago = Math.max(0, totalFaturas - totalMotoboysLancamentos);
+    manutencaoFrotaPropria = Math.min(
+      totalFaturas,
+      Math.max(manutencaoFrotaPropria, saldoExcedentePago)
+    );
+  } else if (totalFaturas > 0) {
     const saldoExcedenteFatura = Math.max(0, totalFaturas - totalMotoboysLancamentos);
     if (saldoExcedenteFatura > manutencaoFrotaPropria) {
       manutencaoFrotaPropria = saldoExcedenteFatura;

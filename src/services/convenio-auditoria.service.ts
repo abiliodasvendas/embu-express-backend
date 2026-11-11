@@ -2,7 +2,6 @@ import { AppError } from "../errors/AppError.js";
 import {
   AuditoriaConvenioResultado,
   FaturaFornecedorConvenio,
-  FaturaFornecedorPagamento,
   StatusFaturaFornecedorConvenio,
   ConvenioResumoItem,
   ResumoGeralConveniosResultado,
@@ -13,8 +12,9 @@ import {
   LiquidarFaturaConvenioInput,
 } from "../schemas/convenio-auditoria.schema.js";
 import { convenioAuditoriaRepository } from "../repositories/convenio-auditoria.repository.js";
-import { STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
+import { PERIODICIDADE_FATURAMENTO, STATUS_FATURA_CONVENIO } from "../constants/financeiro.enum.js";
 import { convenioRegrasService } from "./convenio-regras.service.js";
+import { montarItemResumoConvenio } from "../utils/convenio.helper.js";
 
 type FaturaFornecedorDTO = z.infer<typeof faturaFornecedorConvenioSchema>;
 
@@ -31,14 +31,15 @@ export const convenioAuditoriaService = {
       throw new AppError("Convênio não encontrado", 404);
     }
 
-    const periodicidadeFinal = tipoPeriodo || convenio.periodicidade || "MENSAL";
+    const periodicidadeFinal =
+      tipoPeriodo || convenio.periodicidade || PERIODICIDADE_FATURAMENTO.MENSAL;
     const numPeriodoFinal = numeroPeriodo || 1;
 
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     let dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
     let dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    if (periodicidadeFinal === "QUINZENAL") {
+    if (periodicidadeFinal === PERIODICIDADE_FATURAMENTO.QUINZENAL) {
       if (numPeriodoFinal === 1) {
         dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
         dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-15`;
@@ -84,7 +85,8 @@ export const convenioAuditoriaService = {
         contaBancariaId: convenio.conta_bancaria_id,
         tipoPeriodo: periodicidadeFinal as "MENSAL" | "QUINZENAL" | "SEMANAL",
         numeroPeriodo: numPeriodoFinal,
-        quinzena: periodicidadeFinal === "QUINZENAL" ? numPeriodoFinal : null,
+        quinzena:
+          periodicidadeFinal === PERIODICIDADE_FATURAMENTO.QUINZENAL ? numPeriodoFinal : null,
         dataInicioApuracao: dataInicioMesStr,
         dataFimApuracao: dataFimMesStr,
       });
@@ -136,14 +138,31 @@ export const convenioAuditoriaService = {
     );
 
     if (existente) {
+      const isRevertendo =
+        payload.status === STATUS_FATURA_CONVENIO.PENDENTE ||
+        payload.status === STATUS_FATURA_CONVENIO.CANCELADA;
+
+      if (isRevertendo) {
+        await convenioAuditoriaRepository.deletePagamentosPorFatura(existente.id);
+      }
+
       return convenioAuditoriaRepository.updateFatura(existente.id, {
         valor_total_fatura: payload.valor_total_fatura,
         data_vencimento: payload.data_vencimento,
         status: payload.status,
         empresa_id: payload.empresa_id !== undefined ? payload.empresa_id : null,
         conta_bancaria_id: payload.conta_bancaria_id !== undefined ? payload.conta_bancaria_id : null,
-        data_pagamento: payload.data_pagamento !== undefined ? payload.data_pagamento : null,
-        valor_pago: payload.valor_pago !== undefined ? payload.valor_pago : null,
+        data_pagamento: isRevertendo
+          ? null
+          : payload.data_pagamento !== undefined
+            ? payload.data_pagamento
+            : null,
+        valor_pago: isRevertendo
+          ? 0
+          : payload.valor_pago !== undefined
+            ? payload.valor_pago
+            : null,
+        lote_pagamento_id: isRevertendo ? null : existente.lote_pagamento_id,
         comprovante_url: payload.comprovante_url || null,
         observacoes: payload.observacoes || null,
         tipo_periodo: payload.tipo_periodo,
@@ -186,7 +205,7 @@ export const convenioAuditoriaService = {
         convenio_id: payload.convenio_id,
         mes_competencia: payload.mes_competencia,
         ano_competencia: payload.ano_competencia,
-        tipo_periodo: payload.tipo_periodo || "MENSAL",
+        tipo_periodo: payload.tipo_periodo || PERIODICIDADE_FATURAMENTO.MENSAL,
         numero_periodo: payload.numero_periodo || 1,
         quinzena: payload.quinzena || 1,
         data_vencimento: payload.data_vencimento,
@@ -199,6 +218,14 @@ export const convenioAuditoriaService = {
       });
     }
 
+    const isFaturaSemBaixaAtiva =
+      fatura.status === STATUS_FATURA_CONVENIO.PENDENTE ||
+      fatura.status === STATUS_FATURA_CONVENIO.CANCELADA;
+
+    if (isFaturaSemBaixaAtiva) {
+      await convenioAuditoriaRepository.deletePagamentosPorFatura(fatura.id);
+    }
+
     await convenioAuditoriaRepository.createPagamento({
       fatura_fornecedor_id: fatura.id,
       conta_bancaria_id: payload.conta_bancaria_id,
@@ -209,7 +236,7 @@ export const convenioAuditoriaService = {
       criado_por: criadoPor || null,
     });
 
-    const valorPagoAtual = Number(fatura.valor_pago || 0);
+    const valorPagoAtual = isFaturaSemBaixaAtiva ? 0 : Number(fatura.valor_pago || 0);
     const novoValorPago = parseFloat((valorPagoAtual + payload.valor_pago).toFixed(2));
     const valorTotalFatura = Number(payload.valor_total_fatura || fatura.valor_total_fatura);
     const novoStatus: StatusFaturaFornecedorConvenio =
@@ -232,8 +259,21 @@ export const convenioAuditoriaService = {
     status: StatusFaturaFornecedorConvenio,
     observacoes?: string | null
   ): Promise<FaturaFornecedorConvenio> {
-    const updateData: { status: StatusFaturaFornecedorConvenio; observacoes?: string | null } = { status };
+    const isRevertendo =
+      status === STATUS_FATURA_CONVENIO.PENDENTE ||
+      status === STATUS_FATURA_CONVENIO.CANCELADA;
+
+    if (isRevertendo) {
+      await convenioAuditoriaRepository.deletePagamentosPorFatura(id);
+    }
+
+    const updateData: Record<string, unknown> = { status };
     if (observacoes !== undefined) updateData.observacoes = observacoes;
+    if (isRevertendo) {
+      updateData.valor_pago = 0;
+      updateData.data_pagamento = null;
+      updateData.lote_pagamento_id = null;
+    }
 
     return convenioAuditoriaRepository.updateFatura(id, updateData);
   },
@@ -287,86 +327,27 @@ export const convenioAuditoriaService = {
       const fatura = faturasMap.get(conv.id);
 
       const {
-        motoboys,
-        totalFrotaPropria: totalMotoEmbuDavid,
+        item,
+        totalConsumido,
         totalMotoboys,
+        totalMotoEmbuDavid,
         totalSemVinculo,
-        totalGeral: totalConsumido,
-      } = convenioRegrasService.classificarLancamentosConvenio(convLancamentos);
-
-      const distinctColabs = new Set(
-        motoboys
-          .map((m) => m.colaborador_id)
-          .filter((id): id is string => Boolean(id))
-      );
+        faturaValorReal,
+      } = montarItemResumoConvenio({
+        conv,
+        convLancamentos,
+        fatura,
+        mes,
+        ano,
+      });
 
       globalConsumido += totalConsumido;
       globalMotoboys += totalMotoboys;
       globalMotoEmbuDavid += totalMotoEmbuDavid;
       globalSemVinculo += totalSemVinculo;
+      globalFaturas += faturaValorReal;
 
-      let faturaItem: ConvenioResumoItem["fatura_fornecedor"] = null;
-      if (fatura) {
-        const faturaValor = Number(fatura.valor_total_fatura || 0);
-        globalFaturas += faturaValor;
-        faturaItem = {
-          id: fatura.id,
-          valor_total_fatura: faturaValor,
-          data_vencimento: fatura.data_vencimento,
-          status: fatura.status as StatusFaturaFornecedorConvenio,
-          saldo_embu: parseFloat((faturaValor - totalMotoboys).toFixed(2)),
-          empresa_id: fatura.empresa_id,
-          conta_bancaria_id: fatura.conta_bancaria_id,
-          valor_pago: fatura.valor_pago ? Number(fatura.valor_pago) : null,
-          data_pagamento: fatura.data_pagamento || null,
-          is_previsao: false,
-          pagamentos: (fatura.pagamentos || []) as FaturaFornecedorPagamento[],
-        };
-      } else if (totalConsumido > 0) {
-        const faturaPrevisao = convenioRegrasService.gerarFaturaPrevisao({
-          convenioId: conv.id,
-          mes,
-          ano,
-          diaVencimento: conv.dia_vencimento_padrao || 15,
-          valorTotal: totalConsumido,
-          empresaId: conv.empresa_id,
-          contaBancariaId: conv.conta_bancaria_id,
-          tipoPeriodo: (conv.periodicidade as "QUINZENAL" | "MENSAL" | "SEMANAL") || "MENSAL",
-        });
-
-        faturaItem = {
-          id: faturaPrevisao.id,
-          valor_total_fatura: totalConsumido,
-          data_vencimento: faturaPrevisao.data_vencimento,
-          status: faturaPrevisao.status,
-          saldo_embu: parseFloat((totalConsumido - totalMotoboys).toFixed(2)),
-          empresa_id: conv.empresa_id || null,
-          conta_bancaria_id: conv.conta_bancaria_id || null,
-          valor_pago: null,
-          data_pagamento: null,
-          is_previsao: true,
-          pagamentos: [],
-        };
-      }
-
-      return {
-        id: conv.id,
-        nome: conv.nome,
-        ativo: conv.ativo,
-        empresa_id: conv.empresa_id,
-        conta_bancaria_id: conv.conta_bancaria_id,
-        total_consumido: totalConsumido,
-        total_motoboys: totalMotoboys,
-        total_moto_embu_david: totalMotoEmbuDavid,
-        total_sem_vinculo: totalSemVinculo,
-        quantidade_lancamentos: convLancamentos.length,
-        total_colaboradores_distintos: distinctColabs.size,
-        ticket_medio:
-          convLancamentos.length > 0
-            ? parseFloat((totalConsumido / convLancamentos.length).toFixed(2))
-            : 0,
-        fatura_fornecedor: faturaItem,
-      };
+      return item;
     });
 
     const totalSaldoCargoEmbu = parseFloat((globalFaturas - globalMotoboys).toFixed(2));

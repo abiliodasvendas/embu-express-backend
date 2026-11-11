@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../config/supabase.js";
 import { FaturaCliente, LoteRecebimento, StatusFatura } from "../types/database.js";
+import { STATUS_FATURA } from "../constants/financeiro.enum.js";
 
 export interface ListFaturasFilters {
   mes?: number;
@@ -71,8 +72,8 @@ export const faturamentoRepository = {
     let query = supabaseAdmin
       .from("faturas_clientes")
       .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj), empresa:empresas(id, nome_fantasia)")
-      .neq("status", "CANCELADA")
-      .neq("status", "LIQUIDADA");
+      .neq("status", STATUS_FATURA.CANCELADA)
+      .neq("status", STATUS_FATURA.LIQUIDADA);
 
     if (filtros.mes) query = query.eq("mes_competencia", filtros.mes);
     if (filtros.ano) query = query.eq("ano_competencia", filtros.ano);
@@ -115,7 +116,7 @@ export const faturamentoRepository = {
       .from("faturas_clientes")
       .update(record)
       .eq("id", id)
-      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj)")
+      .select("*, cliente:clientes(id, nome_fantasia), unidade:unidades_cliente(id, nome_unidade, cnpj, valor_contrato_mensal, conta_bancaria_padrao_id), empresa:empresas(id, nome_fantasia, razao_social, cnpj), recebimentos:fatura_recebimentos(*, conta_bancaria:contas_bancarias(*))")
       .single();
 
     if (error) throw error;
@@ -133,9 +134,13 @@ export const faturamentoRepository = {
 
   async updateFaturasStatusLote(ids: string[], status: StatusFatura): Promise<number> {
     if (ids.length === 0) return 0;
+    const payload: Record<string, unknown> = { status };
+    if (status === STATUS_FATURA.CANCELADA || status === STATUS_FATURA.PENDENTE) {
+      payload.valor_pago = 0;
+    }
     const { error, count } = await supabaseAdmin
       .from("faturas_clientes")
-      .update({ status }, { count: "exact" })
+      .update(payload, { count: "exact" })
       .in("id", ids);
 
     if (error) throw error;
@@ -231,5 +236,138 @@ export const faturamentoRepository = {
       .insert([record]);
 
     if (error) throw error;
+  },
+
+  async deleteRecebimentosPorFatura(faturaId: string): Promise<void> {
+    const { data: recs } = await supabaseAdmin
+      .from("fatura_recebimentos")
+      .select("id")
+      .eq("fatura_id", faturaId);
+
+    const recIds = (recs || []).map((r) => r.id);
+    if (recIds.length > 0) {
+      await supabaseAdmin
+        .from("transferencias_intercompany")
+        .delete()
+        .in("fatura_recebimento_id", recIds);
+    }
+
+    const { error } = await supabaseAdmin
+      .from("fatura_recebimentos")
+      .delete()
+      .eq("fatura_id", faturaId);
+
+    if (error) throw error;
+  },
+
+  async deleteRecebimentosPorFaturasLote(faturaIds: string[]): Promise<void> {
+    if (faturaIds.length === 0) return;
+
+    const { data: recs } = await supabaseAdmin
+      .from("fatura_recebimentos")
+      .select("id")
+      .in("fatura_id", faturaIds);
+
+    const recIds = (recs || []).map((r) => r.id);
+    if (recIds.length > 0) {
+      await supabaseAdmin
+        .from("transferencias_intercompany")
+        .delete()
+        .in("fatura_recebimento_id", recIds);
+    }
+
+    const { error } = await supabaseAdmin
+      .from("fatura_recebimentos")
+      .delete()
+      .in("fatura_id", faturaIds);
+
+    if (error) throw error;
+  },
+
+  async syncValorRecebimentoFatura(faturaId: string, novoValorPago: number): Promise<void> {
+    const { data: recs } = await supabaseAdmin
+      .from("fatura_recebimentos")
+      .select("id, valor_alocado")
+      .eq("fatura_id", faturaId)
+      .order("created_at", { ascending: true });
+
+    if (!recs || recs.length === 0) {
+      if (novoValorPago <= 0) return;
+
+      const fatura = await this.getFaturaById(faturaId);
+      if (!fatura) return;
+
+      let contaBancariaId: string | null = fatura.unidade?.conta_bancaria_padrao_id || null;
+
+      if (!contaBancariaId && fatura.empresa_id) {
+        const { data: contaEmpresa } = await supabaseAdmin
+          .from("contas_bancarias")
+          .select("id")
+          .eq("empresa_id", fatura.empresa_id)
+          .eq("ativo", true)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        contaBancariaId = contaEmpresa?.id || null;
+      }
+
+      if (!contaBancariaId) {
+        const { data: contaQualquer } = await supabaseAdmin
+          .from("contas_bancarias")
+          .select("id")
+          .eq("ativo", true)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        contaBancariaId = contaQualquer?.id || null;
+      }
+
+      if (!contaBancariaId) return;
+
+      await supabaseAdmin.from("fatura_recebimentos").insert([
+        {
+          fatura_id: faturaId,
+          conta_bancaria_id: contaBancariaId,
+          data_recebimento: fatura.data_vencimento || new Date().toISOString().split("T")[0],
+          valor_alocado: novoValorPago,
+          observacao: "Baixa registrada na edição da fatura",
+        },
+      ]);
+      return;
+    }
+
+    if (novoValorPago <= 0) {
+      await this.deleteRecebimentosPorFatura(faturaId);
+      return;
+    }
+
+    const somaAtual = recs.reduce((acc, r) => acc + Number(r.valor_alocado || 0), 0);
+    if (Math.abs(somaAtual - novoValorPago) < 0.01) {
+      return;
+    }
+
+    const principalId = recs[0].id;
+    await supabaseAdmin
+      .from("fatura_recebimentos")
+      .update({ valor_alocado: novoValorPago })
+      .eq("id", principalId);
+
+    await supabaseAdmin
+      .from("transferencias_intercompany")
+      .update({ valor: novoValorPago })
+      .eq("fatura_recebimento_id", principalId);
+
+    if (recs.length > 1) {
+      const extraIds = recs.slice(1).map((r) => r.id);
+      await supabaseAdmin
+        .from("transferencias_intercompany")
+        .delete()
+        .in("fatura_recebimento_id", extraIds);
+
+      await supabaseAdmin
+        .from("fatura_recebimentos")
+        .delete()
+        .in("id", extraIds);
+    }
   },
 };

@@ -21,7 +21,14 @@ export const FinanceiroController = {
     const { params, body } = fecharMesSchema.parse(request);
     const pagoPor = request.user?.id;
     if (!pagoPor) return reply.status(401).send({ error: "Usuário não autenticado" });
-    const result = await financeiroService.processarPagamento(params.usuarioId, body.mes, body.ano, pagoPor);
+    const result = await financeiroService.processarPagamento(
+      params.usuarioId,
+      body.mes,
+      body.ano,
+      pagoPor,
+      body.conta_bancaria_id,
+      body.data_pagamento
+    );
     return reply.send(result);
   },
 
@@ -29,7 +36,15 @@ export const FinanceiroController = {
     const { params, body } = confirmarAdiantamentoSchema.parse(request);
     const confirmadoPor = request.user?.id;
     if (!confirmadoPor) return reply.status(401).send({ error: "Usuário não autenticado" });
-    const result = await financeiroService.confirmarAdiantamento(params.usuarioId, body.mes, body.ano, confirmadoPor, body.valor);
+    const result = await financeiroService.confirmarAdiantamento(
+      params.usuarioId,
+      body.mes,
+      body.ano,
+      confirmadoPor,
+      body.valor,
+      body.conta_bancaria_id,
+      body.data_pagamento
+    );
     return reply.send(result);
   },
 

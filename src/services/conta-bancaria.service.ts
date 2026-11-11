@@ -121,6 +121,26 @@ export const contaBancariaService = {
         }
       });
 
+      dados.adiantamentosPagos.forEach((ad) => {
+        if (ad.conta_bancaria_id === conta.id) {
+          const val = Number(ad.valor || 0);
+          if (val > 0) {
+            totalSaidas += val;
+            totalTransacoes++;
+          }
+        }
+      });
+
+      dados.salariosPagos.forEach((sal) => {
+        if (sal.conta_bancaria_id === conta.id) {
+          const val = Number(sal.saldo_final || 0);
+          if (val > 0) {
+            totalSaidas += val;
+            totalTransacoes++;
+          }
+        }
+      });
+
       const saldoAtual = parseFloat((totalEntradas - totalSaidas).toFixed(2));
 
       let entradasPrevistas = 0;

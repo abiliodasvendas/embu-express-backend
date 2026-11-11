@@ -16,6 +16,9 @@ const PERMISSOES_LEITURA_CONTA = [
   PERMISSIONS.CLIENTES.VER,
   PERMISSIONS.CLIENTES.EDITAR,
   PERMISSIONS.FLUXO_CAIXA.VER,
+  PERMISSIONS.FINANCEIRO.EXTRATO,
+  PERMISSIONS.FINANCEIRO.FECHAR,
+  PERMISSIONS.FINANCEIRO.PAGAR,
 ];
 
 const contaBancariaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -23,6 +26,11 @@ const contaBancariaRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     "/saldos",
     { preHandler: [verifyPermissao(PERMISSIONS.CONTAS_BANCARIAS.VER)] },
     contaBancariaController.listComSaldos
+  );
+  app.get(
+    "/:id/extrato",
+    { preHandler: [verifyPermissao(PERMISSIONS.CONTAS_BANCARIAS.VER)] },
+    contaBancariaController.getExtrato
   );
   app.get(
     "/",

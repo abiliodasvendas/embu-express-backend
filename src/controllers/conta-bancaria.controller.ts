@@ -1,9 +1,25 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { contaBancariaService } from "../services/conta-bancaria.service.js";
+import { extratoBancarioService } from "../services/extrato-bancario.service.js";
 import { contaBancariaSchema, updateContaBancariaSchema } from "../schemas/conta-bancaria.schema.js";
 import { z } from "zod";
 
 export const contaBancariaController = {
+  async getExtrato(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { mes, ano } = z
+      .object({
+        mes: z.coerce.number().int().min(1).max(12).optional(),
+        ano: z.coerce.number().int().min(2020).max(2100).optional(),
+      })
+      .parse(request.query);
+
+    const mesAlvo = mes || new Date().getMonth() + 1;
+    const anoAlvo = ano || new Date().getFullYear();
+
+    const result = await extratoBancarioService.getExtratoConta(id, mesAlvo, anoAlvo);
+    return reply.send(result);
+  },
   async listComSaldos(request: FastifyRequest, reply: FastifyReply) {
     const { empresa_id, mes, ano } = z.object({
       empresa_id: z.coerce.number().optional(),

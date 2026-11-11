@@ -92,6 +92,26 @@ export const convenioAuditoriaRepository = {
     return (data || []) as FaturaFornecedorConvenio[];
   },
 
+  async listFaturasParaContasPagar(
+    mes: number,
+    ano: number,
+    empresaId?: number
+  ): Promise<FaturaFornecedorConvenio[]> {
+    let query = supabaseAdmin
+      .from("faturas_fornecedores_convenios")
+      .select("*, convenio:convenios(id, nome), empresa:empresas(id, nome_fantasia, razao_social), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta)")
+      .eq("mes_competencia", mes)
+      .eq("ano_competencia", ano);
+
+    if (empresaId) {
+      query = query.eq("empresa_id", empresaId);
+    }
+
+    const { data, error } = await query;
+    if (error) return [];
+    return (data || []) as FaturaFornecedorConvenio[];
+  },
+
   async insertFatura(record: Record<string, unknown>): Promise<FaturaFornecedorConvenio> {
     const { data, error } = await supabaseAdmin
       .from("faturas_fornecedores_convenios")
@@ -127,6 +147,15 @@ export const convenioAuditoriaRepository = {
 
     if (error) throw error;
     return data as FaturaFornecedorPagamento;
+  },
+
+  async deletePagamentosPorFatura(faturaId: string): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from("faturas_fornecedores_pagamentos")
+      .delete()
+      .eq("fatura_fornecedor_id", faturaId);
+
+    if (error) throw error;
   },
 
   async listPagamentosPorFatura(faturaId: string): Promise<FaturaFornecedorPagamento[]> {
