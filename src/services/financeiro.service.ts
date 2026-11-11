@@ -147,14 +147,21 @@ export const financeiroService = {
     const { fechamentos, todosTurnos, todasConfirmacoes } =
       await financeiroRepository.carregarResumoPagoDashboardLote(mes, ano, dataInicioMesStr);
 
-    const turnosFiltrados = todosTurnos.filter(
-      (t) => !t.data_inicio || t.data_inicio <= dataFimMesStr
+    const elegiveisIdsSet = new Set(colaboradoresElegiveis.map((c) => c.id));
+    const confirmacoesElegiveisIds = new Set(
+      todasConfirmacoes.map((c) => c.colaborador_id)
     );
 
-    const totalAdiantamentoPrevisto = turnosFiltrados.reduce(
-      (acc, t) => acc + Number(t.valor_adiantamento || 0),
-      0
+    const turnosFiltrados = todosTurnos.filter(
+      (t) =>
+        elegiveisIdsSet.has(t.colaborador_id) &&
+        (!t.data_inicio || t.data_inicio <= dataFimMesStr)
     );
+
+    const adiantamentoPendenteConfigurado = turnosFiltrados
+      .filter((t) => !confirmacoesElegiveisIds.has(t.colaborador_id))
+      .reduce((acc, t) => acc + Number(t.valor_adiantamento || 0), 0);
+
     const colaboradoresAdiantamentoCount = todasConfirmacoes.length;
 
     const fechamentosMap = new Map<string, { colaborador_id: string; saldo_final: number }>();
@@ -166,7 +173,10 @@ export const financeiroService = {
 
     fechamentos.forEach((f) => {
       fechamentosMap.set(f.colaborador_id, f);
-      valorPago += Number(f.saldo_final || 0);
+      const saldoPago = Number(f.saldo_final || 0);
+      if (saldoPago > 0) {
+        valorPago += saldoPago;
+      }
 
       const r = f.resumo_json as Partial<ExtratoMensal> | null;
       if (r) {
@@ -184,6 +194,8 @@ export const financeiroService = {
       const totalDescontosTotalPaid = totalDescontoFaltas + totalDescontoConvenios;
       const folhaBrutaReconciliadaPaid =
         valorPago + totalDescontosTotalPaid + totalAdiantamentoPago;
+      const totalAdiantamentoPrevistoPaid =
+        totalAdiantamentoPago + adiantamentoPendenteConfigurado;
 
       const allPaidResult: DashboardLoteResultado = {
         totalFolha: parseFloat(valorPago.toFixed(2)),
@@ -196,7 +208,7 @@ export const financeiroService = {
         totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
         totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
         totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
-        totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevisto.toFixed(2)),
+        totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevistoPaid.toFixed(2)),
         colaboradoresAdiantamentoCount,
         saldoFinalFolha: parseFloat(valorPago.toFixed(2)),
       };
@@ -263,6 +275,7 @@ export const financeiroService = {
     const totalFolha = valorPago + restaPagar;
     const totalDescontosTotal = totalDescontoFaltas + totalDescontoConvenios;
     const folhaBrutaReconciliada = totalFolha + totalDescontosTotal + totalAdiantamentoPago;
+    const totalAdiantamentoPrevisto = totalAdiantamentoPago + adiantamentoPendenteConfigurado;
 
     const resultadoFinal: DashboardLoteResultado = {
       totalFolha: parseFloat(totalFolha.toFixed(2)),

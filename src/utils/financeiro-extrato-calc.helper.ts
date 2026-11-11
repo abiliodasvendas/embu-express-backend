@@ -4,6 +4,7 @@ import {
   FINANCEIRO_STATUS,
   LANCAMENTO_TIPO,
 } from "../constants/financeiro.enum.js";
+import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { LancamentoConvenio, Ocorrencia } from "../types/database.js";
 import { DiaCalendarioVisual, ExtratoMensal, ResumoClienteFinanceiro } from "../types/financeiro.type.js";
 import { extractDateOnly, toLocalDateString } from "./utils.js";
@@ -47,7 +48,7 @@ export function calcularMatematicaExtrato(dados: {
   usuarioId: string;
   mes: number;
   ano: number;
-  usuario: { valor_mei: number | null } | null;
+  usuario: { valor_mei: number | null; status?: string | null } | null;
   links: LinkColaboradorExtrato[];
   ocorrencias: Ocorrencia[];
   fechamentoAnterior: { saldo_final: number } | null;
@@ -117,6 +118,7 @@ export function calcularMatematicaExtrato(dados: {
   let valorAdiantamentoDistribuidoAcumulado = 0;
 
   const hojeLocalStr = toLocalDateString();
+  const isUsuarioInativo = usuario?.status === CADASTRO_STATUS.INATIVO;
 
   const resumoClientes = (links || [])
     .map((link) => {
@@ -130,6 +132,9 @@ export function calcularMatematicaExtrato(dados: {
         (p) => p.colaborador_cliente_id === link.id
       );
       if (!isShiftInMonth && pontosDesteTurnoRaw.length === 0) {
+        return null;
+      }
+      if (isUsuarioInativo && pontosDesteTurnoRaw.length === 0 && !adiantamentoConfirmado) {
         return null;
       }
 

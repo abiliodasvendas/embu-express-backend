@@ -72,98 +72,111 @@ export const financeiroRepository = {
     const { mes, ano, dataInicioMesStr, dataFimMesStr } = params;
     const perfilMotoboyId = await this.obterPerfilMotoboyId();
 
-    const { data: todosMotoboys, error: colabError } = await supabaseAdmin
-      .from("usuarios")
-      .select("id, nome_completo, email, status, valor_mei")
-      .in("status", [CADASTRO_STATUS.ATIVO, CADASTRO_STATUS.INATIVO])
-      .eq("perfil_id", perfilMotoboyId)
-      .order("nome_completo", { ascending: true });
+    const [motoboysRes, fechamentosMesRes, confirmacoesMesRes] = await Promise.all([
+      supabaseAdmin
+        .from("usuarios")
+        .select("id, nome_completo, email, status, valor_mei")
+        .in("status", [CADASTRO_STATUS.ATIVO, CADASTRO_STATUS.INATIVO])
+        .eq("perfil_id", perfilMotoboyId)
+        .order("nome_completo", { ascending: true }),
+      supabaseAdmin
+        .from("fechamentos_financeiros")
+        .select("colaborador_id")
+        .eq("mes", mes)
+        .eq("ano", ano),
+      supabaseAdmin
+        .from("confirmacoes_adiantamento")
+        .select("colaborador_id")
+        .eq("mes", mes)
+        .eq("ano", ano),
+    ]);
 
-    if (colabError) throw colabError;
-    if (!todosMotoboys || todosMotoboys.length === 0) return [];
+    if (motoboysRes.error) throw motoboysRes.error;
+    const todosMotoboys = motoboysRes.data || [];
+    const motoboyIdsSet = new Set(todosMotoboys.map((u) => u.id));
 
-    const inativos = todosMotoboys.filter((u) => u.status === CADASTRO_STATUS.INATIVO);
-    if (inativos.length === 0) {
-      return todosMotoboys;
-    }
+    const idsComMovimentoNoMes = new Set<string>();
+    (fechamentosMesRes.data || []).forEach((f) => idsComMovimentoNoMes.add(f.colaborador_id));
+    (confirmacoesMesRes.data || []).forEach((c) => idsComMovimentoNoMes.add(c.colaborador_id));
 
-    const inativosIds = inativos.map((u) => u.id);
-    const idsInativosComAtividade = new Set<string>();
-
-    const CHUNK_SIZE = 50;
-    const chunks: string[][] = [];
-    for (let i = 0; i < inativosIds.length; i += CHUNK_SIZE) {
-      chunks.push(inativosIds.slice(i, i + CHUNK_SIZE));
-    }
-
-    await Promise.all(
-      chunks.map(async (chunkIds) => {
-        const [
-          turnosRes,
-          fechamentosRes,
-          confirmacoesRes,
-          pontosRes,
-          ocorrenciasRes,
-          conveniosRes,
-        ] = await Promise.all([
-          supabaseAdmin
-            .from("colaborador_clientes")
-            .select("colaborador_id, data_inicio, data_fim")
-            .in("colaborador_id", chunkIds)
-            .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`),
-          supabaseAdmin
-            .from("fechamentos_financeiros")
-            .select("colaborador_id")
-            .in("colaborador_id", chunkIds)
-            .eq("mes", mes)
-            .eq("ano", ano),
-          supabaseAdmin
-            .from("confirmacoes_adiantamento")
-            .select("colaborador_id")
-            .in("colaborador_id", chunkIds)
-            .eq("mes", mes)
-            .eq("ano", ano),
-          supabaseAdmin
-            .from("registros_ponto")
-            .select("usuario_id")
-            .in("usuario_id", chunkIds)
-            .gte("data_referencia", dataInicioMesStr)
-            .lte("data_referencia", dataFimMesStr),
-          supabaseAdmin
-            .from("ocorrencias")
-            .select("colaborador_id")
-            .in("colaborador_id", chunkIds)
-            .gte("data_ocorrencia", dataInicioMesStr)
-            .lte("data_ocorrencia", dataFimMesStr),
-          supabaseAdmin
-            .from("lancamentos_convenios")
-            .select("colaborador_id")
-            .in("colaborador_id", chunkIds)
-            .eq("moto_embu", false)
-            .gte("data_lancamento", dataInicioMesStr)
-            .lte("data_lancamento", dataFimMesStr),
-        ]);
-
-        (turnosRes.data || []).forEach((t) => {
-          const inicioValido = !t.data_inicio || t.data_inicio <= dataFimMesStr;
-          const fimValido = !t.data_fim || t.data_fim >= dataInicioMesStr;
-          if (inicioValido && fimValido) {
-            idsInativosComAtividade.add(t.colaborador_id);
-          }
-        });
-
-        (fechamentosRes.data || []).forEach((f) => idsInativosComAtividade.add(f.colaborador_id));
-        (confirmacoesRes.data || []).forEach((c) => idsInativosComAtividade.add(c.colaborador_id));
-        (pontosRes.data || []).forEach((p) => idsInativosComAtividade.add(p.usuario_id));
-        (ocorrenciasRes.data || []).forEach((o) => idsInativosComAtividade.add(o.colaborador_id));
-        (conveniosRes.data || []).forEach((l) => {
-          if (l.colaborador_id) idsInativosComAtividade.add(l.colaborador_id);
-        });
-      })
+    const idsOutrosPerfis = Array.from(idsComMovimentoNoMes).filter(
+      (id) => !motoboyIdsSet.has(id)
     );
 
-    return todosMotoboys.filter(
+    let usuariosOutrosPerfis: ColaboradorElegivelMesRow[] = [];
+    if (idsOutrosPerfis.length > 0) {
+      const { data: extrasData, error: extrasError } = await supabaseAdmin
+        .from("usuarios")
+        .select("id, nome_completo, email, status, valor_mei")
+        .in("id", idsOutrosPerfis);
+      if (extrasError) throw extrasError;
+      usuariosOutrosPerfis = extrasData || [];
+    }
+
+    const inativos = todosMotoboys.filter((u) => u.status === CADASTRO_STATUS.INATIVO);
+    const idsInativosComAtividade = new Set<string>();
+
+    inativos.forEach((u) => {
+      if (idsComMovimentoNoMes.has(u.id)) {
+        idsInativosComAtividade.add(u.id);
+      }
+    });
+
+    const inativosRestantesIds = inativos
+      .filter((u) => !idsInativosComAtividade.has(u.id))
+      .map((u) => u.id);
+
+    if (inativosRestantesIds.length > 0) {
+      const CHUNK_SIZE = 50;
+      const chunks: string[][] = [];
+      for (let i = 0; i < inativosRestantesIds.length; i += CHUNK_SIZE) {
+        chunks.push(inativosRestantesIds.slice(i, i + CHUNK_SIZE));
+      }
+
+      await Promise.all(
+        chunks.map(async (chunkIds) => {
+          const [pontosRes, ocorrenciasRes, conveniosRes] = await Promise.all([
+            supabaseAdmin
+              .from("registros_ponto")
+              .select("usuario_id")
+              .in("usuario_id", chunkIds)
+              .gte("data_referencia", dataInicioMesStr)
+              .lte("data_referencia", dataFimMesStr),
+            supabaseAdmin
+              .from("ocorrencias")
+              .select("colaborador_id, observacao")
+              .in("colaborador_id", chunkIds)
+              .eq("impacto_financeiro", true)
+              .gte("data_ocorrencia", dataInicioMesStr)
+              .lte("data_ocorrencia", dataFimMesStr),
+            supabaseAdmin
+              .from("lancamentos_convenios")
+              .select("colaborador_id")
+              .in("colaborador_id", chunkIds)
+              .eq("moto_embu", false)
+              .gte("data_lancamento", dataInicioMesStr)
+              .lte("data_lancamento", dataFimMesStr),
+          ]);
+
+          (pontosRes.data || []).forEach((p) => idsInativosComAtividade.add(p.usuario_id));
+          (ocorrenciasRes.data || []).forEach((o) => {
+            if (!o.observacao || !o.observacao.startsWith("Inclusão automática:")) {
+              idsInativosComAtividade.add(o.colaborador_id);
+            }
+          });
+          (conveniosRes.data || []).forEach((l) => {
+            if (l.colaborador_id) idsInativosComAtividade.add(l.colaborador_id);
+          });
+        })
+      );
+    }
+
+    const motoboysElegiveis = todosMotoboys.filter(
       (u) => u.status === CADASTRO_STATUS.ATIVO || idsInativosComAtividade.has(u.id)
+    );
+
+    return [...motoboysElegiveis, ...usuariosOutrosPerfis].sort((a, b) =>
+      (a.nome_completo || "").localeCompare(b.nome_completo || "")
     );
   },
 
@@ -204,7 +217,7 @@ export const financeiroRepository = {
 
     const { data: usuario, error: userError } = await supabaseAdmin
       .from("usuarios")
-      .select("valor_mei")
+      .select("valor_mei, status")
       .eq("id", usuarioId)
       .single();
 

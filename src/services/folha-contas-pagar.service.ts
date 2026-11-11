@@ -212,22 +212,35 @@ export const folhaContasPagarService = {
     const dataInicioMesStr = `${anoComp}-${String(mesComp).padStart(2, "0")}-01`;
     const dataFimMesStr = `${anoComp}-${String(mesComp).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    const {
-      confirmacoesMap,
-      turnosPorColab,
-      nomesColaboradores,
-      todosColabIds,
-    } = await folhaContasPagarRepository.carregarDadosValesCompetencia(
-      mesComp,
-      anoComp,
-      dataInicioMesStr,
-      dataFimMesStr
-    );
+    const [
+      colaboradoresElegiveis,
+      {
+        confirmacoesMap,
+        turnosPorColab,
+        nomesColaboradores,
+        todosColabIds,
+      },
+    ] = await Promise.all([
+      obterColaboradoresElegiveisMes({
+        mes: mesComp,
+        ano: anoComp,
+        dataInicioMesStr,
+        dataFimMesStr,
+      }),
+      folhaContasPagarRepository.carregarDadosValesCompetencia(
+        mesComp,
+        anoComp,
+        dataInicioMesStr,
+        dataFimMesStr
+      ),
+    ]);
 
+    const elegiveisSet = new Set(colaboradoresElegiveis.map((c) => c.id));
     const itens: ContaPagarItem[] = [];
     const refStr = `${String(mesComp).padStart(2, "0")}/${anoComp}`;
 
     for (const colabId of todosColabIds) {
+      if (!elegiveisSet.has(colabId)) continue;
       const turnos = turnosPorColab.get(colabId) || [];
       const confirmacao = confirmacoesMap.get(colabId);
 

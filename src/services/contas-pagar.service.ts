@@ -175,9 +175,7 @@ export const contasPagarService = {
           totalVencendoHoje += item.saldo_pendente;
         } else if (item.data_vencimento < hojeStr) {
           totalAtrasadas += item.saldo_pendente;
-        }
-
-        if (item.data_vencimento >= mondayStr && item.data_vencimento <= sundayStr) {
+        } else if (item.data_vencimento >= mondayStr && item.data_vencimento <= sundayStr) {
           totalSemana += item.saldo_pendente;
         }
       }

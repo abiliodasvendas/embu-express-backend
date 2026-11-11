@@ -10,7 +10,6 @@ import { isDavidOuMotoEmbu } from "./convenio-regras.service.js";
 import {
   inicializarMapaDias,
   consolidarCurvaDiaria,
-  calcularDesembolsoVales,
 } from "../utils/fluxo-caixa-distribuicao.helper.js";
 import {
   STATUS_DESPESA,
@@ -133,9 +132,8 @@ export const fluxoCaixaService = {
       saldoRetidoConvenios = saldoRetidoConvenios * shareEmpresa;
     }
 
-    const [confirmacoesAtual, linksAtivos, configSalarios, configVales, conveniosCadastrados] = await Promise.all([
-      fluxoCaixaRepository.listConfirmacoesAdiantamento(mes, ano),
-      fluxoCaixaRepository.listColaboradorClientesAtivos(dataInicioStr, dataFimStr),
+    const [dashboardFolhaAtual, configSalarios, configVales, conveniosCadastrados] = await Promise.all([
+      financeiroService.getDashboardLote(mes, ano),
       configuracaoService.getConfiguracao("dia_desembolso_salarios"),
       configuracaoService.getConfiguracao("dia_desembolso_vales"),
       convenioAuditoriaRepository.listConveniosParaResumo(),
@@ -145,15 +143,12 @@ export const fluxoCaixaService = {
     const diaVales = Math.min(Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1), ultimoDiaMes);
     const conveniosCadastradosMap = new Map((conveniosCadastrados || []).map((c) => [c.id, c]));
 
-    const { valesDiaValesProjetado, valesDiaValesRealizado } = calcularDesembolsoVales({
-      confirmacoesAtual,
-      linksAtivos,
-      diaVales,
-      mes,
-      ano,
-      shareEmpresa,
-      empresaId,
-    });
+    let valesDiaValesProjetado = Number(dashboardFolhaAtual.totalAdiantamentoPrevisto || 0);
+    let valesDiaValesRealizado = Number(dashboardFolhaAtual.totalAdiantamentoPago || 0);
+    if (empresaId) {
+      valesDiaValesProjetado = valesDiaValesProjetado * shareEmpresa;
+      valesDiaValesRealizado = valesDiaValesRealizado * shareEmpresa;
+    }
 
     const despesasList = await despesaService.list({ mes, ano });
     const despesasValidas = despesasList.filter(d => d.status !== STATUS_DESPESA.CANCELADO);

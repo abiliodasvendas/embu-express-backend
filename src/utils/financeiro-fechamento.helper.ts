@@ -59,11 +59,16 @@ export function extrairComponentesFolha(r: Partial<ExtratoMensal>): ComponentesF
     0
   );
 
+  const adiantamentoEfetivo =
+    r.totais?.total_adiantamento !== undefined
+      ? Number(r.totais.total_adiantamento || 0)
+      : colabAdi;
+
   return {
     bruto: colabBruto + mei + credAvulso,
     faltas: colabFaltas + debAvulso,
     convenios: conv,
-    adiantamentoPago: colabAdi,
+    adiantamentoPago: adiantamentoEfetivo,
   };
 }
 
