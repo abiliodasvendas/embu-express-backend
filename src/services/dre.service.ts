@@ -56,7 +56,7 @@ export const dreService = {
     mes: number,
     ano: number,
     empresaId?: number,
-    tipoVisao: "realizado" | "projetado" = "projetado"
+    tipoVisao: "realizado" | "projetado" = "realizado"
   ): Promise<DreConsolidado> {
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
