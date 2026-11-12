@@ -467,6 +467,32 @@ export interface TransferenciaIntercompany {
   fatura_recebimento?: FaturaRecebimento;
 }
 
+export type EscopoCategoriaFinanceira = 'ENTRADA_AVULSA' | 'SAIDA_AVULSA' | 'DESPESA';
+
+export type GrupoDreCategoriaFinanceira =
+  | 'RECEITA_OPERACIONAL'
+  | 'DESPESA_FIXA'
+  | 'TRIBUTO_DAS'
+  | 'PROLABORE'
+  | 'PARCELAMENTO_FISCAL'
+  | 'INVESTIMENTO_FINANCIAMENTO'
+  | 'DESPESA_FINANCEIRA'
+  | 'NAO_AFETA_DRE';
+
+export interface CategoriaFinanceira {
+  id: string;
+  codigo: string;
+  nome: string;
+  escopo: EscopoCategoriaFinanceira;
+  grupo_dre: GrupoDreCategoriaFinanceira;
+  afeta_dre: boolean;
+  is_sistema: boolean;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+  vinculos_count?: number;
+}
+
 export type CategoriaDespesa =
   | 'DESPESA_FIXA'
   | 'TRIBUTO_DAS'
@@ -477,7 +503,8 @@ export type CategoriaDespesa =
   | 'INVESTIMENTO_PATRIMONIAL'
   | 'CARTAO_CREDITO'
   | 'DESPESA_ADMINISTRATIVA'
-  | 'DESPESA_FROTA_DOCUMENTO';
+  | 'DESPESA_FROTA_DOCUMENTO'
+  | (string & {});
 export type StatusDespesa = 'PENDENTE' | 'ADIADA' | 'PAGO' | 'CANCELADO';
 
 export type TipoMovimentacaoAvulsa = 'ENTRADA' | 'SAIDA';
@@ -491,15 +518,19 @@ export type CategoriaMovimentacaoAvulsa =
   | 'REEMBOLSO_DESPESA'
   | 'TARIFA_BANCARIA'
   | 'OUTRAS_SAIDAS'
+  | 'TRANSFERENCIA_ENTRE_CONTAS'
   | 'CLIENTE_A_VISTA'
   | 'REEMBOLSO'
   | 'OUTRAS_RECEITAS'
-  | 'OUTRAS_DESPESAS';
+  | 'OUTRAS_DESPESAS'
+  | (string & {});
 
 export interface MovimentacaoAvulsa {
   id: string;
   empresa_id: number;
   conta_bancaria_id?: string | null;
+  conta_contrapartida_id?: string | null;
+  transferencia_par_id?: string | null;
   tipo_movimentacao: TipoMovimentacaoAvulsa;
   categoria: CategoriaMovimentacaoAvulsa;
   descricao: string;
@@ -512,6 +543,7 @@ export interface MovimentacaoAvulsa {
   updated_at?: string;
   empresa?: Empresa;
   conta_bancaria?: ContaBancaria;
+  conta_contrapartida?: ContaBancaria | null;
 }
 
 export interface DespesaOperacional {

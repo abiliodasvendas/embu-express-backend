@@ -24,6 +24,7 @@ import fluxoCaixaRoutes from "./fluxo-caixa.routes.js";
 import retaguardaRoutes from "./retaguarda.routes.js";
 import movimentacoesAvulsasRoutes from "./movimentacoes-avulsas.routes.js";
 import contasPagarRoutes from "./contas-pagar.routes.js";
+import categoriaFinanceiraRoutes from "./categoria-financeira.routes.js";
 import ativMobWebhookRoutes from "./ativmob-webhook.routes.js";
 import { ATIVMOB_ROUTES } from "../constants/ativmob-webhook.enum.js";
 
@@ -53,6 +54,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.register(retaguardaRoutes, { prefix: "/api/retaguarda" });
   app.register(movimentacoesAvulsasRoutes, { prefix: "/api/movimentacoes-avulsas" });
   app.register(contasPagarRoutes, { prefix: "/api/contas-pagar" });
+  app.register(categoriaFinanceiraRoutes, { prefix: "/api/categorias-financeiras" });
   app.register(ativMobWebhookRoutes, { prefix: ATIVMOB_ROUTES.WEBHOOK });
 };
 

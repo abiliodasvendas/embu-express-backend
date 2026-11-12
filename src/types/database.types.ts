@@ -1501,12 +1501,52 @@ export type Database = {
           },
         ]
       }
+      categorias_financeiras: {
+        Row: {
+          afeta_dre: boolean
+          ativo: boolean
+          codigo: string
+          created_at: string
+          escopo: string
+          grupo_dre: string
+          id: string
+          is_sistema: boolean
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          afeta_dre?: boolean
+          ativo?: boolean
+          codigo: string
+          created_at?: string
+          escopo: string
+          grupo_dre: string
+          id?: string
+          is_sistema?: boolean
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          afeta_dre?: boolean
+          ativo?: boolean
+          codigo?: string
+          created_at?: string
+          escopo?: string
+          grupo_dre?: string
+          id?: string
+          is_sistema?: boolean
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       movimentacoes_avulsas: {
         Row: {
           ano_competencia: number
           categoria: string
           comprovante_url: string | null
           conta_bancaria_id: string | null
+          conta_contrapartida_id: string | null
           created_at: string | null
           criado_por: string | null
           data_movimentacao: string
@@ -1515,6 +1555,7 @@ export type Database = {
           id: string
           mes_competencia: number
           tipo_movimentacao: string
+          transferencia_par_id: string | null
           updated_at: string | null
           valor: number
         }
@@ -1523,6 +1564,7 @@ export type Database = {
           categoria: string
           comprovante_url?: string | null
           conta_bancaria_id?: string | null
+          conta_contrapartida_id?: string | null
           created_at?: string | null
           criado_por?: string | null
           data_movimentacao?: string
@@ -1531,6 +1573,7 @@ export type Database = {
           id?: string
           mes_competencia: number
           tipo_movimentacao: string
+          transferencia_par_id?: string | null
           updated_at?: string | null
           valor: number
         }
@@ -1539,6 +1582,7 @@ export type Database = {
           categoria?: string
           comprovante_url?: string | null
           conta_bancaria_id?: string | null
+          conta_contrapartida_id?: string | null
           created_at?: string | null
           criado_por?: string | null
           data_movimentacao?: string
@@ -1547,6 +1591,7 @@ export type Database = {
           id?: string
           mes_competencia?: number
           tipo_movimentacao?: string
+          transferencia_par_id?: string | null
           updated_at?: string | null
           valor?: number
         }
@@ -1554,6 +1599,13 @@ export type Database = {
           {
             foreignKeyName: "movimentacoes_avulsas_conta_bancaria_id_fkey"
             columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movimentacoes_avulsas_conta_contrapartida_id_fkey"
+            columns: ["conta_contrapartida_id"]
             isOneToOne: false
             referencedRelation: "contas_bancarias"
             referencedColumns: ["id"]

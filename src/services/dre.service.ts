@@ -5,10 +5,14 @@ import { faturamentoService } from "./faturamento.service.js";
 import { despesaService } from "./despesa.service.js";
 import { calcularShareHolding } from "../utils/rateio-corporativo.helper.js";
 import { convenioRegrasService } from "./convenio-regras.service.js";
+import { categoriaFinanceiraRepository } from "../repositories/categoria-financeira.repository.js";
 import {
   CATEGORIA_DESPESA,
+  CATEGORIA_MOVIMENTACAO_AVULSA,
+  GRUPO_DRE_CATEGORIA,
   STATUS_DESPESA,
   STATUS_FATURA,
+  TIPO_MOVIMENTACAO_AVULSA,
 } from "../constants/financeiro.enum.js";
 
 export interface DreItem {
@@ -97,7 +101,14 @@ export const dreService = {
       totalFaturamentoHolding,
     });
 
-    const movAvulsas = await dreRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
+    const [movAvulsas, categoriasFinanceiras] = await Promise.all([
+      dreRepository.listMovimentacoesAvulsasPeriodo(mes, ano),
+      categoriaFinanceiraRepository.findAll(),
+    ]);
+
+    const categoriasMap = new Map(
+      categoriasFinanceiras.map((c) => [c.codigo, c])
+    );
 
     const movAvulsasFiltradas = empresaId
       ? (movAvulsas || []).filter(m => Number(m.empresa_id) === Number(empresaId))
@@ -108,8 +119,19 @@ export const dreService = {
     const itensDespesasAvulsas: DreItem[] = [];
 
     movAvulsasFiltradas.forEach(m => {
+      if (m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS) {
+        return;
+      }
+      const catInfo = categoriasMap.get(m.categoria);
+      if (catInfo && (!catInfo.afeta_dre || catInfo.grupo_dre === GRUPO_DRE_CATEGORIA.NAO_AFETA_DRE)) {
+        return;
+      }
+      if (!catInfo && m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.DOACAO_APORTE) {
+        return;
+      }
+
       const v = Number(m.valor || 0);
-      if (m.tipo_movimentacao === "ENTRADA") {
+      if (m.tipo_movimentacao === TIPO_MOVIMENTACAO_AVULSA.ENTRADA) {
         outrasReceitasOperacionais += v;
       } else {
         despesasAvulsas += v;
@@ -143,6 +165,12 @@ export const dreService = {
     let despesasFinanceiras = 0;
 
     (despesas || []).forEach(d => {
+      const catInfo = categoriasMap.get(d.categoria);
+      if (catInfo && (!catInfo.afeta_dre || catInfo.grupo_dre === GRUPO_DRE_CATEGORIA.NAO_AFETA_DRE)) {
+        return;
+      }
+
+      const grupoDre = catInfo?.grupo_dre || d.categoria;
       const valor = tipoVisao === "realizado"
         ? Number(d.valor_pago || (d.status === STATUS_DESPESA.PAGO ? d.valor_previsto : 0) || 0)
         : Number(d.valor_previsto || 0);
@@ -150,6 +178,7 @@ export const dreService = {
       const isGeralHolding = !d.empresa_id || d.is_holding;
 
       const isDespesaOperacionalFixa =
+        grupoDre === GRUPO_DRE_CATEGORIA.DESPESA_FIXA ||
         d.categoria === CATEGORIA_DESPESA.DESPESA_FIXA ||
         d.categoria === CATEGORIA_DESPESA.DESPESA_ADMINISTRATIVA ||
         d.categoria === CATEGORIA_DESPESA.CARTAO_CREDITO ||
@@ -168,7 +197,7 @@ export const dreService = {
           despesasFixasDiretas += valor;
           itensDespesaFixa.push({ descricao: d.descricao, valor });
         }
-      } else if (d.categoria === CATEGORIA_DESPESA.TRIBUTO_DAS) {
+      } else if (grupoDre === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS || d.categoria === CATEGORIA_DESPESA.TRIBUTO_DAS) {
         if (empresaId) {
           if (isDestaEmpresa) {
             tributoDasValor += valor;
@@ -178,14 +207,14 @@ export const dreService = {
           tributoDasValor += valor;
           tributoDasProvisionado = false;
         }
-      } else if (d.categoria === CATEGORIA_DESPESA.PROLABORE) {
+      } else if (grupoDre === GRUPO_DRE_CATEGORIA.PROLABORE || d.categoria === CATEGORIA_DESPESA.PROLABORE) {
         if (empresaId) {
           if (isDestaEmpresa) prolabore += valor;
           else if (isGeralHolding) prolabore += valor * shareEmpresa;
         } else {
           prolabore += valor;
         }
-      } else if (d.categoria === CATEGORIA_DESPESA.PARCELAMENTO_FISCAL) {
+      } else if (grupoDre === GRUPO_DRE_CATEGORIA.PARCELAMENTO_FISCAL || d.categoria === CATEGORIA_DESPESA.PARCELAMENTO_FISCAL) {
         if (empresaId) {
           if (isDestaEmpresa) parcelamentosFiscais += valor;
           else if (isGeralHolding) parcelamentosFiscais += valor * shareEmpresa;
@@ -193,6 +222,7 @@ export const dreService = {
           parcelamentosFiscais += valor;
         }
       } else if (
+        grupoDre === GRUPO_DRE_CATEGORIA.INVESTIMENTO_FINANCIAMENTO ||
         d.categoria === CATEGORIA_DESPESA.INVESTIMENTO_FINANCIAMENTO ||
         d.categoria === CATEGORIA_DESPESA.INVESTIMENTO_PATRIMONIAL
       ) {
@@ -202,12 +232,25 @@ export const dreService = {
         } else {
           investimentosFinanciamentos += valor;
         }
-      } else if (d.categoria === CATEGORIA_DESPESA.DESPESA_FINANCEIRA) {
+      } else if (grupoDre === GRUPO_DRE_CATEGORIA.DESPESA_FINANCEIRA || d.categoria === CATEGORIA_DESPESA.DESPESA_FINANCEIRA) {
         if (empresaId) {
           if (isDestaEmpresa) despesasFinanceiras += valor;
           else if (isGeralHolding) despesasFinanceiras += valor * shareEmpresa;
         } else {
           despesasFinanceiras += valor;
+        }
+      } else {
+        if (empresaId) {
+          if (isDestaEmpresa && !d.is_holding) {
+            despesasFixasDiretas += valor;
+            itensDespesaFixa.push({ descricao: d.descricao, valor });
+          } else if (isGeralHolding) {
+            despesasFixasHolding += valor * shareEmpresa;
+            itensDespesaFixa.push({ descricao: `${d.descricao} (Rateio Holding)`, valor: valor * shareEmpresa });
+          }
+        } else {
+          despesasFixasDiretas += valor;
+          itensDespesaFixa.push({ descricao: d.descricao, valor });
         }
       }
     });

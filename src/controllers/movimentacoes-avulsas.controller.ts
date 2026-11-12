@@ -1,10 +1,12 @@
-﻿import { FastifyRequest, FastifyReply } from "fastify";
+import { FastifyRequest, FastifyReply } from "fastify";
 import { movimentacoesAvulsasService } from "../services/movimentacoes-avulsas.service.js";
 import {
+  createTransferenciaContasSchema,
   movimentacaoAvulsaSchema,
   updateMovimentacaoAvulsaSchema,
   listMovimentacoesAvulsasQuerySchema,
 } from "../schemas/movimentacoes-avulsas.schema.js";
+import { AuthenticatedRequest } from "../types/request.type.js";
 import { z } from "zod";
 
 export const movimentacoesAvulsasController = {
@@ -22,8 +24,15 @@ export const movimentacoesAvulsasController = {
 
   async create(request: FastifyRequest, reply: FastifyReply) {
     const data = movimentacaoAvulsaSchema.parse(request.body);
-    const userId = (request as any).user?.id;
+    const userId = (request as AuthenticatedRequest).user?.id;
     const result = await movimentacoesAvulsasService.create(data, userId);
+    return reply.status(201).send(result);
+  },
+
+  async createTransferencia(request: FastifyRequest, reply: FastifyReply) {
+    const data = createTransferenciaContasSchema.parse(request.body);
+    const userId = (request as AuthenticatedRequest).user?.id;
+    const result = await movimentacoesAvulsasService.createTransferencia(data, userId);
     return reply.status(201).send(result);
   },
 

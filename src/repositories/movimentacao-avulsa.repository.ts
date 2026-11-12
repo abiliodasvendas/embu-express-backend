@@ -10,11 +10,14 @@ export interface ListMovimentacoesFilters {
   categoria?: CategoriaMovimentacaoAvulsa;
 }
 
+const SELECT_MOVIMENTACAO_AVULSA =
+  "*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias!movimentacoes_avulsas_conta_bancaria_id_fkey(id, banco_nome, agencia, conta, tipo_conta, empresa_id), conta_contrapartida:contas_bancarias!movimentacoes_avulsas_conta_contrapartida_id_fkey(id, banco_nome, agencia, conta, tipo_conta, empresa_id)";
+
 export const movimentacaoAvulsaRepository = {
   async list(filtros: ListMovimentacoesFilters): Promise<MovimentacaoAvulsa[]> {
     let query = supabaseAdmin
       .from("movimentacoes_avulsas")
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .select(SELECT_MOVIMENTACAO_AVULSA)
       .order("data_movimentacao", { ascending: false });
 
     if (filtros.mes) query = query.eq("mes_competencia", filtros.mes);
@@ -31,31 +34,31 @@ export const movimentacaoAvulsaRepository = {
       }
       throw error;
     }
-    return (data || []) as MovimentacaoAvulsa[];
+    return (data || []) as unknown as MovimentacaoAvulsa[];
   },
 
   async getById(id: string): Promise<MovimentacaoAvulsa | null> {
     const { data, error } = await supabaseAdmin
       .from("movimentacoes_avulsas")
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .select(SELECT_MOVIMENTACAO_AVULSA)
       .eq("id", id)
       .single();
 
     if (error || !data) {
       return null;
     }
-    return data as MovimentacaoAvulsa;
+    return data as unknown as MovimentacaoAvulsa;
   },
 
   async insert(record: Record<string, unknown>): Promise<MovimentacaoAvulsa> {
     const { data, error } = await supabaseAdmin
       .from("movimentacoes_avulsas")
       .insert([record])
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .select(SELECT_MOVIMENTACAO_AVULSA)
       .single();
 
     if (error) throw error;
-    return data as MovimentacaoAvulsa;
+    return data as unknown as MovimentacaoAvulsa;
   },
 
   async update(id: string, record: Record<string, unknown>): Promise<MovimentacaoAvulsa> {
@@ -63,11 +66,11 @@ export const movimentacaoAvulsaRepository = {
       .from("movimentacoes_avulsas")
       .update(record)
       .eq("id", id)
-      .select("*, empresa:empresas(id, nome_fantasia, razao_social, cnpj), conta_bancaria:contas_bancarias(id, banco_nome, agencia, conta, tipo_conta)")
+      .select(SELECT_MOVIMENTACAO_AVULSA)
       .single();
 
     if (error) throw error;
-    return data as MovimentacaoAvulsa;
+    return data as unknown as MovimentacaoAvulsa;
   },
 
   async delete(id: string): Promise<void> {

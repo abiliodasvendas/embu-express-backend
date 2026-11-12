@@ -10,13 +10,13 @@ import { isDavidOuMotoEmbu } from "./convenio-regras.service.js";
 import {
   inicializarMapaDias,
   consolidarCurvaDiaria,
+  filtrarMovimentacoesAvulsasFluxo,
+  distribuirDespesasEFaturasNoMapa,
 } from "../utils/fluxo-caixa-distribuicao.helper.js";
 import {
   STATUS_DESPESA,
   STATUS_FATURA,
   STATUS_FATURA_CONVENIO,
-  STATUS_INTERCOMPANY,
-  TIPO_MOVIMENTACAO_AVULSA,
 } from "../constants/financeiro.enum.js";
 import { DespesaOperacional } from "../types/database.js";
 
@@ -52,18 +52,22 @@ export interface FluxoCaixaResponse {
 }
 
 export const fluxoCaixaService = {
-  async getFluxoCaixa(mes: number, ano: number, empresaId?: number): Promise<FluxoCaixaResponse> {
+  async getFluxoCaixa(
+    mes: number,
+    ano: number,
+    empresaId?: number
+  ): Promise<FluxoCaixaResponse> {
     const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-    const dataInicioStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    const dataFimStr = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
 
     const fechamentoCaixa = await fluxoCaixaRepository.getFechamentoCaixa(mes, ano);
 
-    const { shareEmpresa, totalFaturamentoHolding } = await calcularShareHolding(empresaId, mes, ano);
+    const { shareEmpresa } = await calcularShareHolding(empresaId, mes, ano);
     const faturasList = await faturamentoService.listFaturas({ mes, ano });
-    const todasFaturasHolding = (faturasList || []).filter(f => f.status !== STATUS_FATURA.CANCELADA);
+    const todasFaturasHolding = (faturasList || []).filter(
+      (f) => f.status !== STATUS_FATURA.CANCELADA
+    );
     const faturas = empresaId
-      ? todasFaturasHolding.filter(f => Number(f.empresa_id) === Number(empresaId))
+      ? todasFaturasHolding.filter((f) => Number(f.empresa_id) === Number(empresaId))
       : todasFaturasHolding;
 
     let saldoInicial = Number(fechamentoCaixa?.saldo_inicial_consolidado || 0);
@@ -77,12 +81,22 @@ export const fluxoCaixaService = {
       mesAnterior = 12;
       anoAnterior = ano - 1;
     }
-    const ultimoDiaMesAnterior = new Date(Date.UTC(anoAnterior, mesAnterior, 0)).getUTCDate();
-    const dataInicioMesAntStr = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-01`;
-    const dataFimMesAntStr = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-${String(ultimoDiaMesAnterior).padStart(2, '0')}`;
+    const ultimoDiaMesAnterior = new Date(
+      Date.UTC(anoAnterior, mesAnterior, 0)
+    ).getUTCDate();
+    const dataInicioMesAntStr = `${anoAnterior}-${String(mesAnterior).padStart(2, "0")}-01`;
+    const dataFimMesAntStr = `${anoAnterior}-${String(mesAnterior).padStart(2, "0")}-${String(ultimoDiaMesAnterior).padStart(2, "0")}`;
 
-    const dashboardFolhaAnt = await financeiroService.getDashboardLote(mesAnterior, anoAnterior);
-    let desembolsoSalariosProjetado = Number(dashboardFolhaAnt.saldoFinalFolha || (dashboardFolhaAnt.restaPagar + dashboardFolhaAnt.valorPago) || dashboardFolhaAnt.totalFolha || 0);
+    const dashboardFolhaAnt = await financeiroService.getDashboardLote(
+      mesAnterior,
+      anoAnterior
+    );
+    let desembolsoSalariosProjetado = Number(
+      dashboardFolhaAnt.saldoFinalFolha ||
+        dashboardFolhaAnt.restaPagar + dashboardFolhaAnt.valorPago ||
+        dashboardFolhaAnt.totalFolha ||
+        0
+    );
     let desembolsoSalariosRealizado = Number(dashboardFolhaAnt.valorPago || 0);
     if (empresaId) {
       desembolsoSalariosProjetado = desembolsoSalariosProjetado * shareEmpresa;
@@ -90,12 +104,18 @@ export const fluxoCaixaService = {
     }
 
     const [conveniosAnt, faturasConveniosAnt] = await Promise.all([
-      convenioAuditoriaRepository.listLancamentosGeraisPeriodo(dataInicioMesAntStr, dataFimMesAntStr),
+      convenioAuditoriaRepository.listLancamentosGeraisPeriodo(
+        dataInicioMesAntStr,
+        dataFimMesAntStr
+      ),
       convenioAuditoriaRepository.listFaturasPorCompetencia(mesAnterior, anoAnterior),
     ]);
 
-    const faturasAntMap = new Map<string, { valor_total: number; valor_pago: number | null; status: string }>();
-    faturasConveniosAnt.forEach(f => {
+    const faturasAntMap = new Map<
+      string,
+      { valor_total: number; valor_pago: number | null; status: string }
+    >();
+    faturasConveniosAnt.forEach((f) => {
       faturasAntMap.set(f.convenio_id, {
         valor_total: Number(f.valor_total_fatura || 0),
         valor_pago: f.valor_pago ? Number(f.valor_pago) : null,
@@ -104,74 +124,94 @@ export const fluxoCaixaService = {
     });
 
     const consumoPorConvenioMap = new Map<string, number>();
-    conveniosAnt.forEach(c => {
+    conveniosAnt.forEach((c) => {
       const v = Number(c.valor || 0);
-      consumoPorConvenioMap.set(c.convenio_id, (consumoPorConvenioMap.get(c.convenio_id) || 0) + v);
+      consumoPorConvenioMap.set(
+        c.convenio_id,
+        (consumoPorConvenioMap.get(c.convenio_id) || 0) + v
+      );
     });
 
-    const allConvenioIds = new Set([...faturasAntMap.keys(), ...consumoPorConvenioMap.keys()]);
-    let totalConveniosDesembolsoProjetado = 0;
-    let totalConveniosDesembolsoRealizado = 0;
+    const allConvenioIds = new Set([
+      ...faturasAntMap.keys(),
+      ...consumoPorConvenioMap.keys(),
+    ]);
 
-    allConvenioIds.forEach(cId => {
-      const fatura = faturasAntMap.get(cId);
-      const consumo = consumoPorConvenioMap.get(cId) || 0;
-      const valorProj = fatura ? fatura.valor_total : consumo;
-      totalConveniosDesembolsoProjetado += valorProj;
-
-      if (fatura && (fatura.status === STATUS_FATURA_CONVENIO.PAGA || fatura.status === STATUS_FATURA_CONVENIO.PAGO_PARCIAL)) {
-        totalConveniosDesembolsoRealizado += (fatura.valor_pago ?? fatura.valor_total);
-      }
-    });
-
-    let saldoRetidoConvenios = conveniosAnt.filter(c => !isDavidOuMotoEmbu(c) && c.colaborador_id).reduce((acc, c) => acc + Number(c.valor || 0), 0);
+    let saldoRetidoConvenios = conveniosAnt
+      .filter((c) => !isDavidOuMotoEmbu(c) && c.colaborador_id)
+      .reduce((acc, c) => acc + Number(c.valor || 0), 0);
 
     if (empresaId) {
-      totalConveniosDesembolsoProjetado = totalConveniosDesembolsoProjetado * shareEmpresa;
-      totalConveniosDesembolsoRealizado = totalConveniosDesembolsoRealizado * shareEmpresa;
       saldoRetidoConvenios = saldoRetidoConvenios * shareEmpresa;
     }
 
-    const [dashboardFolhaAtual, configSalarios, configVales, conveniosCadastrados] = await Promise.all([
+    const [
+      dashboardFolhaAtual,
+      configSalarios,
+      configVales,
+      conveniosCadastrados,
+    ] = await Promise.all([
       financeiroService.getDashboardLote(mes, ano),
       configuracaoService.getConfiguracao("dia_desembolso_salarios"),
       configuracaoService.getConfiguracao("dia_desembolso_vales"),
       convenioAuditoriaRepository.listConveniosParaResumo(),
     ]);
 
-    const diaSalarios = Math.min(Math.max(parseInt(configSalarios?.valor || "7", 10) || 7, 1), ultimoDiaMes);
-    const diaVales = Math.min(Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1), ultimoDiaMes);
-    const conveniosCadastradosMap = new Map((conveniosCadastrados || []).map((c) => [c.id, c]));
+    const diaSalarios = Math.min(
+      Math.max(parseInt(configSalarios?.valor || "7", 10) || 7, 1),
+      ultimoDiaMes
+    );
+    const diaVales = Math.min(
+      Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1),
+      ultimoDiaMes
+    );
+    const conveniosCadastradosMap = new Map(
+      (conveniosCadastrados || []).map((c) => [c.id, c])
+    );
 
-    let valesDiaValesProjetado = Number(dashboardFolhaAtual.totalAdiantamentoPrevisto || 0);
-    let valesDiaValesRealizado = Number(dashboardFolhaAtual.totalAdiantamentoPago || 0);
+    let valesDiaValesProjetado = Number(
+      dashboardFolhaAtual.totalAdiantamentoPrevisto || 0
+    );
+    let valesDiaValesRealizado = Number(
+      dashboardFolhaAtual.totalAdiantamentoPago || 0
+    );
     if (empresaId) {
       valesDiaValesProjetado = valesDiaValesProjetado * shareEmpresa;
       valesDiaValesRealizado = valesDiaValesRealizado * shareEmpresa;
     }
 
     const despesasList = await despesaService.list({ mes, ano });
-    const despesasValidas = despesasList.filter(d => d.status !== STATUS_DESPESA.CANCELADO);
+    const despesasValidas = despesasList.filter(
+      (d) => d.status !== STATUS_DESPESA.CANCELADO
+    );
 
     const despesas = empresaId
-      ? (despesasValidas.map(d => {
-          if (d.empresa_id && Number(d.empresa_id) === Number(empresaId)) return d;
-          if (!d.empresa_id) {
-            return {
-              ...d,
-              valor_previsto: Number(d.valor_previsto || 0) * shareEmpresa,
-              valor_pago: d.valor_pago !== null && d.valor_pago !== undefined ? Number(d.valor_pago) * shareEmpresa : null,
-              descricao: `${d.descricao} (Rateio)`,
-            };
-          }
-          return null;
-        }).filter(Boolean) as DespesaOperacional[])
+      ? (despesasValidas
+          .map((d) => {
+            if (d.empresa_id && Number(d.empresa_id) === Number(empresaId))
+              return d;
+            if (!d.empresa_id) {
+              return {
+                ...d,
+                valor_previsto: Number(d.valor_previsto || 0) * shareEmpresa,
+                valor_pago:
+                  d.valor_pago !== null && d.valor_pago !== undefined
+                    ? Number(d.valor_pago) * shareEmpresa
+                    : null,
+                descricao: `${d.descricao} (Rateio)`,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean) as DespesaOperacional[])
       : despesasValidas;
 
-    const todasMovAvulsas = await fluxoCaixaRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
-    const movAvulsas = empresaId
-      ? todasMovAvulsas.filter(m => Number(m.empresa_id) === Number(empresaId))
-      : todasMovAvulsas;
+    const todasMovAvulsas =
+      await fluxoCaixaRepository.listMovimentacoesAvulsasPeriodo(mes, ano);
+    const movAvulsas = filtrarMovimentacoesAvulsasFluxo(
+      todasMovAvulsas,
+      empresaId
+    );
 
     const transferenciasIntercompany = empresaId
       ? await intercompanyRepository.listTransferencias()
@@ -180,7 +220,10 @@ export const fluxoCaixaService = {
     const mapaDias = inicializarMapaDias(ultimoDiaMes);
 
     const diaSalariosObj = mapaDias.get(diaSalarios);
-    if (diaSalariosObj && (desembolsoSalariosProjetado > 0 || desembolsoSalariosRealizado > 0)) {
+    if (
+      diaSalariosObj &&
+      (desembolsoSalariosProjetado > 0 || desembolsoSalariosRealizado > 0)
+    ) {
       diaSalariosObj.saidas_proj += desembolsoSalariosProjetado;
       diaSalariosObj.saidas_real += desembolsoSalariosRealizado;
       diaSalariosObj.eventos.push("Pagamento do Salário dos Colaboradores");
@@ -191,16 +234,22 @@ export const fluxoCaixaService = {
       const fatura = faturasAntMap.get(cId);
       const consumo = consumoPorConvenioMap.get(cId) || 0;
       let valorProj = fatura ? fatura.valor_total : consumo;
-      let valorReal = fatura && (fatura.status === STATUS_FATURA_CONVENIO.PAGA || fatura.status === STATUS_FATURA_CONVENIO.PAGO_PARCIAL)
-        ? (fatura.valor_pago ?? fatura.valor_total)
-        : 0;
+      let valorReal =
+        fatura &&
+        (fatura.status === STATUS_FATURA_CONVENIO.PAGA ||
+          fatura.status === STATUS_FATURA_CONVENIO.PAGO_PARCIAL)
+          ? fatura.valor_pago ?? fatura.valor_total
+          : 0;
 
       if (empresaId) {
         valorProj = valorProj * shareEmpresa;
         valorReal = valorReal * shareEmpresa;
       }
 
-      const diaVencBase = Math.min(Math.max(conv?.dia_vencimento_padrao || 15, 1), ultimoDiaMes);
+      const diaVencBase = Math.min(
+        Math.max(conv?.dia_vencimento_padrao || 15, 1),
+        ultimoDiaMes
+      );
       const periodicidade = conv?.periodicidade || "MENSAL";
       const nomeConv = conv?.nome || "Convênio";
 
@@ -234,102 +283,25 @@ export const fluxoCaixaService = {
     });
 
     const diaValesObj = mapaDias.get(diaVales);
-    if (diaValesObj && (valesDiaValesProjetado > 0 || valesDiaValesRealizado > 0)) {
+    if (
+      diaValesObj &&
+      (valesDiaValesProjetado > 0 || valesDiaValesRealizado > 0)
+    ) {
       diaValesObj.saidas_proj += valesDiaValesProjetado;
       diaValesObj.saidas_real += valesDiaValesRealizado;
       diaValesObj.eventos.push("Adiantamento Salarial");
     }
 
-    (despesas || []).forEach(desp => {
-      const diaVenc = parseInt(desp.data_vencimento.split("-")[2], 10);
-      const diaObj = mapaDias.get(diaVenc);
-      if (diaObj) {
-        const valor = Number(desp.valor_previsto || 0);
-        if (desp.status !== STATUS_DESPESA.ADIADA) {
-          diaObj.saidas_proj += valor;
-          diaObj.eventos.push(`${desp.descricao} (R$ ${valor.toFixed(2)})`);
-        } else {
-          diaObj.eventos.push(`[ADIADA] ${desp.descricao}`);
-        }
-      }
-
-      const valorPago = Number(desp.valor_pago || (desp.status === STATUS_DESPESA.PAGO ? desp.valor_previsto : 0) || 0);
-      if (valorPago > 0) {
-        let diaPagto = diaVenc;
-        if (desp.data_pagamento) {
-          const [pagAno, pagMes, pagDia] = desp.data_pagamento.split("-").map(Number);
-          if (pagAno === ano && pagMes === mes) {
-            diaPagto = pagDia;
-          }
-        }
-        const diaPagtoObj = mapaDias.get(diaPagto);
-        if (diaPagtoObj) {
-          diaPagtoObj.saidas_real += valorPago;
-        }
-      }
+    distribuirDespesasEFaturasNoMapa({
+      mapaDias,
+      despesas,
+      faturas,
+      movAvulsas,
+      transferenciasIntercompany,
+      mes,
+      ano,
+      empresaId,
     });
-
-    (faturas || []).forEach(fat => {
-      const diaVenc = parseInt(fat.data_vencimento.split("-")[2], 10);
-      const diaObj = mapaDias.get(diaVenc);
-      if (diaObj) {
-        diaObj.entradas_proj += Number(fat.valor_faturado || 0);
-      }
-
-      (fat.recebimentos || []).forEach((rec: { data_recebimento: string; valor_alocado: number }) => {
-        const diaRec = parseInt(rec.data_recebimento.split("-")[2], 10);
-        const diaRecObj = mapaDias.get(diaRec);
-        if (diaRecObj) {
-          diaRecObj.entradas_real += Number(rec.valor_alocado || 0);
-        }
-      });
-    });
-
-    (movAvulsas || []).forEach(mov => {
-      const diaMov = parseInt(mov.data_movimentacao.split("-")[2], 10);
-      const diaObj = mapaDias.get(diaMov);
-      if (diaObj) {
-        const valor = Number(mov.valor || 0);
-        if (mov.tipo_movimentacao === TIPO_MOVIMENTACAO_AVULSA.ENTRADA) {
-          diaObj.entradas_proj += valor;
-          diaObj.entradas_real += valor;
-          diaObj.eventos.push(`[ENTRADA AVULSA] ${mov.descricao} (R$ ${valor.toFixed(2)})`);
-        } else {
-          diaObj.saidas_proj += valor;
-          diaObj.saidas_real += valor;
-          diaObj.eventos.push(`[SAÍDA AVULSA] ${mov.descricao} (R$ ${valor.toFixed(2)})`);
-        }
-      }
-    });
-
-    if (empresaId) {
-      transferenciasIntercompany.forEach(t => {
-        const dataRef = t.data_acerto || t.data_fato_gerador;
-        if (!dataRef) return;
-        const [tAno, tMes, tDia] = dataRef.split("-").map(Number);
-        if (tAno === ano && tMes === mes) {
-          const diaObj = mapaDias.get(tDia);
-          if (diaObj) {
-            const valor = Number(t.valor || 0);
-            if (Number(t.empresa_credora_id) === Number(empresaId)) {
-              diaObj.entradas_proj += valor;
-              if (t.status === STATUS_INTERCOMPANY.COMPENSADO) {
-                diaObj.entradas_real += valor;
-              }
-              const nomeDevedora = t.empresa_devedora?.nome_fantasia || "Empresa do Grupo";
-              diaObj.eventos.push(`[ACERTO INTERCOMPANY] Entrada de ${nomeDevedora} (R$ ${valor.toFixed(2)})`);
-            } else if (Number(t.empresa_devedora_id) === Number(empresaId)) {
-              diaObj.saidas_proj += valor;
-              if (t.status === STATUS_INTERCOMPANY.COMPENSADO) {
-                diaObj.saidas_real += valor;
-              }
-              const nomeCredora = t.empresa_credora?.nome_fantasia || "Empresa do Grupo";
-              diaObj.eventos.push(`[ACERTO INTERCOMPANY] Saída para ${nomeCredora} (R$ ${valor.toFixed(2)})`);
-            }
-          }
-        }
-      });
-    }
 
     const consolidado = consolidarCurvaDiaria(
       mapaDias,
@@ -358,7 +330,12 @@ export const fluxoCaixaService = {
     };
   },
 
-  async setSaldoInicial(mes: number, ano: number, saldoInicial: number, fechadoPor?: string) {
+  async setSaldoInicial(
+    mes: number,
+    ano: number,
+    saldoInicial: number,
+    fechadoPor?: string
+  ) {
     return fluxoCaixaRepository.upsertFechamentoCaixa({
       mes,
       ano,

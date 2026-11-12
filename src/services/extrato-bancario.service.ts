@@ -1,7 +1,9 @@
 import { contaBancariaRepository } from "../repositories/conta-bancaria.repository.js";
 import { extratoBancarioRepository } from "../repositories/extrato-bancario.repository.js";
+import { categoriaFinanceiraRepository } from "../repositories/categoria-financeira.repository.js";
 import { AppError } from "../errors/AppError.js";
 import {
+  CATEGORIA_MOVIMENTACAO_AVULSA,
   LANCAMENTO_TIPO,
   LancamentoTipo,
   ORIGEM_EXTRATO_BANCARIO,
@@ -23,6 +25,7 @@ export interface ExtratoBancarioItem {
   descricao: string;
   valor: number;
   saldo_apos: number;
+  movimentacao_avulsa_id?: string | null;
 }
 
 export interface ExtratoBancarioResumo {
@@ -49,6 +52,7 @@ interface RawMovimentacao {
   origem_label: string;
   descricao: string;
   valor: number;
+  movimentacao_avulsa_id?: string | null;
 }
 
 function unwrapSingle<T>(val: T | T[] | null | undefined): T | null {
@@ -71,14 +75,24 @@ export const extratoBancarioService = {
     const dataInicioMes = `${ano}-${String(mes).padStart(2, "0")}-01`;
     const dataFimMes = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    const {
-      recebimentos,
-      movAvulsas,
-      despesasPagas,
-      pagamentosConvenios,
-      adiantamentos,
-      salarios,
-    } = await extratoBancarioRepository.getMovimentacoesConta(contaId);
+    const [
+      {
+        recebimentos,
+        movAvulsas,
+        despesasPagas,
+        pagamentosConvenios,
+        adiantamentos,
+        salarios,
+      },
+      categoriasFinanceiras,
+    ] = await Promise.all([
+      extratoBancarioRepository.getMovimentacoesConta(contaId),
+      categoriaFinanceiraRepository.findAll(),
+    ]);
+
+    const categoriasNomeMap = new Map(
+      categoriasFinanceiras.map((c) => [c.codigo, c.nome])
+    );
 
     const movimentacoes: RawMovimentacao[] = [];
 
@@ -112,16 +126,25 @@ export const extratoBancarioService = {
       if (valor <= 0) continue;
       const dataStr = extractDateOnly(mov.data_movimentacao) || extractDateOnly(mov.created_at) || dataInicioMes;
       const isEntrada = mov.tipo_movimentacao === TIPO_MOVIMENTACAO_AVULSA.ENTRADA;
+      const isTransferencia = mov.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS;
+      const catNome = categoriasNomeMap.get(mov.categoria);
 
       movimentacoes.push({
         id: `avulsa_${mov.id}`,
         data: dataStr,
         createdAt: mov.created_at || dataStr,
         tipo: isEntrada ? LANCAMENTO_TIPO.ENTRADA : LANCAMENTO_TIPO.SAIDA,
-        origem: isEntrada ? ORIGEM_EXTRATO_BANCARIO.ENTRADA_AVULSA : ORIGEM_EXTRATO_BANCARIO.SAIDA_AVULSA,
-        origem_label: isEntrada ? "Entrada Avulsa" : "Saída Avulsa",
+        origem: isTransferencia
+          ? ORIGEM_EXTRATO_BANCARIO.TRANSFERENCIA_ENTRE_CONTAS
+          : isEntrada
+          ? ORIGEM_EXTRATO_BANCARIO.ENTRADA_AVULSA
+          : ORIGEM_EXTRATO_BANCARIO.SAIDA_AVULSA,
+        origem_label: isTransferencia
+          ? "Transferência entre Contas"
+          : catNome || (isEntrada ? "Entrada Avulsa" : "Saída Avulsa"),
         descricao: mov.descricao,
         valor,
+        movimentacao_avulsa_id: mov.id,
       });
     }
 
@@ -142,7 +165,7 @@ export const extratoBancarioService = {
         createdAt: desp.created_at || dataStr,
         tipo: LANCAMENTO_TIPO.SAIDA,
         origem: ORIGEM_EXTRATO_BANCARIO.DESPESA,
-        origem_label: "Despesa Operacional",
+        origem_label: categoriasNomeMap.get(desp.categoria) || "Despesa Operacional",
         descricao: desp.descricao,
         valor,
       });
@@ -265,6 +288,7 @@ export const extratoBancarioService = {
         descricao: m.descricao,
         valor,
         saldo_apos: saldoCorrente,
+        movimentacao_avulsa_id: m.movimentacao_avulsa_id || null,
       };
     });
 

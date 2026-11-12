@@ -1,18 +1,7 @@
 import { z } from "zod";
 import { DESPESA_ESCOPO_ACAO } from "../constants/financeiro.enum.js";
 
-export const categoriaDespesaEnum = z.enum([
-  "DESPESA_FIXA",
-  "TRIBUTO_DAS",
-  "PARCELAMENTO_FISCAL",
-  "INVESTIMENTO_FINANCIAMENTO",
-  "DESPESA_FINANCEIRA",
-  "PROLABORE",
-  "INVESTIMENTO_PATRIMONIAL",
-  "CARTAO_CREDITO",
-  "DESPESA_ADMINISTRATIVA",
-  "DESPESA_FROTA_DOCUMENTO",
-]);
+export const categoriaDespesaEnum = z.string().trim().min(1, "Categoria é obrigatória");
 
 export const statusDespesaEnum = z.enum([
   "PENDENTE",
