@@ -2,9 +2,12 @@ import { FINANCEIRO_STATUS } from "../constants/financeiro.enum.js";
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
 import {
+  formatFechamento,
   obterColaboradoresElegiveisMes,
   extrairComponentesFolha,
   montarStatusGeralColaboradores,
+  montarDashboardLoteVazio,
+  formatarResultadoDashboardLote,
 } from "../utils/financeiro-fechamento.helper.js";
 import { calcularMatematicaExtrato } from "../utils/financeiro-extrato-calc.helper.js";
 import { financeiroRepository } from "../repositories/financeiro.repository.js";
@@ -15,17 +18,6 @@ import {
   StatusGeralFechamento,
   DashboardLoteResultado,
 } from "../types/financeiro.type.js";
-
-function formatFechamento<
-  T extends { data_fechamento?: string; data_pagamento?: string; created_at?: string }
->(f: T): T {
-  if (!f) return f;
-  const result = { ...f };
-  if (result.data_fechamento) result.data_fechamento = toBRTime(result.data_fechamento);
-  if (result.data_pagamento) result.data_pagamento = toBRTime(result.data_pagamento);
-  if (result.created_at) result.created_at = toBRTime(result.created_at);
-  return result;
-}
 
 interface DashboardLoteCacheItem {
   timestamp: number;
@@ -125,21 +117,7 @@ export const financeiroService = {
     });
 
     if (!colaboradoresElegiveis || colaboradoresElegiveis.length === 0) {
-      const emptyResult: DashboardLoteResultado = {
-        totalFolha: 0,
-        valorPago: 0,
-        restaPagar: 0,
-        pendentesCount: 0,
-        pagosCount: 0,
-        totalColaboradores: 0,
-        totalFolhaBruta: 0,
-        totalDescontoFaltas: 0,
-        totalDescontoConvenios: 0,
-        totalAdiantamentoPago: 0,
-        totalAdiantamentoPrevisto: 0,
-        colaboradoresAdiantamentoCount: 0,
-        saldoFinalFolha: 0,
-      };
+      const emptyResult = montarDashboardLoteVazio();
       dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: emptyResult });
       return emptyResult;
     }
@@ -191,27 +169,18 @@ export const financeiroService = {
     const pendentes = colaboradoresElegiveis.filter((c) => !fechamentosMap.has(c.id));
 
     if (pendentes.length === 0) {
-      const totalDescontosTotalPaid = totalDescontoFaltas + totalDescontoConvenios;
-      const folhaBrutaReconciliadaPaid =
-        valorPago + totalDescontosTotalPaid + totalAdiantamentoPago;
-      const totalAdiantamentoPrevistoPaid =
-        totalAdiantamentoPago + adiantamentoPendenteConfigurado;
-
-      const allPaidResult: DashboardLoteResultado = {
-        totalFolha: parseFloat(valorPago.toFixed(2)),
-        valorPago: parseFloat(valorPago.toFixed(2)),
+      const allPaidResult = formatarResultadoDashboardLote({
+        valorPago,
         restaPagar: 0,
         pendentesCount: 0,
         pagosCount: fechamentos.length,
-        totalColaboradores: fechamentos.length,
-        totalFolhaBruta: parseFloat(folhaBrutaReconciliadaPaid.toFixed(2)),
-        totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
-        totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
-        totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
-        totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevistoPaid.toFixed(2)),
+        totalFolhaBruta,
+        totalDescontoFaltas,
+        totalDescontoConvenios,
+        totalAdiantamentoPago,
+        adiantamentoPendenteConfigurado,
         colaboradoresAdiantamentoCount,
-        saldoFinalFolha: parseFloat(valorPago.toFixed(2)),
-      };
+      });
       dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: allPaidResult });
       return allPaidResult;
     }
@@ -272,26 +241,18 @@ export const financeiroService = {
       totalAdiantamentoPago += comp.adiantamentoPago;
     });
 
-    const totalFolha = valorPago + restaPagar;
-    const totalDescontosTotal = totalDescontoFaltas + totalDescontoConvenios;
-    const folhaBrutaReconciliada = totalFolha + totalDescontosTotal + totalAdiantamentoPago;
-    const totalAdiantamentoPrevisto = totalAdiantamentoPago + adiantamentoPendenteConfigurado;
-
-    const resultadoFinal: DashboardLoteResultado = {
-      totalFolha: parseFloat(totalFolha.toFixed(2)),
-      valorPago: parseFloat(valorPago.toFixed(2)),
-      restaPagar: parseFloat(restaPagar.toFixed(2)),
+    const resultadoFinal = formatarResultadoDashboardLote({
+      valorPago,
+      restaPagar,
       pendentesCount: pendentes.length,
       pagosCount: fechamentos.length,
-      totalColaboradores: fechamentos.length + pendentes.length,
-      totalFolhaBruta: parseFloat(folhaBrutaReconciliada.toFixed(2)),
-      totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
-      totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
-      totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
-      totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevisto.toFixed(2)),
+      totalFolhaBruta,
+      totalDescontoFaltas,
+      totalDescontoConvenios,
+      totalAdiantamentoPago,
+      adiantamentoPendenteConfigurado,
       colaboradoresAdiantamentoCount,
-      saldoFinalFolha: parseFloat(totalFolha.toFixed(2)),
-    };
+    });
 
     dashboardLoteCache.set(cacheKey, { timestamp: Date.now(), data: resultadoFinal });
     return resultadoFinal;
@@ -306,6 +267,50 @@ export const financeiroService = {
     dataPagamento?: string | null,
     lotePagamentoId?: string | null
   ): Promise<ExtratoMensal> {
+    const fechamentoExistente = await financeiroRepository.getFechamentoPorCompetencia(
+      usuarioId,
+      mes,
+      ano
+    );
+
+    if (fechamentoExistente) {
+      const payloadAtualizado: FechamentoPayload = {
+        id: fechamentoExistente.id,
+        colaborador_id: usuarioId,
+        mes,
+        ano,
+        resumo_json: fechamentoExistente.resumo_json as ExtratoMensal,
+        saldo_final: Number(fechamentoExistente.saldo_final || 0),
+        fechado_por: fechamentoExistente.fechado_por || pagoPor,
+        data_fechamento: fechamentoExistente.data_fechamento || getNowBR(),
+        pago: true,
+        data_pagamento: dataPagamento || fechamentoExistente.data_pagamento || getNowBR(),
+        conta_bancaria_id:
+          contaBancariaId !== undefined
+            ? contaBancariaId
+            : (fechamentoExistente.conta_bancaria_id ?? null),
+        lote_pagamento_id:
+          lotePagamentoId !== undefined
+            ? lotePagamentoId
+            : (fechamentoExistente.lote_pagamento_id ?? null),
+      };
+
+      const data = await financeiroRepository.upsertFechamento(
+        usuarioId,
+        mes,
+        ano,
+        payloadAtualizado
+      );
+      invalidateDashboardLoteCache(mes, ano);
+      return formatFechamento(
+        data as unknown as ExtratoMensal & {
+          data_fechamento?: string;
+          data_pagamento?: string;
+          created_at?: string;
+        }
+      );
+    }
+
     const extrato = await this.getExtratoMensal(usuarioId, mes, ano);
     const dataPagEfetiva = dataPagamento || getNowBR();
 

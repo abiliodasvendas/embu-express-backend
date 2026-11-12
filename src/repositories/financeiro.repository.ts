@@ -472,7 +472,7 @@ export const financeiroRepository = {
   ): Promise<void> {
     const { data: existing } = await supabaseAdmin
       .from("confirmacoes_adiantamento")
-      .select("id")
+      .select("id, lote_pagamento_id")
       .eq("colaborador_id", usuarioId)
       .eq("mes", mes)
       .eq("ano", ano)
@@ -480,6 +480,9 @@ export const financeiroRepository = {
 
     if (existing) {
       payload.id = existing.id;
+      if (!payload.lote_pagamento_id && existing.lote_pagamento_id) {
+        payload.lote_pagamento_id = existing.lote_pagamento_id;
+      }
     }
 
     const { error } = await supabaseAdmin

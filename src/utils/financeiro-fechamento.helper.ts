@@ -1,4 +1,8 @@
-import { ExtratoMensal, StatusGeralFechamento } from "../types/financeiro.type.js";
+import {
+  DashboardLoteResultado,
+  ExtratoMensal,
+  StatusGeralFechamento,
+} from "../types/financeiro.type.js";
 import {
   ColaboradorClienteDb,
   ColaboradorElegivelMesRow,
@@ -16,6 +20,17 @@ export interface ComponentesFolhaColaborador {
   faltas: number;
   convenios: number;
   adiantamentoPago: number;
+}
+
+export function formatFechamento<
+  T extends { data_fechamento?: string; data_pagamento?: string; created_at?: string }
+>(f: T): T {
+  if (!f) return f;
+  const result = { ...f };
+  if (result.data_fechamento) result.data_fechamento = toBRTime(result.data_fechamento);
+  if (result.data_pagamento) result.data_pagamento = toBRTime(result.data_pagamento);
+  if (result.created_at) result.created_at = toBRTime(result.created_at);
+  return result;
 }
 
 export async function obterPerfilMotoboyId(): Promise<number> {
@@ -149,4 +164,68 @@ export function montarStatusGeralColaboradores(params: {
       clientes: clientesUnicos,
     };
   });
+}
+
+export function montarDashboardLoteVazio(): DashboardLoteResultado {
+  return {
+    totalFolha: 0,
+    valorPago: 0,
+    restaPagar: 0,
+    pendentesCount: 0,
+    pagosCount: 0,
+    totalColaboradores: 0,
+    totalFolhaBruta: 0,
+    totalDescontoFaltas: 0,
+    totalDescontoConvenios: 0,
+    totalAdiantamentoPago: 0,
+    totalAdiantamentoPrevisto: 0,
+    colaboradoresAdiantamentoCount: 0,
+    saldoFinalFolha: 0,
+  };
+}
+
+export function formatarResultadoDashboardLote(params: {
+  valorPago: number;
+  restaPagar: number;
+  pendentesCount: number;
+  pagosCount: number;
+  totalFolhaBruta: number;
+  totalDescontoFaltas: number;
+  totalDescontoConvenios: number;
+  totalAdiantamentoPago: number;
+  adiantamentoPendenteConfigurado: number;
+  colaboradoresAdiantamentoCount: number;
+}): DashboardLoteResultado {
+  const {
+    valorPago,
+    restaPagar,
+    pendentesCount,
+    pagosCount,
+    totalDescontoFaltas,
+    totalDescontoConvenios,
+    totalAdiantamentoPago,
+    adiantamentoPendenteConfigurado,
+    colaboradoresAdiantamentoCount,
+  } = params;
+
+  const totalFolha = valorPago + restaPagar;
+  const totalDescontosTotal = totalDescontoFaltas + totalDescontoConvenios;
+  const folhaBrutaReconciliada = totalFolha + totalDescontosTotal + totalAdiantamentoPago;
+  const totalAdiantamentoPrevisto = totalAdiantamentoPago + adiantamentoPendenteConfigurado;
+
+  return {
+    totalFolha: parseFloat(totalFolha.toFixed(2)),
+    valorPago: parseFloat(valorPago.toFixed(2)),
+    restaPagar: parseFloat(restaPagar.toFixed(2)),
+    pendentesCount,
+    pagosCount,
+    totalColaboradores: pagosCount + pendentesCount,
+    totalFolhaBruta: parseFloat(folhaBrutaReconciliada.toFixed(2)),
+    totalDescontoFaltas: parseFloat(totalDescontoFaltas.toFixed(2)),
+    totalDescontoConvenios: parseFloat(totalDescontoConvenios.toFixed(2)),
+    totalAdiantamentoPago: parseFloat(totalAdiantamentoPago.toFixed(2)),
+    totalAdiantamentoPrevisto: parseFloat(totalAdiantamentoPrevisto.toFixed(2)),
+    colaboradoresAdiantamentoCount,
+    saldoFinalFolha: parseFloat(totalFolha.toFixed(2)),
+  };
 }

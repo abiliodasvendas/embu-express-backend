@@ -78,6 +78,16 @@ export function resolverEmpresaDosTurnos(turnosVigentes: TurnoComEmpresa[]): {
     const [id, nome] = Array.from(empresasMap.entries())[0];
     return { empresaId: id, empresaNome: nome || undefined };
   }
+  if (empresasMap.size > 1) {
+    const turnoAtivo = turnosVigentes.find((t) => !t.data_fim && t.empresa_id);
+    const turnoEscolhido = turnoAtivo || turnosVigentes.find((t) => Boolean(t.empresa_id));
+    if (turnoEscolhido?.empresa_id) {
+      return {
+        empresaId: turnoEscolhido.empresa_id,
+        empresaNome: empresasMap.get(turnoEscolhido.empresa_id) || undefined,
+      };
+    }
+  }
   return { empresaId: null, empresaNome: undefined };
 }
 
