@@ -1,5 +1,6 @@
 import {
   CATEGORIA_MOVIMENTACAO_AVULSA,
+  ESCOPO_CATEGORIA_FINANCEIRA,
   GRUPO_DRE_CATEGORIA,
 } from "../constants/financeiro.enum.js";
 import { AppError } from "../errors/AppError.js";
@@ -9,7 +10,35 @@ import {
   ListCategoriasFinanceirasQueryDTO,
   UpdateCategoriaFinanceiraDTO,
 } from "../schemas/categoria-financeira.schema.js";
-import { CategoriaFinanceira } from "../types/database.js";
+import {
+  CategoriaFinanceira,
+  EscopoCategoriaFinanceira,
+  GrupoDreCategoriaFinanceira,
+} from "../types/database.js";
+
+function validarCompatibilidadeEscopoGrupoDre(
+  escopo: EscopoCategoriaFinanceira,
+  grupoDre: GrupoDreCategoriaFinanceira
+) {
+  if (escopo === ESCOPO_CATEGORIA_FINANCEIRA.ENTRADA_AVULSA) {
+    if (
+      grupoDre !== GRUPO_DRE_CATEGORIA.RECEITA_OPERACIONAL &&
+      grupoDre !== GRUPO_DRE_CATEGORIA.NAO_AFETA_DRE
+    ) {
+      throw new AppError(
+        "Categorias de Entrada Avulsa devem pertencer ao grupo Receita Operacional ou Não Afeta DRE.",
+        400
+      );
+    }
+  } else {
+    if (grupoDre === GRUPO_DRE_CATEGORIA.RECEITA_OPERACIONAL) {
+      throw new AppError(
+        "Categorias de saída ou despesa não podem ser classificadas como Receita Operacional.",
+        400
+      );
+    }
+  }
+}
 
 function gerarCodigoSlug(nome: string): string {
   const normalizado = nome
@@ -37,6 +66,7 @@ export class CategoriaFinanceiraService {
   }
 
   async create(dto: CreateCategoriaFinanceiraDTO): Promise<CategoriaFinanceira> {
+    validarCompatibilidadeEscopoGrupoDre(dto.escopo, dto.grupo_dre);
     const baseSlug = gerarCodigoSlug(dto.nome);
     let codigoFinal = baseSlug;
     let sufixo = 2;
@@ -82,6 +112,7 @@ export class CategoriaFinanceiraService {
     }
 
     const grupoDreFinal = dto.grupo_dre ?? existente.grupo_dre;
+    validarCompatibilidadeEscopoGrupoDre(existente.escopo, grupoDreFinal);
     const afetaDreFinal = grupoDreFinal !== GRUPO_DRE_CATEGORIA.NAO_AFETA_DRE;
 
     const atualizada = await categoriaFinanceiraRepository.update(id, {

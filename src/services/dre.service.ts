@@ -118,8 +118,17 @@ export const dreService = {
     let despesasAvulsas = 0;
     const itensDespesasAvulsas: DreItem[] = [];
 
+    let tributoDasAvulso = 0;
+    let prolaboreAvulso = 0;
+    let parcelamentosFiscaisAvulso = 0;
+    let investimentosFinanciamentosAvulso = 0;
+    let despesasFinanceirasAvulso = 0;
+
     movAvulsasFiltradas.forEach(m => {
-      if (m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS) {
+      if (
+        m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS ||
+        Boolean(m.transferencia_par_id)
+      ) {
         return;
       }
       const catInfo = categoriasMap.get(m.categoria);
@@ -134,8 +143,24 @@ export const dreService = {
       if (m.tipo_movimentacao === TIPO_MOVIMENTACAO_AVULSA.ENTRADA) {
         outrasReceitasOperacionais += v;
       } else {
-        despesasAvulsas += v;
-        itensDespesasAvulsas.push({ descricao: `${m.descricao} (Avulso)`, valor: v });
+        const grupoDreSaida = catInfo?.grupo_dre;
+        if (grupoDreSaida === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS) {
+          tributoDasAvulso += v;
+        } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.PROLABORE) {
+          prolaboreAvulso += v;
+        } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.PARCELAMENTO_FISCAL) {
+          parcelamentosFiscaisAvulso += v;
+        } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.INVESTIMENTO_FINANCIAMENTO) {
+          investimentosFinanciamentosAvulso += v;
+        } else if (
+          grupoDreSaida === GRUPO_DRE_CATEGORIA.DESPESA_FINANCEIRA ||
+          (!catInfo && m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TARIFA_BANCARIA)
+        ) {
+          despesasFinanceirasAvulso += v;
+        } else {
+          despesasAvulsas += v;
+          itensDespesasAvulsas.push({ descricao: `${m.descricao} (Avulso)`, valor: v });
+        }
       }
     });
 
@@ -157,12 +182,12 @@ export const dreService = {
     let despesasFixasHolding = 0;
     const itensDespesaFixa: DreItem[] = [...itensDespesasAvulsas];
 
-    let tributoDasValor = 0;
-    let tributoDasProvisionado = true;
-    let prolabore = 0;
-    let parcelamentosFiscais = 0;
-    let investimentosFinanciamentos = 0;
-    let despesasFinanceiras = 0;
+    let tributoDasValor = tributoDasAvulso;
+    let tributoDasProvisionado = tributoDasAvulso <= 0;
+    let prolabore = prolaboreAvulso;
+    let parcelamentosFiscais = parcelamentosFiscaisAvulso;
+    let investimentosFinanciamentos = investimentosFinanciamentosAvulso;
+    let despesasFinanceiras = despesasFinanceirasAvulso;
 
     (despesas || []).forEach(d => {
       const catInfo = categoriasMap.get(d.categoria);

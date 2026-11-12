@@ -41,7 +41,8 @@ export function filtrarMovimentacoesAvulsasFluxo(
   const movPorId = new Map(todasMovAvulsas.map((m) => [m.id, m]));
   return todasMovAvulsas.filter((m) => {
     const isTransferencia =
-      m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS;
+      m.categoria === CATEGORIA_MOVIMENTACAO_AVULSA.TRANSFERENCIA_ENTRE_CONTAS ||
+      Boolean(m.transferencia_par_id);
     if (!empresaId) {
       return !isTransferencia;
     }
