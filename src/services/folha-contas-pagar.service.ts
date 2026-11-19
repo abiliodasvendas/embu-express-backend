@@ -4,23 +4,8 @@ import { contaBancariaRepository } from "../repositories/conta-bancaria.reposito
 import { folhaContasPagarRepository } from "../repositories/folha-contas-pagar.repository.js";
 import { obterColaboradoresElegiveisMes } from "../utils/financeiro-fechamento.helper.js";
 import { extractDateOnly } from "../utils/utils.js";
-import {
-  filtrarTurnosVigentesNoMes,
-  isTurnoElegivelParaVale,
-  parseItemColaboradorId,
-  resolverDataCorteVale,
-  resolverDiaDesembolso,
-  resolverEmpresaDosTurnos,
-  unwrapSingle,
-} from "../utils/folha-contas-pagar.helper.js";
-import {
-  CATEGORIA_COLABORADOR_CONTA_PAGAR,
-  CONFIG_CHAVE_FINANCEIRO,
-  DIA_DESEMBOLSO_SALARIOS_PADRAO,
-  STATUS_DESPESA,
-  SUBTIPO_COLABORADOR_CONTA_PAGAR,
-  TIPO_CONTA_PAGAR,
-} from "../constants/financeiro.enum.js";
+import { filtrarTurnosVigentesNoMes, isTurnoElegivelParaVale, parseItemColaboradorId, resolverDataCorteEntradaVale, resolverDataCorteVale, resolverDiaDesembolso, resolverEmpresaDosTurnos, unwrapSingle } from "../utils/folha-contas-pagar.helper.js";
+import { CATEGORIA_COLABORADOR_CONTA_PAGAR, CONFIG_CHAVE_FINANCEIRO, DIA_DESEMBOLSO_SALARIOS_PADRAO, STATUS_DESPESA, SUBTIPO_COLABORADOR_CONTA_PAGAR, TIPO_CONTA_PAGAR } from "../constants/financeiro.enum.js";
 import { ContaPagarItem } from "./contas-pagar.service.js";
 import { AppError } from "../errors/AppError.js";
 
@@ -236,6 +221,7 @@ export const folhaContasPagarService = {
     ]);
 
     const elegiveisSet = new Set(colaboradoresElegiveis.map((c) => c.id));
+    const dataCorteEntradaVale = resolverDataCorteEntradaVale(anoComp, mesComp);
     const itens: ContaPagarItem[] = [];
     const refStr = `${String(mesComp).padStart(2, "0")}/${anoComp}`;
 
@@ -243,7 +229,7 @@ export const folhaContasPagarService = {
       if (!elegiveisSet.has(colabId)) continue;
       const turnos = turnosPorColab.get(colabId) || [];
       const turnosElegiveisVale = turnos.filter((t) =>
-        isTurnoElegivelParaVale(t, dataVencimentoCaixa)
+        isTurnoElegivelParaVale(t, dataVencimentoCaixa, dataCorteEntradaVale)
       );
       const confirmacao = confirmacoesMap.get(colabId);
 
@@ -390,5 +376,16 @@ export const folhaContasPagarService = {
     }
 
     throw new AppError("Subtipo de lançamento de colaborador desconhecido", 400);
+  },
+
+  async dispensarValeColaborador(itemId: string, userId?: string) {
+    const parsed = parseItemColaboradorId(itemId);
+    if (!parsed || parsed.subtipo !== SUBTIPO_COLABORADOR_CONTA_PAGAR.VALE) {
+      throw new AppError("Apenas lançamentos de adiantamento salarial podem ser dispensados", 400);
+    }
+
+    const { colaboradorId, mesComp, anoComp } = parsed;
+    await financeiroService.confirmarAdiantamento(colaboradorId, mesComp, anoComp, userId || colaboradorId, 0, null, null, null);
+    return { success: true, tipo: CATEGORIA_COLABORADOR_CONTA_PAGAR.ADIANTAMENTO_SALARIAL };
   },
 };

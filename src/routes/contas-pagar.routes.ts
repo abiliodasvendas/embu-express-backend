@@ -33,6 +33,12 @@ const contasPagarRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
     contasPagarController.desfazerLiquidacaoIndividual
   );
+
+  app.post(
+    "/:id/dispensar-vale",
+    { preHandler: [verifyPermissao(PERMISSIONS.DESPESAS.EDITAR)] },
+    contasPagarController.dispensarValeIndividual
+  );
 };
 
 export default contasPagarRoutes;

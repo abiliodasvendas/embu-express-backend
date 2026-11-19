@@ -6,7 +6,7 @@ import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { ROLES } from "../constants/permissions.enum.js";
 import { CONFIG_CHAVE_FINANCEIRO, DIA_DESEMBOLSO_VALES_PADRAO, NIVEL_RISCO_VALE, CLIENTES_ESPECIAIS, NivelRiscoValeType } from "../constants/financeiro.enum.js";
 import { configuracaoService } from "./configuracao.service.js";
-import { isTurnoElegivelParaVale, resolverDataCorteVale, resolverDiaDesembolso } from "../utils/folha-contas-pagar.helper.js";
+import { isTurnoElegivelParaVale, resolverDataCorteEntradaVale, resolverDataCorteVale, resolverDiaDesembolso } from "../utils/folha-contas-pagar.helper.js";
 
 type CreateAlocacaoDTO = z.infer<typeof alocacaoTemporariaSchema>;
 
@@ -186,6 +186,7 @@ export const retaguardaService = {
 
     const dataInicioQuinzena = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const dataFimQuinzena = resolverDataCorteVale(ano, mes, configVales?.valor);
+    const dataCorteEntradaVale = resolverDataCorteEntradaVale(ano, mes);
 
     const { data: perfilMotoboy } = await supabaseAdmin
       .from("perfis")
@@ -273,7 +274,7 @@ export const retaguardaService = {
       if (linksAtivos.length === 0) return;
 
       const valeConfigurado = linksAtivos
-        .filter((l) => isTurnoElegivelParaVale(l, dataFimQuinzena))
+        .filter((l) => isTurnoElegivelParaVale(l, dataFimQuinzena, dataCorteEntradaVale))
         .reduce((acc, l) => acc + Number(l.valor_adiantamento || 0), 0);
       const confirmacao = confirmacoesMap.get(colab.id);
       const adiantamentoConfirmado = !!confirmacao;
@@ -288,6 +289,10 @@ export const retaguardaService = {
       const valorAdiantamentoAplicado = adiantamentoConfirmado
         ? (valorAdiantamentoConfirmado ?? valeConfigurado)
         : valeConfigurado;
+
+      if (valorAdiantamentoAplicado <= 0) {
+        return;
+      }
 
       const pontosColab = pontosPorColab.get(colab.id) || [];
 

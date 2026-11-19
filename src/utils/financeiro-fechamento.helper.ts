@@ -95,8 +95,17 @@ export function montarStatusGeralColaboradores(params: {
   turnos: ColaboradorClienteDb[];
   dataFimMesStr: string;
   dataCorteVale: string;
+  dataCorteEntradaVale: string;
 }): StatusGeralFechamento[] {
-  const { colaboradores, confirmacoes, fechamentos, turnos, dataFimMesStr, dataCorteVale } = params;
+  const {
+    colaboradores,
+    confirmacoes,
+    fechamentos,
+    turnos,
+    dataFimMesStr,
+    dataCorteVale,
+    dataCorteEntradaVale,
+  } = params;
   const todosTurnos = turnos.filter((t) => !t.data_inicio || t.data_inicio <= dataFimMesStr);
 
   const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
@@ -126,7 +135,7 @@ export function montarStatusGeralColaboradores(params: {
     const pago = Boolean(fechamento);
 
     const valorAdiantamentoConfigurado = turnosColab
-      .filter((t) => isTurnoElegivelParaVale(t, dataCorteVale))
+      .filter((t) => isTurnoElegivelParaVale(t, dataCorteVale, dataCorteEntradaVale))
       .reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
 
     const valorAdiantamentoConfirmado = confirmacao

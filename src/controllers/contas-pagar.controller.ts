@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { contasPagarService } from "../services/contas-pagar.service.js";
+import { folhaContasPagarService } from "../services/folha-contas-pagar.service.js";
 import { lotePagamentoService } from "../services/lote-pagamento.service.js";
 import {
   lotePagamentoSchema,
@@ -68,6 +69,13 @@ export const contasPagarController = {
 
     const userId = request.user?.id;
     const result = await contasPagarService.desfazerLiquidacaoItem(id, query.tipo, userId);
+    return reply.status(200).send(result);
+  },
+
+  async dispensarValeIndividual(request: AuthenticatedRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const userId = request.user?.id;
+    const result = await folhaContasPagarService.dispensarValeColaborador(id, userId);
     return reply.status(200).send(result);
   },
 };

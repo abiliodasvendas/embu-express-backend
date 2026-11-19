@@ -1,5 +1,8 @@
 import { extractDateOnly } from "./utils.js";
-import { DIA_DESEMBOLSO_VALES_PADRAO } from "../constants/financeiro.enum.js";
+import {
+  DIA_CORTE_ENTRADA_VALE_PADRAO,
+  DIA_DESEMBOLSO_VALES_PADRAO,
+} from "../constants/financeiro.enum.js";
 
 export interface TurnoVigencia {
   data_inicio?: string | null;
@@ -130,13 +133,23 @@ export function resolverDataCorteVale(
   return `${ano}-${String(mes).padStart(2, "0")}-${String(diaVales).padStart(2, "0")}`;
 }
 
+export function resolverDataCorteEntradaVale(ano: number, mes: number): string {
+  const diaCorte = resolverDiaDesembolso(ano, mes, undefined, DIA_CORTE_ENTRADA_VALE_PADRAO);
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(diaCorte).padStart(2, "0")}`;
+}
+
 export function isTurnoElegivelParaVale(
   turno: TurnoVigencia,
-  dataCorteVale: string
+  dataVencimentoVale: string,
+  dataCorteEntradaVale?: string
 ): boolean {
   const dIni = extractDateOnly(turno.data_inicio) || extractDateOnly(turno.created_at);
   const dFim = extractDateOnly(turno.data_fim);
-  return (!dIni || dIni <= dataCorteVale) && (!dFim || dFim >= dataCorteVale);
+  const limiteEntrada =
+    dataCorteEntradaVale && dataCorteEntradaVale < dataVencimentoVale
+      ? dataCorteEntradaVale
+      : dataVencimentoVale;
+  return (!dIni || dIni <= limiteEntrada) && (!dFim || dFim >= dataVencimentoVale);
 }
 
 export function parseItemColaboradorId(itemId: string): {

@@ -2,10 +2,7 @@ import { CONFIG_CHAVE_FINANCEIRO, FINANCEIRO_STATUS } from "../constants/finance
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
 import { configuracaoService } from "./configuracao.service.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
-import {
-  isTurnoElegivelParaVale,
-  resolverDataCorteVale,
-} from "../utils/folha-contas-pagar.helper.js";
+import { isTurnoElegivelParaVale, resolverDataCorteEntradaVale, resolverDataCorteVale } from "../utils/folha-contas-pagar.helper.js";
 import {
   formatFechamento,
   obterColaboradoresElegiveisMes,
@@ -133,6 +130,7 @@ export const financeiroService = {
     ]);
 
     const dataCorteVale = resolverDataCorteVale(ano, mes, configVales?.valor);
+    const dataCorteEntradaVale = resolverDataCorteEntradaVale(ano, mes);
     const elegiveisIdsSet = new Set(colaboradoresElegiveis.map((c) => c.id));
     const confirmacoesElegiveisIds = new Set(todasConfirmacoes.map((c) => c.colaborador_id));
 
@@ -141,11 +139,13 @@ export const financeiroService = {
         (t) =>
           elegiveisIdsSet.has(t.colaborador_id) &&
           !confirmacoesElegiveisIds.has(t.colaborador_id) &&
-          isTurnoElegivelParaVale(t, dataCorteVale)
+          isTurnoElegivelParaVale(t, dataCorteVale, dataCorteEntradaVale)
       )
       .reduce((acc, t) => acc + Number(t.valor_adiantamento || 0), 0);
 
-    const colaboradoresAdiantamentoCount = todasConfirmacoes.length;
+    const colaboradoresAdiantamentoCount = todasConfirmacoes.filter(
+      (c) => c.valor === null || c.valor === undefined || Number(c.valor) > 0
+    ).length;
 
     const fechamentosMap = new Map<string, { colaborador_id: string; saldo_final: number }>();
     let valorPago = 0;
@@ -393,6 +393,7 @@ export const financeiroService = {
       turnos,
       dataFimMesStr,
       dataCorteVale: resolverDataCorteVale(ano, mes, configVales?.valor),
+      dataCorteEntradaVale: resolverDataCorteEntradaVale(ano, mes),
     });
   },
 };
