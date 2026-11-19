@@ -2,10 +2,12 @@ import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { PERMISSIONS } from "../constants/permissions.enum.js";
 import { verifyPermissao } from "../middlewares/auth.middleware.js";
 import { UsuarioController } from "../controllers/usuario.controller.js";
+import { AniversarianteController } from "../controllers/aniversariante.controller.js";
 
 const usuarioRoute: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.post("/", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.CRIAR)] }, UsuarioController.create);
     app.put("/:id", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.EDITAR)] }, UsuarioController.update);
+    app.get("/aniversariantes", { preHandler: [verifyPermissao(PERMISSIONS.ANIVERSARIANTES.VER)] }, AniversarianteController.list);
     app.get("/:id", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.VER)] }, UsuarioController.get);
     app.get("/", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.VER)] }, UsuarioController.list);
     app.delete("/:id", { preHandler: [verifyPermissao(PERMISSIONS.USUARIOS.DELETAR)] }, UsuarioController.delete);
