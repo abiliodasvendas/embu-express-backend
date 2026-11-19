@@ -11,22 +11,18 @@ import {
   CATEGORIA_MOVIMENTACAO_AVULSA,
   GRUPO_DRE_CATEGORIA,
   STATUS_DESPESA,
-  STATUS_FATURA,
   TIPO_MOVIMENTACAO_AVULSA,
 } from "../constants/financeiro.enum.js";
+import {
+  acumularDespesaNoGrupo,
+  adicionarLancamentoDiretoGrupo,
+  criarAcumuladorGrupo,
+  DreGrupoDespesas,
+  DreItem,
+  finalizarGrupoDespesas,
+} from "../utils/dre-agrupamento.helper.js";
 
-export interface DreItem {
-  descricao: string;
-  valor: number;
-  percentual?: number;
-}
-
-export interface DreGrupoDespesas {
-  total: number;
-  diretas: number;
-  rateio_holding: number;
-  itens: DreItem[];
-}
+export type { DreItem, DreGrupoDespesas };
 
 export interface DreConsolidado {
   periodo: { mes: number; ano: number };
@@ -56,37 +52,6 @@ export interface DreConsolidado {
   despesas_financeiras: number;
   lucro_liquido: number;
   margem_liquida_percentual: number;
-}
-
-interface AcumuladorDespesaGrupo {
-  diretas: number;
-  holding: number;
-  itens: DreItem[];
-}
-
-function acumularDespesaNoGrupo(
-  grupo: AcumuladorDespesaGrupo,
-  descricao: string,
-  valor: number,
-  empresaId: number | undefined,
-  isDestaEmpresa: boolean,
-  isHoldingDespesa: boolean,
-  isGeralHolding: boolean,
-  shareEmpresa: number
-) {
-  if (empresaId) {
-    if (isDestaEmpresa && !isHoldingDespesa) {
-      grupo.diretas += valor;
-      grupo.itens.push({ descricao, valor });
-    } else if (isGeralHolding) {
-      const valorRateado = valor * shareEmpresa;
-      grupo.holding += valorRateado;
-      grupo.itens.push({ descricao: `${descricao} (Rateio Holding)`, valor: valorRateado });
-    }
-  } else {
-    grupo.diretas += valor;
-    grupo.itens.push({ descricao, valor });
-  }
 }
 
 export const dreService = {
@@ -149,10 +114,8 @@ export const dreService = {
       : (movAvulsas || []);
 
     let outrasReceitasOperacionais = 0;
-    let despesasAvulsas = 0;
-    const itensDespesasAvulsas: DreItem[] = [];
-    let despesasVariaveisAvulsas = 0;
-    const itensDespesasVariaveisAvulsas: DreItem[] = [];
+    const grupoFixas = criarAcumuladorGrupo();
+    const grupoVariaveis = criarAcumuladorGrupo();
 
     let tributoDasAvulso = 0;
     let prolaboreAvulso = 0;
@@ -180,9 +143,17 @@ export const dreService = {
         outrasReceitasOperacionais += v;
       } else {
         const grupoDreSaida = catInfo?.grupo_dre;
+        const categoriaCodigo = catInfo?.codigo || m.categoria;
+        const categoriaNome = catInfo?.nome || m.categoria;
+
         if (grupoDreSaida === GRUPO_DRE_CATEGORIA.DESPESA_VARIAVEL) {
-          despesasVariaveisAvulsas += v;
-          itensDespesasVariaveisAvulsas.push({ descricao: `${m.descricao} (Avulso)`, valor: v });
+          adicionarLancamentoDiretoGrupo(
+            grupoVariaveis,
+            categoriaCodigo,
+            categoriaNome,
+            `${m.descricao} (Avulso)`,
+            v
+          );
         } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS) {
           tributoDasAvulso += v;
         } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.PROLABORE) {
@@ -197,8 +168,13 @@ export const dreService = {
         ) {
           despesasFinanceirasAvulso += v;
         } else {
-          despesasAvulsas += v;
-          itensDespesasAvulsas.push({ descricao: `${m.descricao} (Avulso)`, valor: v });
+          adicionarLancamentoDiretoGrupo(
+            grupoFixas,
+            categoriaCodigo,
+            categoriaNome,
+            `${m.descricao} (Avulso)`,
+            v
+          );
         }
       }
     });
@@ -217,17 +193,6 @@ export const dreService = {
       return true;
     });
 
-    const grupoFixas: AcumuladorDespesaGrupo = {
-      diretas: despesasAvulsas,
-      holding: 0,
-      itens: [...itensDespesasAvulsas],
-    };
-    const grupoVariaveis: AcumuladorDespesaGrupo = {
-      diretas: despesasVariaveisAvulsas,
-      holding: 0,
-      itens: [...itensDespesasVariaveisAvulsas],
-    };
-
     let tributoDasValor = tributoDasAvulso;
     let tributoDasProvisionado = tributoDasAvulso <= 0;
     let prolabore = prolaboreAvulso;
@@ -242,6 +207,8 @@ export const dreService = {
       }
 
       const grupoDre = catInfo?.grupo_dre || d.categoria;
+      const categoriaCodigo = catInfo?.codigo || d.categoria;
+      const categoriaNome = catInfo?.nome || d.categoria;
       const valor = tipoVisao === "realizado"
         ? Number(d.valor_pago || (d.status === STATUS_DESPESA.PAGO ? d.valor_previsto : 0) || 0)
         : Number(d.valor_previsto || 0);
@@ -257,27 +224,31 @@ export const dreService = {
         d.categoria === CATEGORIA_DESPESA.DESPESA_FROTA_DOCUMENTO;
 
       if (grupoDre === GRUPO_DRE_CATEGORIA.DESPESA_VARIAVEL) {
-        acumularDespesaNoGrupo(
-          grupoVariaveis,
-          d.descricao,
+        acumularDespesaNoGrupo({
+          grupo: grupoVariaveis,
+          categoriaCodigo,
+          categoriaNome,
+          descricao: d.descricao,
           valor,
           empresaId,
           isDestaEmpresa,
           isHoldingDespesa,
           isGeralHolding,
-          shareEmpresa
-        );
+          shareEmpresa,
+        });
       } else if (isDespesaOperacionalFixa) {
-        acumularDespesaNoGrupo(
-          grupoFixas,
-          d.descricao,
+        acumularDespesaNoGrupo({
+          grupo: grupoFixas,
+          categoriaCodigo,
+          categoriaNome,
+          descricao: d.descricao,
           valor,
           empresaId,
           isDestaEmpresa,
           isHoldingDespesa,
           isGeralHolding,
-          shareEmpresa
-        );
+          shareEmpresa,
+        });
       } else if (grupoDre === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS || d.categoria === CATEGORIA_DESPESA.TRIBUTO_DAS) {
         if (empresaId) {
           if (isDestaEmpresa) {
@@ -321,16 +292,18 @@ export const dreService = {
           despesasFinanceiras += valor;
         }
       } else {
-        acumularDespesaNoGrupo(
-          grupoFixas,
-          d.descricao,
+        acumularDespesaNoGrupo({
+          grupo: grupoFixas,
+          categoriaCodigo,
+          categoriaNome,
+          descricao: d.descricao,
           valor,
           empresaId,
           isDestaEmpresa,
           isHoldingDespesa,
           isGeralHolding,
-          shareEmpresa
-        );
+          shareEmpresa,
+        });
       }
     });
 
@@ -338,9 +311,10 @@ export const dreService = {
       tributoDasValor = faturamentoBruto * 0.065;
     }
 
-    const totalDespesasFixas = grupoFixas.diretas + grupoFixas.holding;
-    const totalDespesasVariaveis = grupoVariaveis.diretas + grupoVariaveis.holding;
-    const lucroOperacional = lucroBruto - totalDespesasFixas - totalDespesasVariaveis - tributoDasValor;
+    const despesasFixasFinal = finalizarGrupoDespesas(grupoFixas);
+    const despesasVariaveisFinal = finalizarGrupoDespesas(grupoVariaveis);
+    const lucroOperacional =
+      lucroBruto - despesasFixasFinal.total - despesasVariaveisFinal.total - tributoDasValor;
     const lucroLiquido = lucroOperacional - prolabore - parcelamentosFiscais - investimentosFinanciamentos - despesasFinanceiras;
     const margemLiquidaPercentual = receitaOperacionalTotal > 0
       ? (lucroLiquido / receitaOperacionalTotal) * 100
@@ -361,18 +335,8 @@ export const dreService = {
       },
       lucro_bruto: parseFloat(lucroBruto.toFixed(2)),
       margem_bruta_percentual: parseFloat(margemBrutaPercentual.toFixed(2)),
-      despesas_fixas: {
-        total: parseFloat(totalDespesasFixas.toFixed(2)),
-        diretas: parseFloat(grupoFixas.diretas.toFixed(2)),
-        rateio_holding: parseFloat(grupoFixas.holding.toFixed(2)),
-        itens: grupoFixas.itens,
-      },
-      despesas_variaveis: {
-        total: parseFloat(totalDespesasVariaveis.toFixed(2)),
-        diretas: parseFloat(grupoVariaveis.diretas.toFixed(2)),
-        rateio_holding: parseFloat(grupoVariaveis.holding.toFixed(2)),
-        itens: grupoVariaveis.itens,
-      },
+      despesas_fixas: despesasFixasFinal,
+      despesas_variaveis: despesasVariaveisFinal,
       tributos_correntes_das: {
         total: parseFloat(tributoDasValor.toFixed(2)),
         is_provisionado: tributoDasProvisionado,
