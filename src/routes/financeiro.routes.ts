@@ -16,6 +16,10 @@ const financeiroRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
     }, FinanceiroController.confirmarAdiantamento);
 
+    app.post("/dispensar-adiantamento/:usuarioId", {
+        preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
+    }, FinanceiroController.dispensarAdiantamento);
+
     app.delete("/desconfirmar-adiantamento/:usuarioId", {
         preHandler: [verifyPermissao(PERMISSIONS.FINANCEIRO.PAGAR)]
     }, FinanceiroController.desconfirmarAdiantamento);

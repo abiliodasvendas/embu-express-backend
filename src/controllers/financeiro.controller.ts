@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { financeiroService } from "../services/financeiro.service.js";
-import { fecharMesSchema, getExtratoSchema, confirmarAdiantamentoSchema } from "../types/dtos/financeiro.dto.js";
+import { fecharMesSchema, getExtratoSchema, confirmarAdiantamentoSchema, dispensarAdiantamentoSchema } from "../types/dtos/financeiro.dto.js";
 import { z } from "zod";
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -53,6 +53,23 @@ export const FinanceiroController = {
     const { params, query } = getExtratoSchema.parse(request);
     await financeiroService.desconfirmarAdiantamento(params.usuarioId, query.mes, query.ano);
     return reply.status(204).send();
+  },
+
+  async dispensarAdiantamento(request: AuthenticatedRequest, reply: FastifyReply) {
+    const { params, body } = dispensarAdiantamentoSchema.parse(request);
+    const confirmadoPor = request.user?.id;
+    if (!confirmadoPor) return reply.status(401).send({ error: "Usuário não autenticado" });
+    const result = await financeiroService.confirmarAdiantamento(
+      params.usuarioId,
+      body.mes,
+      body.ano,
+      confirmadoPor,
+      0,
+      null,
+      null,
+      null
+    );
+    return reply.send(result);
   },
 
   async desfazerPagamento(request: FastifyRequest, reply: FastifyReply) {
