@@ -1,12 +1,12 @@
 import { supabaseAdmin } from "../config/supabase.js";
-import { AppError } from "../errors/AppError.js";
 import { AlocacaoTemporaria } from "../types/database.js";
 import { z } from "zod";
 import { alocacaoTemporariaSchema } from "../schemas/retaguarda.schema.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
 import { ROLES } from "../constants/permissions.enum.js";
-import { NIVEL_RISCO_VALE, CLIENTES_ESPECIAIS, NivelRiscoValeType } from "../constants/financeiro.enum.js";
+import { CONFIG_CHAVE_FINANCEIRO, DIA_DESEMBOLSO_VALES_PADRAO, NIVEL_RISCO_VALE, CLIENTES_ESPECIAIS, NivelRiscoValeType } from "../constants/financeiro.enum.js";
 import { configuracaoService } from "./configuracao.service.js";
+import { isTurnoElegivelParaVale, resolverDataCorteVale, resolverDiaDesembolso } from "../utils/folha-contas-pagar.helper.js";
 
 type CreateAlocacaoDTO = z.infer<typeof alocacaoTemporariaSchema>;
 
@@ -181,11 +181,11 @@ export const retaguardaService = {
   },
 
   async getAlertaRiscoVales(mes: number, ano: number): Promise<AlertaRiscoValeItem[]> {
-    const configVales = await configuracaoService.getConfiguracao("dia_desembolso_vales");
-    const diaVales = Math.min(Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1), 31);
+    const configVales = await configuracaoService.getConfiguracao(CONFIG_CHAVE_FINANCEIRO.DIA_DESEMBOLSO_VALES);
+    const diaVales = resolverDiaDesembolso(ano, mes, configVales?.valor, DIA_DESEMBOLSO_VALES_PADRAO);
 
     const dataInicioQuinzena = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    const dataFimQuinzena = `${ano}-${String(mes).padStart(2, '0')}-${String(diaVales).padStart(2, '0')}`;
+    const dataFimQuinzena = resolverDataCorteVale(ano, mes, configVales?.valor);
 
     const { data: perfilMotoboy } = await supabaseAdmin
       .from("perfis")
@@ -198,7 +198,7 @@ export const retaguardaService = {
     const [colaboradoresRes, pontosRes, feriadosRes, conveniosRes, confirmacoesRes] = await Promise.all([
       supabaseAdmin
         .from("usuarios")
-        .select("id, nome_completo, links:colaborador_clientes(id, cliente_id, valor_contrato, ajuda_custo, valor_aluguel, valor_adiantamento, data_inicio, data_fim, horarios:colaborador_cliente_horarios(dia_semana))")
+        .select("id, nome_completo, links:colaborador_clientes(id, cliente_id, valor_contrato, ajuda_custo, valor_aluguel, valor_adiantamento, data_inicio, data_fim, created_at, horarios:colaborador_cliente_horarios(dia_semana))")
         .eq("status", CADASTRO_STATUS.ATIVO)
         .eq("perfil_id", perfilMotoboyId),
       supabaseAdmin
@@ -264,6 +264,7 @@ export const retaguardaService = {
         valor_adiantamento: number | null;
         data_inicio: string | null;
         data_fim: string | null;
+        created_at: string | null;
         horarios?: HorarioItem[];
       };
 
@@ -271,7 +272,9 @@ export const retaguardaService = {
       const linksAtivos = links.filter(l => !l.data_fim || l.data_fim >= dataInicioQuinzena);
       if (linksAtivos.length === 0) return;
 
-      const valeConfigurado = linksAtivos.reduce((acc, l) => acc + Number(l.valor_adiantamento || 0), 0);
+      const valeConfigurado = linksAtivos
+        .filter((l) => isTurnoElegivelParaVale(l, dataFimQuinzena))
+        .reduce((acc, l) => acc + Number(l.valor_adiantamento || 0), 0);
       const confirmacao = confirmacoesMap.get(colab.id);
       const adiantamentoConfirmado = !!confirmacao;
 

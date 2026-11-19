@@ -211,5 +211,12 @@ export const SUBTIPO_COLABORADOR_CONTA_PAGAR = {
 } as const;
 
 export const DAVID_CAITITE_ID = "e7c2c19c-3b36-402a-9e73-9a3c3c3c3c3c";
+export const DIA_DESEMBOLSO_SALARIOS_PADRAO = 7;
 export const DIA_DESEMBOLSO_CONVENIOS_PADRAO = 16;
+export const DIA_DESEMBOLSO_VALES_PADRAO = 20;
+
+export const CONFIG_CHAVE_FINANCEIRO = {
+    DIA_DESEMBOLSO_SALARIOS: 'dia_desembolso_salarios',
+    DIA_DESEMBOLSO_VALES: 'dia_desembolso_vales',
+} as const;
 

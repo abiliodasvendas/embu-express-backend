@@ -6,12 +6,17 @@ import { obterColaboradoresElegiveisMes } from "../utils/financeiro-fechamento.h
 import { extractDateOnly } from "../utils/utils.js";
 import {
   filtrarTurnosVigentesNoMes,
+  isTurnoElegivelParaVale,
   parseItemColaboradorId,
+  resolverDataCorteVale,
+  resolverDiaDesembolso,
   resolverEmpresaDosTurnos,
   unwrapSingle,
 } from "../utils/folha-contas-pagar.helper.js";
 import {
   CATEGORIA_COLABORADOR_CONTA_PAGAR,
+  CONFIG_CHAVE_FINANCEIRO,
+  DIA_DESEMBOLSO_SALARIOS_PADRAO,
   STATUS_DESPESA,
   SUBTIPO_COLABORADOR_CONTA_PAGAR,
   TIPO_CONTA_PAGAR,
@@ -25,24 +30,19 @@ export const folhaContasPagarService = {
     anoCaixa: number,
     empresaIdFiltro?: number
   ): Promise<ContaPagarItem[]> {
-    const ultimoDiaMesCaixa = new Date(Date.UTC(anoCaixa, mesCaixa, 0)).getUTCDate();
-
     const [configSalarios, configVales] = await Promise.all([
-      configuracaoService.getConfiguracao("dia_desembolso_salarios"),
-      configuracaoService.getConfiguracao("dia_desembolso_vales"),
+      configuracaoService.getConfiguracao(CONFIG_CHAVE_FINANCEIRO.DIA_DESEMBOLSO_SALARIOS),
+      configuracaoService.getConfiguracao(CONFIG_CHAVE_FINANCEIRO.DIA_DESEMBOLSO_VALES),
     ]);
 
-    const diaSalarios = Math.min(
-      Math.max(parseInt(configSalarios?.valor || "7", 10) || 7, 1),
-      ultimoDiaMesCaixa
+    const diaSalarios = resolverDiaDesembolso(
+      anoCaixa,
+      mesCaixa,
+      configSalarios?.valor,
+      DIA_DESEMBOLSO_SALARIOS_PADRAO
     );
-    const diaVales = Math.min(
-      Math.max(parseInt(configVales?.valor || "20", 10) || 20, 1),
-      ultimoDiaMesCaixa
-    );
-
     const vencimentoSalarios = `${anoCaixa}-${String(mesCaixa).padStart(2, "0")}-${String(diaSalarios).padStart(2, "0")}`;
-    const vencimentoVales = `${anoCaixa}-${String(mesCaixa).padStart(2, "0")}-${String(diaVales).padStart(2, "0")}`;
+    const vencimentoVales = resolverDataCorteVale(anoCaixa, mesCaixa, configVales?.valor);
 
     let mesCompSalario = mesCaixa - 1;
     let anoCompSalario = anoCaixa;
@@ -242,9 +242,12 @@ export const folhaContasPagarService = {
     for (const colabId of todosColabIds) {
       if (!elegiveisSet.has(colabId)) continue;
       const turnos = turnosPorColab.get(colabId) || [];
+      const turnosElegiveisVale = turnos.filter((t) =>
+        isTurnoElegivelParaVale(t, dataVencimentoCaixa)
+      );
       const confirmacao = confirmacoesMap.get(colabId);
 
-      const valorConfigurado = turnos.reduce(
+      const valorConfigurado = turnosElegiveisVale.reduce(
         (acc, t) => acc + Number(t.valor_adiantamento || 0),
         0
       );
@@ -260,7 +263,7 @@ export const folhaContasPagarService = {
       if (valorFinal <= 0) continue;
 
       const { empresaId: empresaPrevistaId, empresaNome: empresaPrevistaNome } =
-        resolverEmpresaDosTurnos(turnos);
+        resolverEmpresaDosTurnos(turnosElegiveisVale.length > 0 ? turnosElegiveisVale : turnos);
 
       let empresaEfetivaId = empresaPrevistaId;
       let empresaEfetivaNome = empresaPrevistaNome;

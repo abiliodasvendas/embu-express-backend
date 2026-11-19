@@ -1,4 +1,11 @@
 import { extractDateOnly } from "./utils.js";
+import { DIA_DESEMBOLSO_VALES_PADRAO } from "../constants/financeiro.enum.js";
+
+export interface TurnoVigencia {
+  data_inicio?: string | null;
+  data_fim?: string | null;
+  created_at?: string | null;
+}
 
 export interface EmpresaJoin {
   id: number;
@@ -101,6 +108,35 @@ export function filtrarTurnosVigentesNoMes(
     const dFim = extractDateOnly(l.data_fim);
     return (!dIni || dIni <= dataFimMesStr) && (!dFim || dFim >= dataInicioMesStr);
   });
+}
+
+export function resolverDiaDesembolso(
+  ano: number,
+  mes: number,
+  valorConfig: string | null | undefined,
+  diaPadrao: number
+): number {
+  const ultimoDiaMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const parsed = parseInt(valorConfig || String(diaPadrao), 10) || diaPadrao;
+  return Math.min(Math.max(parsed, 1), ultimoDiaMes);
+}
+
+export function resolverDataCorteVale(
+  ano: number,
+  mes: number,
+  valorConfig?: string | null
+): string {
+  const diaVales = resolverDiaDesembolso(ano, mes, valorConfig, DIA_DESEMBOLSO_VALES_PADRAO);
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(diaVales).padStart(2, "0")}`;
+}
+
+export function isTurnoElegivelParaVale(
+  turno: TurnoVigencia,
+  dataCorteVale: string
+): boolean {
+  const dIni = extractDateOnly(turno.data_inicio) || extractDateOnly(turno.created_at);
+  const dFim = extractDateOnly(turno.data_fim);
+  return (!dIni || dIni <= dataCorteVale) && (!dFim || dFim >= dataCorteVale);
 }
 
 export function parseItemColaboradorId(itemId: string): {

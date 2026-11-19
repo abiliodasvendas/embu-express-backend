@@ -41,6 +41,7 @@ export interface ColaboradorClienteDb {
   valor_adiantamento: number | null;
   data_inicio: string | null;
   data_fim: string | null;
+  created_at?: string | null;
   cliente: { nome_fantasia: string }[] | { nome_fantasia: string } | null;
 }
 
@@ -293,7 +294,7 @@ export const financeiroRepository = {
         .eq("pago", true),
       supabaseAdmin
         .from("colaborador_clientes")
-        .select("colaborador_id, valor_adiantamento, data_inicio, data_fim")
+        .select("colaborador_id, valor_adiantamento, data_inicio, data_fim, created_at")
         .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`),
       supabaseAdmin
         .from("confirmacoes_adiantamento")
@@ -530,7 +531,7 @@ export const financeiroRepository = {
         .eq("ano", ano),
       supabaseAdmin
         .from("colaborador_clientes")
-        .select("colaborador_id, valor_adiantamento, data_inicio, data_fim, cliente:clientes(nome_fantasia)")
+        .select("colaborador_id, valor_adiantamento, data_inicio, data_fim, created_at, cliente:clientes(nome_fantasia)")
         .or(`data_fim.is.null,data_fim.gte.${dataInicioMesStr}`),
     ]);
 

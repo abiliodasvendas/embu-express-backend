@@ -11,6 +11,7 @@ import {
   financeiroRepository,
 } from "../repositories/financeiro.repository.js";
 import { CADASTRO_STATUS } from "../constants/cadastro.enum.js";
+import { isTurnoElegivelParaVale } from "./folha-contas-pagar.helper.js";
 import { toBRTime } from "./utils.js";
 
 export type ColaboradorElegivelMes = ColaboradorElegivelMesRow;
@@ -93,8 +94,9 @@ export function montarStatusGeralColaboradores(params: {
   fechamentos: FechamentoFinanceiroDb[];
   turnos: ColaboradorClienteDb[];
   dataFimMesStr: string;
+  dataCorteVale: string;
 }): StatusGeralFechamento[] {
-  const { colaboradores, confirmacoes, fechamentos, turnos, dataFimMesStr } = params;
+  const { colaboradores, confirmacoes, fechamentos, turnos, dataFimMesStr, dataCorteVale } = params;
   const todosTurnos = turnos.filter((t) => !t.data_inicio || t.data_inicio <= dataFimMesStr);
 
   const confirmacoesMap = new Map<string, ConfirmacaoAdiantamentoDb>();
@@ -123,10 +125,9 @@ export function montarStatusGeralColaboradores(params: {
     const adiantamentoConfirmado = Boolean(confirmacao);
     const pago = Boolean(fechamento);
 
-    const valorAdiantamentoConfigurado = turnosColab.reduce(
-      (acc, t) => acc + (t.valor_adiantamento || 0),
-      0
-    );
+    const valorAdiantamentoConfigurado = turnosColab
+      .filter((t) => isTurnoElegivelParaVale(t, dataCorteVale))
+      .reduce((acc, t) => acc + (t.valor_adiantamento || 0), 0);
 
     const valorAdiantamentoConfirmado = confirmacao
       ? confirmacao.valor !== null && confirmacao.valor !== undefined

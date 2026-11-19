@@ -1,6 +1,11 @@
-import { FINANCEIRO_STATUS } from "../constants/financeiro.enum.js";
+import { CONFIG_CHAVE_FINANCEIRO, FINANCEIRO_STATUS } from "../constants/financeiro.enum.js";
 import { getNowBR, toBRTime, toLocalDateString } from "../utils/utils.js";
+import { configuracaoService } from "./configuracao.service.js";
 import { ocorrenciaService } from "./ocorrencia.service.js";
+import {
+  isTurnoElegivelParaVale,
+  resolverDataCorteVale,
+} from "../utils/folha-contas-pagar.helper.js";
 import {
   formatFechamento,
   obterColaboradoresElegiveisMes,
@@ -122,22 +127,22 @@ export const financeiroService = {
       return emptyResult;
     }
 
-    const { fechamentos, todosTurnos, todasConfirmacoes } =
-      await financeiroRepository.carregarResumoPagoDashboardLote(mes, ano, dataInicioMesStr);
+    const [{ fechamentos, todosTurnos, todasConfirmacoes }, configVales] = await Promise.all([
+      financeiroRepository.carregarResumoPagoDashboardLote(mes, ano, dataInicioMesStr),
+      configuracaoService.getConfiguracao(CONFIG_CHAVE_FINANCEIRO.DIA_DESEMBOLSO_VALES),
+    ]);
 
+    const dataCorteVale = resolverDataCorteVale(ano, mes, configVales?.valor);
     const elegiveisIdsSet = new Set(colaboradoresElegiveis.map((c) => c.id));
-    const confirmacoesElegiveisIds = new Set(
-      todasConfirmacoes.map((c) => c.colaborador_id)
-    );
+    const confirmacoesElegiveisIds = new Set(todasConfirmacoes.map((c) => c.colaborador_id));
 
-    const turnosFiltrados = todosTurnos.filter(
-      (t) =>
-        elegiveisIdsSet.has(t.colaborador_id) &&
-        (!t.data_inicio || t.data_inicio <= dataFimMesStr)
-    );
-
-    const adiantamentoPendenteConfigurado = turnosFiltrados
-      .filter((t) => !confirmacoesElegiveisIds.has(t.colaborador_id))
+    const adiantamentoPendenteConfigurado = todosTurnos
+      .filter(
+        (t) =>
+          elegiveisIdsSet.has(t.colaborador_id) &&
+          !confirmacoesElegiveisIds.has(t.colaborador_id) &&
+          isTurnoElegivelParaVale(t, dataCorteVale)
+      )
       .reduce((acc, t) => acc + Number(t.valor_adiantamento || 0), 0);
 
     const colaboradoresAdiantamentoCount = todasConfirmacoes.length;
@@ -375,14 +380,10 @@ export const financeiroService = {
     const dataInicioMesStr = `${ano}-${String(mes).padStart(2, "0")}-01`;
     const dataFimMesStr = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaMes).padStart(2, "0")}`;
 
-    const [colaboradores, { confirmacoes, fechamentos, turnos }] = await Promise.all([
-      obterColaboradoresElegiveisMes({
-        mes,
-        ano,
-        dataInicioMesStr,
-        dataFimMesStr,
-      }),
+    const [colaboradores, { confirmacoes, fechamentos, turnos }, configVales] = await Promise.all([
+      obterColaboradoresElegiveisMes({ mes, ano, dataInicioMesStr, dataFimMesStr }),
       financeiroRepository.carregarDadosStatusGeral(mes, ano, dataInicioMesStr),
+      configuracaoService.getConfiguracao(CONFIG_CHAVE_FINANCEIRO.DIA_DESEMBOLSO_VALES),
     ]);
 
     return montarStatusGeralColaboradores({
@@ -391,6 +392,7 @@ export const financeiroService = {
       fechamentos,
       turnos,
       dataFimMesStr,
+      dataCorteVale: resolverDataCorteVale(ano, mes, configVales?.valor),
     });
   },
 };
