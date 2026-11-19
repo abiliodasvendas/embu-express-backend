@@ -21,6 +21,13 @@ export interface DreItem {
   percentual?: number;
 }
 
+export interface DreGrupoDespesas {
+  total: number;
+  diretas: number;
+  rateio_holding: number;
+  itens: DreItem[];
+}
+
 export interface DreConsolidado {
   periodo: { mes: number; ano: number };
   tipo_visao?: "realizado" | "projetado";
@@ -36,12 +43,8 @@ export interface DreConsolidado {
   };
   lucro_bruto: number;
   margem_bruta_percentual: number;
-  despesas_fixas: {
-    total: number;
-    diretas: number;
-    rateio_holding: number;
-    itens: DreItem[];
-  };
+  despesas_fixas: DreGrupoDespesas;
+  despesas_variaveis: DreGrupoDespesas;
   tributos_correntes_das: {
     total: number;
     is_provisionado: boolean;
@@ -53,6 +56,37 @@ export interface DreConsolidado {
   despesas_financeiras: number;
   lucro_liquido: number;
   margem_liquida_percentual: number;
+}
+
+interface AcumuladorDespesaGrupo {
+  diretas: number;
+  holding: number;
+  itens: DreItem[];
+}
+
+function acumularDespesaNoGrupo(
+  grupo: AcumuladorDespesaGrupo,
+  descricao: string,
+  valor: number,
+  empresaId: number | undefined,
+  isDestaEmpresa: boolean,
+  isHoldingDespesa: boolean,
+  isGeralHolding: boolean,
+  shareEmpresa: number
+) {
+  if (empresaId) {
+    if (isDestaEmpresa && !isHoldingDespesa) {
+      grupo.diretas += valor;
+      grupo.itens.push({ descricao, valor });
+    } else if (isGeralHolding) {
+      const valorRateado = valor * shareEmpresa;
+      grupo.holding += valorRateado;
+      grupo.itens.push({ descricao: `${descricao} (Rateio Holding)`, valor: valorRateado });
+    }
+  } else {
+    grupo.diretas += valor;
+    grupo.itens.push({ descricao, valor });
+  }
 }
 
 export const dreService = {
@@ -117,6 +151,8 @@ export const dreService = {
     let outrasReceitasOperacionais = 0;
     let despesasAvulsas = 0;
     const itensDespesasAvulsas: DreItem[] = [];
+    let despesasVariaveisAvulsas = 0;
+    const itensDespesasVariaveisAvulsas: DreItem[] = [];
 
     let tributoDasAvulso = 0;
     let prolaboreAvulso = 0;
@@ -144,7 +180,10 @@ export const dreService = {
         outrasReceitasOperacionais += v;
       } else {
         const grupoDreSaida = catInfo?.grupo_dre;
-        if (grupoDreSaida === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS) {
+        if (grupoDreSaida === GRUPO_DRE_CATEGORIA.DESPESA_VARIAVEL) {
+          despesasVariaveisAvulsas += v;
+          itensDespesasVariaveisAvulsas.push({ descricao: `${m.descricao} (Avulso)`, valor: v });
+        } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS) {
           tributoDasAvulso += v;
         } else if (grupoDreSaida === GRUPO_DRE_CATEGORIA.PROLABORE) {
           prolaboreAvulso += v;
@@ -178,9 +217,16 @@ export const dreService = {
       return true;
     });
 
-    let despesasFixasDiretas = despesasAvulsas;
-    let despesasFixasHolding = 0;
-    const itensDespesaFixa: DreItem[] = [...itensDespesasAvulsas];
+    const grupoFixas: AcumuladorDespesaGrupo = {
+      diretas: despesasAvulsas,
+      holding: 0,
+      itens: [...itensDespesasAvulsas],
+    };
+    const grupoVariaveis: AcumuladorDespesaGrupo = {
+      diretas: despesasVariaveisAvulsas,
+      holding: 0,
+      itens: [...itensDespesasVariaveisAvulsas],
+    };
 
     let tributoDasValor = tributoDasAvulso;
     let tributoDasProvisionado = tributoDasAvulso <= 0;
@@ -200,7 +246,8 @@ export const dreService = {
         ? Number(d.valor_pago || (d.status === STATUS_DESPESA.PAGO ? d.valor_previsto : 0) || 0)
         : Number(d.valor_previsto || 0);
       const isDestaEmpresa = empresaId ? Number(d.empresa_id) === Number(empresaId) : true;
-      const isGeralHolding = !d.empresa_id || d.is_holding;
+      const isHoldingDespesa = Boolean(d.is_holding);
+      const isGeralHolding = !d.empresa_id || isHoldingDespesa;
 
       const isDespesaOperacionalFixa =
         grupoDre === GRUPO_DRE_CATEGORIA.DESPESA_FIXA ||
@@ -209,19 +256,28 @@ export const dreService = {
         d.categoria === CATEGORIA_DESPESA.CARTAO_CREDITO ||
         d.categoria === CATEGORIA_DESPESA.DESPESA_FROTA_DOCUMENTO;
 
-      if (isDespesaOperacionalFixa) {
-        if (empresaId) {
-          if (isDestaEmpresa && !d.is_holding) {
-            despesasFixasDiretas += valor;
-            itensDespesaFixa.push({ descricao: d.descricao, valor });
-          } else if (isGeralHolding) {
-            despesasFixasHolding += valor * shareEmpresa;
-            itensDespesaFixa.push({ descricao: `${d.descricao} (Rateio Holding)`, valor: valor * shareEmpresa });
-          }
-        } else {
-          despesasFixasDiretas += valor;
-          itensDespesaFixa.push({ descricao: d.descricao, valor });
-        }
+      if (grupoDre === GRUPO_DRE_CATEGORIA.DESPESA_VARIAVEL) {
+        acumularDespesaNoGrupo(
+          grupoVariaveis,
+          d.descricao,
+          valor,
+          empresaId,
+          isDestaEmpresa,
+          isHoldingDespesa,
+          isGeralHolding,
+          shareEmpresa
+        );
+      } else if (isDespesaOperacionalFixa) {
+        acumularDespesaNoGrupo(
+          grupoFixas,
+          d.descricao,
+          valor,
+          empresaId,
+          isDestaEmpresa,
+          isHoldingDespesa,
+          isGeralHolding,
+          shareEmpresa
+        );
       } else if (grupoDre === GRUPO_DRE_CATEGORIA.TRIBUTO_DAS || d.categoria === CATEGORIA_DESPESA.TRIBUTO_DAS) {
         if (empresaId) {
           if (isDestaEmpresa) {
@@ -265,18 +321,16 @@ export const dreService = {
           despesasFinanceiras += valor;
         }
       } else {
-        if (empresaId) {
-          if (isDestaEmpresa && !d.is_holding) {
-            despesasFixasDiretas += valor;
-            itensDespesaFixa.push({ descricao: d.descricao, valor });
-          } else if (isGeralHolding) {
-            despesasFixasHolding += valor * shareEmpresa;
-            itensDespesaFixa.push({ descricao: `${d.descricao} (Rateio Holding)`, valor: valor * shareEmpresa });
-          }
-        } else {
-          despesasFixasDiretas += valor;
-          itensDespesaFixa.push({ descricao: d.descricao, valor });
-        }
+        acumularDespesaNoGrupo(
+          grupoFixas,
+          d.descricao,
+          valor,
+          empresaId,
+          isDestaEmpresa,
+          isHoldingDespesa,
+          isGeralHolding,
+          shareEmpresa
+        );
       }
     });
 
@@ -284,8 +338,9 @@ export const dreService = {
       tributoDasValor = faturamentoBruto * 0.065;
     }
 
-    const totalDespesasFixas = despesasFixasDiretas + despesasFixasHolding;
-    const lucroOperacional = lucroBruto - totalDespesasFixas - tributoDasValor;
+    const totalDespesasFixas = grupoFixas.diretas + grupoFixas.holding;
+    const totalDespesasVariaveis = grupoVariaveis.diretas + grupoVariaveis.holding;
+    const lucroOperacional = lucroBruto - totalDespesasFixas - totalDespesasVariaveis - tributoDasValor;
     const lucroLiquido = lucroOperacional - prolabore - parcelamentosFiscais - investimentosFinanciamentos - despesasFinanceiras;
     const margemLiquidaPercentual = receitaOperacionalTotal > 0
       ? (lucroLiquido / receitaOperacionalTotal) * 100
@@ -308,9 +363,15 @@ export const dreService = {
       margem_bruta_percentual: parseFloat(margemBrutaPercentual.toFixed(2)),
       despesas_fixas: {
         total: parseFloat(totalDespesasFixas.toFixed(2)),
-        diretas: parseFloat(despesasFixasDiretas.toFixed(2)),
-        rateio_holding: parseFloat(despesasFixasHolding.toFixed(2)),
-        itens: itensDespesaFixa,
+        diretas: parseFloat(grupoFixas.diretas.toFixed(2)),
+        rateio_holding: parseFloat(grupoFixas.holding.toFixed(2)),
+        itens: grupoFixas.itens,
+      },
+      despesas_variaveis: {
+        total: parseFloat(totalDespesasVariaveis.toFixed(2)),
+        diretas: parseFloat(grupoVariaveis.diretas.toFixed(2)),
+        rateio_holding: parseFloat(grupoVariaveis.holding.toFixed(2)),
+        itens: grupoVariaveis.itens,
       },
       tributos_correntes_das: {
         total: parseFloat(tributoDasValor.toFixed(2)),

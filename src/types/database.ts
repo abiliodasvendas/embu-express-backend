@@ -472,6 +472,7 @@ export type EscopoCategoriaFinanceira = 'ENTRADA_AVULSA' | 'SAIDA_AVULSA' | 'DES
 export type GrupoDreCategoriaFinanceira =
   | 'RECEITA_OPERACIONAL'
   | 'DESPESA_FIXA'
+  | 'DESPESA_VARIAVEL'
   | 'TRIBUTO_DAS'
   | 'PROLABORE'
   | 'PARCELAMENTO_FISCAL'
