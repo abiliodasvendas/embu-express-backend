@@ -14,6 +14,13 @@ export interface ListFaturasFilters {
   status?: StatusFatura;
 }
 
+export interface PeriodoFaturadoRef {
+  unidade_id: number;
+  tipo_periodo?: string | null;
+  numero_periodo?: number | null;
+  quinzena?: number | null;
+}
+
 export interface UnidadeParaMedicao {
   id: number;
   cliente_id: number;
@@ -66,6 +73,26 @@ export const faturamentoRepository = {
     const { data, error } = await query;
     if (error && error.code !== "PGRST205") throw error;
     return (data || []) as FaturaCliente[];
+  },
+
+  async listPeriodosFaturadosCompetencia(filtros: {
+    mes: number;
+    ano: number;
+    cliente_id?: number;
+    unidade_id?: number;
+  }): Promise<PeriodoFaturadoRef[]> {
+    let query = supabaseAdmin
+      .from("faturas_clientes")
+      .select("unidade_id, tipo_periodo, numero_periodo, quinzena")
+      .eq("mes_competencia", filtros.mes)
+      .eq("ano_competencia", filtros.ano);
+
+    if (filtros.cliente_id) query = query.eq("cliente_id", filtros.cliente_id);
+    if (filtros.unidade_id) query = query.eq("unidade_id", filtros.unidade_id);
+
+    const { data, error } = await query;
+    if (error && error.code !== "PGRST205") throw error;
+    return (data || []) as PeriodoFaturadoRef[];
   },
 
   async listFaturasAging(filtros: { mes?: number; ano?: number; empresa_id?: number }): Promise<FaturaCliente[]> {

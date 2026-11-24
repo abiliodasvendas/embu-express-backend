@@ -102,9 +102,20 @@ export const faturamentoService = {
       ano &&
       (!filtros.status || filtros.status === STATUS_FATURA.PENDENTE)
     );
+    const shouldFetchAllPeriodos = Boolean(
+      shouldFetchPrevisoes && (filtros.status || filtros.empresa_id)
+    );
 
-    const [faturasReais, unidades, empresas] = await Promise.all([
+    const [faturasReais, periodosCompetencia, unidades, empresas] = await Promise.all([
       faturamentoRepository.listFaturas(filtros),
+      shouldFetchAllPeriodos && mes && ano
+        ? faturamentoRepository.listPeriodosFaturadosCompetencia({
+            mes,
+            ano,
+            cliente_id: filtros.cliente_id,
+            unidade_id: filtros.unidade_id,
+          })
+        : Promise.resolve(null),
       shouldFetchPrevisoes
         ? faturamentoRepository.listUnidadesAtivas(filtros.cliente_id, filtros.unidade_id)
         : Promise.resolve([]),
@@ -115,7 +126,15 @@ export const faturamentoService = {
       return faturasReais;
     }
 
-    const projecoes = gerarProjecoesVirtuais(unidades, faturasReais, empresas, filtros, mes, ano);
+    const periodosExistentes = periodosCompetencia ?? faturasReais;
+    const projecoes = gerarProjecoesVirtuais(
+      unidades,
+      periodosExistentes,
+      empresas,
+      filtros,
+      mes,
+      ano
+    );
     const resultado = [...faturasReais, ...projecoes];
     resultado.sort((a, b) => b.data_vencimento.localeCompare(a.data_vencimento));
     return resultado;

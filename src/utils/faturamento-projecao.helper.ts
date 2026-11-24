@@ -1,6 +1,7 @@
 import { FaturaCliente, Empresa } from "../types/database.js";
 import {
   ListFaturasFilters,
+  PeriodoFaturadoRef,
   UnidadeParaMedicao,
   UnidadeAtivaContrato,
 } from "../repositories/faturamento.repository.js";
@@ -201,7 +202,7 @@ export function montarPayloadMaterializacao(
 
 export function gerarProjecoesVirtuais(
   unidades: UnidadeAtivaContrato[],
-  faturasReais: FaturaCliente[],
+  faturasReais: PeriodoFaturadoRef[],
   empresas: Array<{ id: number; nome_fantasia: string; razao_social?: string; cnpj?: string }>,
   filtros: ListFaturasFilters,
   mes: number,
