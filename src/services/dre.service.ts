@@ -276,7 +276,8 @@ export const dreService = {
       } else if (
         grupoDre === GRUPO_DRE_CATEGORIA.INVESTIMENTO_FINANCIAMENTO ||
         d.categoria === CATEGORIA_DESPESA.INVESTIMENTO_FINANCIAMENTO ||
-        d.categoria === CATEGORIA_DESPESA.INVESTIMENTO_PATRIMONIAL
+        d.categoria === CATEGORIA_DESPESA.INVESTIMENTO_PATRIMONIAL ||
+        d.categoria === CATEGORIA_DESPESA.EMPRESTIMO
       ) {
         if (empresaId) {
           if (isDestaEmpresa) investimentosFinanciamentos += valor;
