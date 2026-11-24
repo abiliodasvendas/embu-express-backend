@@ -136,18 +136,30 @@ export const contasPagarService = {
 
     const todosItens = [...itensDespesas, ...itensConvenios, ...itensColaboradores];
 
-    const hoje = new Date();
-    const hojeStr = hoje.toISOString().split("T")[0];
+    const formatarDataBrasil = (date: Date): string => {
+      const parts = new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date);
+      const getPart = (type: string) => parts.find((p) => p.type === type)?.value || "";
+      return `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+    };
 
-    const dTemp = new Date(hoje);
-    const dayOfWeek = dTemp.getDay();
-    const diffToMonday = dTemp.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    const monday = new Date(dTemp.setDate(diffToMonday));
+    const hojeStr = formatarDataBrasil(new Date());
+    const [anoAtual, mesAtual, diaAtual] = hojeStr.split("-").map(Number);
+    const baseLocal = new Date(anoAtual, mesAtual - 1, diaAtual, 12, 0, 0);
+    const dayOfWeek = baseLocal.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    const monday = new Date(baseLocal);
+    monday.setDate(baseLocal.getDate() + diffToMonday);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    const mondayStr = monday.toISOString().split("T")[0];
-    const sundayStr = sunday.toISOString().split("T")[0];
+    const mondayStr = formatarDataBrasil(monday);
+    const sundayStr = formatarDataBrasil(sunday);
 
     let totalAPagarMes = 0;
     let totalPagoMes = 0;
